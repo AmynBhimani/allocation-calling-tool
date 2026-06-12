@@ -8,7 +8,7 @@
             "clientIdSettingName": "EXTERNALID_CLIENT_ID",
             "clientCredential": { "clientSecretSettingName": "EXTERNALID_CLIENT_SECRET" },
             "openIdConnectConfiguration": {
-              "wellKnownOpenIdConfiguration": "https://REPLACE_TENANT_GUID.ciamlogin.com/REPLACE_TENANT_GUID/v2.0/.well-known/openid-configuration"
+              "wellKnownOpenIdConfiguration": "https://630d47b9-754d-45e1-ba64-2c1e0e0e8ea0.ciamlogin.com/630d47b9-754d-45e1-ba64-2c1e0e0e8ea0/v2.0/.well-known/openid-configuration"
             }
           },
           "login": { "nameClaimType": "email", "scopes": ["openid", "profile", "email"] }
@@ -23,6 +23,8 @@
     { "route": "/unauthorized.html", "allowedRoles": ["anonymous"] },
     { "route": "/api/seed", "allowedRoles": ["superadmin"] },
     { "route": "/api/sync", "allowedRoles": ["superadmin"] },
+    { "route": "/api/roleadmin", "allowedRoles": ["superadmin"] },
+    { "route": "/admin.html", "allowedRoles": ["superadmin"] },
     { "route": "/api/volunteers", "allowedRoles": ["superadmin", "admin", "dutyteam"] },
     { "route": "/api/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] },
     { "route": "/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] }

@@ -22,6 +22,7 @@ async function boot() {
       const label = ROLES.filter(r => r !== 'anonymous' && r !== 'authenticated').join(', ') || 'no role';
       document.getElementById('whoami').innerHTML = `<b>${cp.userDetails}</b> · ${label}`;
       if (ROLES.includes('superadmin')) document.getElementById('seedBtn').hidden = false;
+      if (ROLES.includes('superadmin')) document.getElementById('adminLink').hidden = false;
     }
   } catch (e) { /* SWA will have redirected if unauthorized */ }
 

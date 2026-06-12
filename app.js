@@ -1,0 +1,185 @@
+const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception & Hospitality",
+  "Seniors & Mobility","Food Services","Layout & Logistics","Registration & Access","Medical Services"];
+
+let DATA = [];
+let resolvedThisSession = 0;
+let ROLES = [];
+const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, conflict:false, leader:false, new:false };
+
+function banner(msg, isErr) {
+  const b = document.getElementById('banner');
+  b.hidden = false; b.className = "banner" + (isErr ? " err" : "");
+  b.innerHTML = msg;
+}
+
+async function boot() {
+  // who am I + roles
+  try {
+    const me = await (await fetch('/.auth/me')).json();
+    const cp = me && me.clientPrincipal;
+    if (cp) {
+      ROLES = cp.userRoles || [];
+      const label = ROLES.filter(r => r !== 'anonymous' && r !== 'authenticated').join(', ') || 'no role';
+      document.getElementById('whoami').innerHTML = `<b>${cp.userDetails}</b> · ${label}`;
+      if (ROLES.includes('superadmin')) document.getElementById('seedBtn').hidden = false;
+    }
+  } catch (e) { /* SWA will have redirected if unauthorized */ }
+
+  // selects
+  ["BC","Prairies","Edmonton"].forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=r;document.getElementById('region').appendChild(o);});
+  AREAS.forEach(a=>{const o=document.createElement('option');o.value=a;o.textContent=a;document.getElementById('area').appendChild(o);});
+
+  // listeners
+  document.getElementById('q').addEventListener('input',e=>{filters.q=e.target.value.toLowerCase();render();});
+  document.getElementById('region').addEventListener('change',e=>{filters.region=e.target.value;filters.jk="";buildJk();render();});
+  document.getElementById('jk').addEventListener('change',e=>{filters.jk=e.target.value;render();});
+  document.getElementById('area').addEventListener('change',e=>{filters.area=e.target.value;render();});
+  document.querySelectorAll('.chip').forEach(ch=>ch.addEventListener('click',()=>{
+    const f=ch.dataset.f; filters[f]=!filters[f]; ch.setAttribute('aria-pressed',filters[f]); render();
+  }));
+  document.getElementById('seedBtn').addEventListener('click', seed);
+
+  await load();
+}
+
+async function load() {
+  document.getElementById('count').textContent = "Loading…";
+  try {
+    const r = await fetch('/api/volunteers');
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    DATA = d.volunteers || [];
+    buildJk();
+    if (!DATA.length) {
+      banner(ROLES.includes('superadmin')
+        ? 'No volunteers loaded yet. Click <b>Load sandbox data</b> (top right) to seed the workspace for review.'
+        : 'No volunteers loaded yet. Ask a coordinator to load the data.', false);
+    } else {
+      document.getElementById('banner').hidden = true;
+    }
+    render();
+  } catch (e) {
+    banner('Could not load volunteers: ' + e.message, true);
+    document.getElementById('count').textContent = "Load failed.";
+  }
+}
+
+async function seed() {
+  const btn = document.getElementById('seedBtn');
+  btn.disabled = true; btn.textContent = "Loading…";
+  try {
+    const r = await fetch('/api/seed', { method:'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    banner(`Loaded <b>${d.total}</b> sandbox volunteers.`, false);
+    await load();
+  } catch (e) {
+    banner('Seeding failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = "Load sandbox data";
+  }
+}
+
+function buildJk() {
+  const sel = document.getElementById('jk');
+  const cur = filters.jk;
+  const pool = DATA.filter(v => !filters.region || v.region === filters.region);
+  const jks = [...new Set(pool.map(v => v.jk))].sort();
+  sel.innerHTML = '<option value="">All Jamatkhanas</option>' +
+    jks.map(j => `<option value="${j}" ${j===cur?'selected':''}>${j}</option>`).join('');
+}
+
+function statusPill(s){
+  if(s==="Stable") return '<span class="pill p-stable">Stable · callable</span>';
+  if(s==="In reconciliation") return '<span class="pill p-recon">In reconciliation</span>';
+  return '<span class="pill p-un">Unassigned</span>';
+}
+function matches(v){
+  if(filters.q && !((v.first+" "+v.last).toLowerCase().includes(filters.q))) return false;
+  if(filters.region && v.region!==filters.region) return false;
+  if(filters.jk && v.jk!==filters.jk) return false;
+  if(filters.area && v.final!==filters.area && v.computed!==filters.area) return false;
+  if(filters.recon && v.status!=="In reconciliation") return false;
+  if(filters.unassigned && v.status!=="Unassigned") return false;
+  if(filters.conflict && (!v.claims||!v.claims.length)) return false;
+  if(filters.leader && !v.leader) return false;
+  if(filters.new && !v.new) return false;
+  return true;
+}
+
+function render(){
+  const tot=DATA.length;
+  const stable=DATA.filter(v=>v.status==="Stable").length;
+  const recon=DATA.filter(v=>v.status==="In reconciliation").length;
+  const un=DATA.filter(v=>v.status==="Unassigned").length;
+  document.getElementById('kpis').innerHTML = [
+    ['',tot,'Total volunteers','var(--ink)'],
+    ['callable',stable,'Stable · callable now','var(--stable)'],
+    ['recon',recon,'In reconciliation','var(--recon)'],
+    ['un',un,'Unassigned','var(--un)'],
+  ].map(([cls,n,l,col])=>`<div class="kpi ${cls}"><div class="n">${n.toLocaleString()}</div>
+    <div class="l">${l}</div><div class="bar"><i style="width:${tot?Math.round(n/tot*100):0}%;background:${col}"></i></div></div>`).join('');
+
+  document.getElementById('resolved').innerHTML = resolvedThisSession
+    ? `<b>${resolvedThisSession}</b> made callable this session` : '';
+
+  const list = DATA.filter(matches);
+  const rows = document.getElementById('rows');
+  if(!list.length){
+    rows.innerHTML = tot
+      ? '<tr><td colspan="6"><div class="empty">No volunteers match these filters. Try clearing a chip.</div></td></tr>'
+      : '<tr><td colspan="6"><div class="empty">No volunteers loaded.</div></td></tr>';
+    document.getElementById('count').textContent = tot ? 'No matches.' : '';
+    return;
+  }
+  rows.innerHTML = list.map(v=>{
+    const badges=[];
+    if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
+    if(v.leader) badges.push('<span class="badge b-lead">Leader</span>');
+    if(v.new) badges.push('<span class="badge b-new">New</span>');
+    const computed = v.computed ? `<span class="area-cell">${v.computed}</span>` : '<span class="area-none">no area selected</span>';
+    const conflict = (v.claims&&v.claims.length) ? `<div class="conflict">Claimed by: ${v.claims.join(' · ')}</div>` : '';
+    const unset = !v.final;
+    const opts = ['<option value="">— choose —</option>']
+      .concat(AREAS.map(a=>`<option value="${a}" ${v.final===a?'selected':''}>${a}</option>`))
+      .concat(['<option value="__hold__">Hold aside</option>']).join('');
+    return `<tr data-id="${v.id}" class="${v.status==='In reconciliation'?'recon-row':''}">
+      <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}</div>${conflict}</td>
+      <td class="hide-sm"><span class="sub">${v.jk}</span></td>
+      <td>${computed}</td>
+      <td><div class="badges">${badges.join('')||'<span class="sub">—</span>'}</div></td>
+      <td>${statusPill(v.status)}</td>
+      <td><select class="final ${unset?'unset':''}" data-id="${v.id}" data-region="${v.region}">${opts}</select></td>
+    </tr>`;
+  }).join('');
+  rows.querySelectorAll('select.final').forEach(sel=>sel.addEventListener('change',onFinalChange));
+  document.getElementById('count').textContent = `Showing ${list.length} of ${tot} volunteers`;
+}
+
+async function onFinalChange(e){
+  const sel = e.target;
+  const id = +sel.dataset.id;
+  const region = sel.dataset.region;
+  const v = DATA.find(x=>x.id===id);
+  const val = sel.value;
+  const wasNotCallable = v.status!=="Stable";
+  sel.disabled = true;
+  try {
+    const r = await fetch('/api/volunteers', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ user_id:id, region, final_area: val === "" ? null : val })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    Object.assign(v, d.volunteer); // server is source of truth
+    if (v.status==="Stable" && wasNotCallable) resolvedThisSession++;
+    render();
+    const tr=document.querySelector(`tr[data-id="${id}"]`);
+    if(tr){ tr.classList.add('flash'); setTimeout(()=>tr.classList.remove('flash'),1000); }
+  } catch (err) {
+    banner('Could not save change: ' + err.message, true);
+    sel.disabled = false;
+  }
+}
+
+boot();

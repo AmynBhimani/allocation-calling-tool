@@ -51,8 +51,17 @@ function qbAreas(store, email) {
   return [...new Set(store.filter(a => clean(a.email).toLowerCase() === email && clean(a.role) === "quarterback")
     .map(a => clean(a.area)).filter(Boolean))];
 }
-const sameDuty = (a, b) =>
-  clean(a.area) === clean(b.area) && clean(a.name).toLowerCase() === clean(b.name).toLowerCase();
+const norm = s => clean(s).toLowerCase();
+// A duty is a likely duplicate of an existing one (same area) when the NAME matches,
+// or the DESCRIPTION matches (when both are non-empty) — catches "Driver" vs "Bus Driver".
+function dupOf(existing, d) {
+  for (const x of existing) {
+    if (clean(x.area) !== clean(d.area)) continue;
+    if (norm(x.name) === norm(d.name)) return { match: x, field: "name" };
+    if (norm(x.description) && norm(x.description) === norm(d.description)) return { match: x, field: "description" };
+  }
+  return null;
+}
 
 module.exports = async function (context, req) {
   try {
@@ -82,17 +91,18 @@ module.exports = async function (context, req) {
         const incoming = op === "add" ? [body.entry || {}] : (Array.isArray(body.items) ? body.items : []);
         if (!incoming.length) { context.res = { status: 400, body: { error: "Nothing to add." } }; return; }
         let added = 0, dupes = 0, outOfScope = 0, invalid = 0;
-        const rejected = [];
+        const rejected = [], flagged = [];
         for (const raw of incoming) {
           const d = { area: clean(raw.area), name: clean(raw.name), description: clean(raw.description) };
-          if (!d.area || !d.name) { invalid++; continue; }
-          if (!AREAS.includes(d.area)) { invalid++; rejected.push(`${d.name}: unknown area "${d.area}"`); continue; }
-          if (!manageable.includes(d.area)) { outOfScope++; rejected.push(`${d.name}: ${d.area} is outside your areas`); continue; }
-          if (duties.some(x => sameDuty(x, d))) { dupes++; continue; }
+          if (!d.area || !d.name) { invalid++; rejected.push(`(blank): missing area or duty name`); continue; }
+          if (!AREAS.includes(d.area)) { invalid++; rejected.push(`"${d.name}": unrecognized area "${d.area}" — check the spelling`); continue; }
+          if (!manageable.includes(d.area)) { outOfScope++; rejected.push(`"${d.name}": ${d.area} is outside your areas`); continue; }
+          const dup = dupOf(duties, d);
+          if (dup) { dupes++; flagged.push(`"${d.name}" (${d.area}) looks like a duplicate of "${dup.match.name}" — same ${dup.field}`); continue; }
           duties.push(d); added++;
         }
         if (added > 0) await writeDuties(c, duties);
-        context.res = { body: { ok: true, added, dupes, outOfScope, invalid, rejected, duties } };
+        context.res = { body: { ok: true, added, dupes, outOfScope, invalid, rejected, flagged, duties } };
         return;
       }
 
@@ -100,7 +110,7 @@ module.exports = async function (context, req) {
         const d = { area: clean((body.entry || {}).area), name: clean((body.entry || {}).name) };
         if (!manageable.includes(d.area)) { context.res = { status: 403, body: { error: "That area is outside your scope." } }; return; }
         const before = duties.length;
-        const next = duties.filter(x => !sameDuty(x, d));
+        const next = duties.filter(x => !(clean(x.area) === d.area && norm(x.name) === norm(d.name)));
         if (next.length === before) { context.res = { status: 404, body: { error: "Duty not found." } }; return; }
         await writeDuties(c, next);
         context.res = { body: { ok: true, duties: next } };

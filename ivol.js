@@ -1,7 +1,8 @@
 let ROWS = [];
+let COUNTS = { pendingCount:0, enteredCount:0 };
 const selected = new Set();
 let showAll = false;
-const filters = { q:"", region:"", committee:"", jk:"", outcome:"" };
+const filters = { q:"", region:"", committee:"", jk:"" };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -20,7 +21,6 @@ async function boot(){
   document.getElementById('fRegion').addEventListener('change',e=>{filters.region=e.target.value;filters.jk="";buildFilterOptions();render();});
   document.getElementById('fCommittee').addEventListener('change',e=>{filters.committee=e.target.value;render();});
   document.getElementById('fJk').addEventListener('change',e=>{filters.jk=e.target.value;render();});
-  document.getElementById('fOutcome').addEventListener('change',e=>{filters.outcome=e.target.value;render();});
   await load();
 }
 
@@ -29,7 +29,7 @@ async function load(){
   try{
     const r=await fetch('/api/ivolreport'+(showAll?'?all=1':''));
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||("HTTP "+r.status));
-    const d=await r.json(); ROWS=d.rows||[]; clearBanner(); buildFilterOptions(); render();
+    const d=await r.json(); ROWS=d.rows||[]; COUNTS={pendingCount:d.pendingCount||0,enteredCount:d.enteredCount||0}; clearBanner(); buildFilterOptions(); render();
   }catch(e){ banner('Could not load the report: '+e.message,true); document.getElementById('count').textContent="Load failed."; }
 }
 
@@ -51,12 +51,11 @@ function matches(v){
   if(filters.region && v.region!==filters.region) return false;
   if(filters.committee && v.committee!==filters.committee) return false;
   if(filters.jk && v.jk!==filters.jk) return false;
-  if(filters.outcome && v.outcome!==filters.outcome) return false;
   return true;
 }
 
 function render(){
-  const total=ROWS.length, pending=ROWS.filter(r=>!r.entered).length, entered=total-pending;
+  const pending=COUNTS.pendingCount, entered=COUNTS.enteredCount, total=pending+entered;
   document.getElementById('kpis').innerHTML=[
     ['',pending,'Pending entry','var(--ink)'],
     ['callable',entered,'Entered in BI','var(--stable)'],

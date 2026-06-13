@@ -64,7 +64,9 @@ async function addOne(){
     const r=await fetch('/api/duties',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'add',entry})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
     if(d.added){ banner(`Added "${entry.name}" to ${entry.area}.`, false); document.getElementById('dname').value=''; document.getElementById('ddesc').value=''; }
+    else if(d.flagged && d.flagged.length){ banner(d.flagged[0]+'. Adjust the name or description if it\u2019s really different.', true); }
     else if(d.dupes){ banner('That duty already exists for this area.', true); }
+    else if(d.rejected && d.rejected.length){ banner(d.rejected[0], true); }
     DUTIES=d.duties||DUTIES; renderList();
   }catch(e){ banner('Could not add: '+e.message, true); }
   finally{ btn.disabled=false; }
@@ -119,9 +121,13 @@ async function uploadRows(){
     const r=await fetch('/api/duties',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'add_many',items})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
     let msg=`Added <b>${d.added}</b> duties.`;
-    if(d.dupes) msg+=` ${d.dupes} already existed.`;
-    if(d.outOfScope) msg+=` ${d.outOfScope} were outside your areas.`;
-    if(d.invalid) msg+=` ${d.invalid} were missing area/name or had an unknown area.`;
+    if(d.dupes) msg+=` ${d.dupes} flagged as possible duplicates.`;
+    if(d.outOfScope) msg+=` ${d.outOfScope} outside your areas.`;
+    if(d.invalid) msg+=` ${d.invalid} invalid (blank or unrecognized area).`;
+    const details=[...(d.flagged||[]),...(d.rejected||[])];
+    if(details.length){ msg+='<div class="cols" style="margin-top:8px"><b>Not added:</b><ul style="margin:6px 0 0 18px">'+
+      details.slice(0,50).map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>'+
+      (details.length>50?`<div>…and ${details.length-50} more.</div>`:'')+'</div>'; }
     banner(msg, d.added?false:true);
     DUTIES=d.duties||DUTIES; renderList();
     parsedRows=null; document.getElementById('file').value=''; document.getElementById('fileName').textContent='No file chosen';

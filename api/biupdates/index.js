@@ -17,20 +17,15 @@ function emailOf(p) {
   }
   return e ? String(e).toLowerCase() : null;
 }
+const hasContact = v => v.bi_update_needed && v.contact_changes && Object.keys(v.contact_changes).length > 0;
+const needsRow = v => hasContact(v) || !!v.bi_correction_needed;
 
-// One row per volunteer ready for Better Impact entry.
-function acceptedAt(v) {
-  let when = null;
-  for (const e of (v.activity_log || [])) {
-    if (e.action === "outcome" && e.outcome === "Accepted") when = e.ts;
-  }
-  return when;
-}
 function row(v) {
   return {
-    id: v.user_id, first: v.first, last: v.last, username: v.username || "",
-    region: v.region, jk: v.ceremony_jk, committee: v.final_area,
-    outcome: "Accepted", accepted_at: acceptedAt(v), entered: !!v.ivol_entered
+    id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
+    committee: v.final_area || "—", username: v.username || "",
+    changes: hasContact(v) ? v.contact_changes : null,   // { field: {from,to} }
+    reopen: !!v.bi_correction_needed                      // was entered in BI, then reopened
   };
 }
 
@@ -46,36 +41,31 @@ module.exports = async function (context, req) {
     const container = await getContainer(DATA_CONTAINER);
 
     if (req.method === "GET") {
-      const includeEntered = req.query.all === "1";
       const out = [];
-      let pendingCount = 0, enteredCount = 0;
       for (const region of REGIONS) {
         const { records } = await readRegion(container, region);
-        for (const v of records) {
-          if (!v.ivol_ready) continue;
-          if (!acceptedAt(v)) continue;                 // hide rows that were never actually Accepted
-          if (v.ivol_entered) enteredCount++; else pendingCount++;
-          if (!includeEntered && v.ivol_entered) continue;
-          out.push(row(v));
-        }
+        for (const v of records) if (needsRow(v)) out.push(row(v));
       }
-      out.sort((a, b) => (a.region.localeCompare(b.region)) || (a.committee || "").localeCompare(b.committee || "") || a.last.localeCompare(b.last));
-      context.res = { body: { rows: out, count: out.length, pendingCount, enteredCount, total: pendingCount + enteredCount } };
+      out.sort((a, b) => a.region.localeCompare(b.region) || (a.committee || "").localeCompare(b.committee || "") || a.last.localeCompare(b.last));
+      const contactCount = out.filter(r => r.changes).length;
+      const reopenCount = out.filter(r => r.reopen).length;
+      context.res = { body: { rows: out, count: out.length, contactCount, reopenCount } };
       return;
     }
 
     if (req.method === "POST") {
       const body = req.body || {};
       const items = Array.isArray(body.items) ? body.items : [];   // [{user_id, region}]
-      const entered = body.entered !== false;                      // default true
       if (!items.length) { context.res = { status: 400, body: { error: "No volunteers given." } }; return; }
       let done = 0;
       for (const it of items) {
         if (!REGIONS.includes(it.region)) continue;
         const result = await mutateVolunteer(container, it.region, it.user_id, (v) => {
           v.activity_log = v.activity_log || [];
-          v.ivol_entered = entered;
-          v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: entered ? "ivol_entered" : "ivol_unentered" });
+          v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "bi_updated" });
+          v.contact_changes = {};
+          v.bi_update_needed = false;
+          v.bi_correction_needed = false;
         });
         if (result.ok) done++;
       }

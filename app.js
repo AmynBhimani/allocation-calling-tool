@@ -5,7 +5,7 @@ const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception 
 let DATA = [];
 let resolvedThisSession = 0;
 let ROLES = [];
-const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, leadership:false, conflict:false, leader:false, new:false, nobi:false };
+const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, leadership:false, leader:false, new:false, nobi:false };
 
 function banner(msg, isErr) {
   const b = document.getElementById('banner');
@@ -22,6 +22,7 @@ async function boot() {
       ROLES = cp.userRoles || [];
       const label = ROLES.filter(r => r !== 'anonymous' && r !== 'authenticated').join(', ') || 'no role';
       document.getElementById('whoami').innerHTML = `<b>${cp.userDetails}</b> · ${label}`;
+      if (ROLES.includes('superadmin') || ROLES.includes('admin') || ROLES.includes('dutyteam')) document.getElementById('reconLinkSelf').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('seedBtn').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('adminLink').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('qbLink').hidden = false;
@@ -30,6 +31,8 @@ async function boot() {
       if (ROLES.includes('superadmin')) document.getElementById('importLink').hidden = false;
       if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('ivolLink').hidden = false;
       if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('dutiesLink').hidden = false;
+      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('biLink').hidden = false;
+      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('reportsLink').hidden = false;
     }
   } catch (e) { /* SWA will have redirected if unauthorized */ }
 
@@ -120,10 +123,9 @@ function matches(v){
   if(filters.region && v.region!==filters.region) return false;
   if(filters.jk && v.jk!==filters.jk) return false;
   if(filters.area && v.final!==filters.area && v.computed!==filters.area) return false;
-  if(filters.recon && v.status!=="In reconciliation") return false;
+  if(filters.recon && !(v.status==="In reconciliation" || (v.claims&&v.claims.length))) return false;
   if(filters.unassigned && v.status!=="Unassigned") return false;
   if(filters.leadership && v.status!=="Leadership - Do Not Allocate") return false;
-  if(filters.conflict && (!v.claims||!v.claims.length)) return false;
   if(filters.leader && !v.leader) return false;
   if(filters.new && !v.new) return false;
   if(filters.nobi && !v.no_bi) return false;
@@ -167,9 +169,10 @@ function render(){
     const conflict = (v.claims&&v.claims.length) ? `<div class="conflict">Claimed by: ${v.claims.join(' · ')}</div>` : '';
     const isLead = v.status==="Leadership - Do Not Allocate";
     const unset = !v.final;
-    const opts = ['<option value="">— choose —</option>']
-      .concat(AREAS.map(a=>`<option value="${a}" ${v.final===a?'selected':''}>${a}</option>`))
-      
+    const needsChoice = (v.status==="In reconciliation" || v.status==="Unassigned") && !isLead;
+    const preselect = needsChoice ? "" : (v.final||"");
+    const opts = [`<option value="" ${preselect===""&&!isLead?'selected':''}>— choose —</option>`]
+      .concat(AREAS.map(a=>`<option value="${a}" ${preselect===a?'selected':''}>${a}</option>`))
       .concat([`<option value="__leadership__" ${isLead?'selected':''}>⚑ Leadership – Do Not Allocate</option>`]).join('');
     return `<tr data-id="${v.id}" class="${v.status==='In reconciliation'?'recon-row':''}${isLead?' lead-row':''}">
       <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}</div>${conflict}</td>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calling Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="app">
+  <h1>Calling Dashboard</h1>
+  <span class="sub">Progress by area of interest</span>
+  <div class="userbox">
+    <a class="ghost" href="/index.html">Reconcile</a>
+    <a class="ghost" href="/quarterback.html">Assign Callers</a>
+    <a class="ghost" href="/ivol.html">iVol report</a>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap" style="max-width:1100px;margin:0 auto;padding:18px 24px 70px">
+  <div class="controls" style="margin-bottom:14px">
+    <label class="sub" style="color:var(--mute)">Region</label>
+    <select id="regionSel"><option value="">All regions</option></select>
+    <button class="btn ghost2" id="exportBtn">Export CSV</button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="panel" style="margin-top:14px">
+    <table class="grid">
+      <thead><tr>
+        <th>Area of interest</th>
+        <th class="num">Assigned</th>
+        <th class="num">Called</th>
+        <th class="num">Accepted</th>
+        <th class="num">Declined</th>
+        <th class="num">Pending</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+      <tfoot id="foot"></tfoot>
+    </table>
+    <div class="count" id="count"></div>
+  </div>
+  <p class="sub" style="margin-top:12px">“Pending” = assigned to a caller but not yet called. “Called” = at least one call outcome logged. A decline is counted against the area the person declined; if they were referred onward, they also appear in the new area’s pool. Leadership (do-not-allocate) is excluded.</p>
+</div>
+
+<script src="reports.js"></script>
+</body>
+</html>

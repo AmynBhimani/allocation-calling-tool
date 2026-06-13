@@ -5,7 +5,7 @@ const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
 
-const TERMINAL = ["Accepted", "Negotiated", "Declined-referred", "Withdrew"]; // leave the active queue
+const TERMINAL = ["Accepted", "Declined-referred", "Withdrew"]; // leave the active queue
 const ALL_OUTCOMES = TERMINAL.concat(["No answer", "Thinking"]);
 
 function getPrincipal(req) {
@@ -56,6 +56,23 @@ function loggedByMe(v, me) {
   return (v.activity_log || []).some(e => e.actor === me && e.action === "outcome");
 }
 
+function applyContact(v, contact) {
+  if (!contact) return;
+  v.contact_changes = v.contact_changes || {};
+  const map = { first: "first", last: "last", email: "email", cell: "cell_phone" };
+  for (const [k, field] of Object.entries(map)) {
+    if (contact[k] == null) continue;
+    const nv = clean(contact[k]);
+    const cur = clean(v[field]);
+    if (nv === cur) continue;
+    if (!v.contact_changes[field]) v.contact_changes[field] = { from: cur };
+    if (clean(v.contact_changes[field].from) === nv) delete v.contact_changes[field]; // edited back to original
+    else v.contact_changes[field].to = nv;
+    v[field] = nv;
+  }
+  v.bi_update_needed = Object.keys(v.contact_changes).length > 0;
+}
+
 module.exports = async function (context, req) {
   try {
     const principal = getPrincipal(req);
@@ -102,18 +119,34 @@ module.exports = async function (context, req) {
       const referralArea = clean(body.referral_area);
       const followup = clean(body.followup_date);
       const contact = body.contact || null;
+      const op = clean(body.op);
       if (!REGIONS.includes(region) || user_id == null) { context.res = { status: 400, body: { error: "Valid region and user_id required." } }; return; }
+
+      // Reopen: they changed their mind after the call — return them to the active queue.
+      if (op === "reopen") {
+        const rr = await mutateVolunteer(container, region, user_id, (v) => {
+          if (v.assigned_caller !== me && !isSuper) return { skip: true };
+          v.activity_log = v.activity_log || [];
+          v.activity_log.push({ ts: new Date().toISOString(), actor: me, action: "reopen", from: v.call_outcome || null });
+          if (v.ivol_entered) v.bi_correction_needed = true;   // was entered in BI, now reopened → iVol must correct
+          v.call_done = false; v.call_outcome = null; v.ivol_ready = false;
+          // assigned_caller stays, so it reappears in that caller's active list
+        });
+        if (rr.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
+        if (rr.extra && rr.extra.skip) { context.res = { status: 403, body: { error: "That volunteer isn't assigned to you." } }; return; }
+        if (!rr.ok) { context.res = { status: 409, body: { error: "Couldn't reopen — please retry." } }; return; }
+        context.res = { body: { ok: true, reopened: true } };
+        return;
+      }
+
       if (!ALL_OUTCOMES.includes(outcome)) { context.res = { status: 400, body: { error: "Unknown outcome." } }; return; }
       if (outcome === "Declined-referred" && !referralArea) { context.res = { status: 400, body: { error: "Pick an area to refer to." } }; return; }
 
       const result = await mutateVolunteer(container, region, user_id, (v) => {
         if (v.assigned_caller !== me && !isSuper) return { skip: true };
         v.activity_log = v.activity_log || [];
-        // optional contact correction
-        if (contact) {
-          if (contact.cell != null) v.cell_phone = clean(contact.cell);
-          if (contact.email != null) v.email = clean(contact.email);
-        }
+        // optional contact correction (name / email / phone) — flagged for iVol to update in BI
+        applyContact(v, contact);
         const entry = { ts: new Date().toISOString(), actor: me, action: "outcome", outcome };
         if (note) entry.note = note;
         v.activity_log.push(entry);
@@ -126,7 +159,7 @@ module.exports = async function (context, req) {
           v.callable_status = "Stable";
           v.call_done = true;                // done for me
           v.call_outcome = null;             // fresh for the receiving area
-        } else if (outcome === "Accepted" || outcome === "Negotiated") {
+        } else if (outcome === "Accepted") {
           v.call_done = true;
           v.ivol_ready = true;               // flows to the iVol-input report
         } else if (outcome === "Withdrew") {

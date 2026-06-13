@@ -224,3 +224,53 @@ Header link **BI import**. The manual alternative to the API sync.
   no-BI-account people are preserved (not overwritten or deleted).
 - ☐ Pull a **Download backup** before committing (good habit).
 - ☐ A non-Super-Admin cannot reach `/fileimport.html` or `/api/fileimport`.
+
+---
+
+## Sequence M — Test-feedback changes (June)
+
+**M1 · Reconcile: default to “Choose” for needs-decision**
+1. As Duty Team/Admin, open Reconcile. Click the **Needs decision** chip.
+2. For a volunteer in reconciliation, confirm the Final Area dropdown shows **“— choose —”** (not a pre-filled area).
+3. Pick the intended area → row flashes, status flips to Stable, person becomes callable. (Selecting the computed area now always registers as a change.)
+4. Confirm the **Conflicts** chip is gone (folded into Needs decision) and conflicts still appear under it.
+
+**M2 · Header**
+1. Confirm the header shows **Reconcile** (for Duty Team/Admin/Super) and **Assign Callers** (renamed from “Assignment”).
+2. Admin/Super also see **BI updates** and **Dashboard**.
+
+**M3 · Assign Callers: caller-scope enforcement**
+1. As QB with two areas, add a caller scoped to only ONE of them.
+2. Select volunteers from BOTH areas, choose that caller, Assign.
+3. Confirm the warning names the out-of-scope count, and after assigning only the in-scope volunteers get the caller (banner: “N skipped — outside <caller>’s lists”).
+
+**M4 · Assign Callers: filters**
+1. Confirm the **New** filter is gone; **No BI acct** and **Referred** chips exist.
+2. Use **Filter by caller** → only that caller’s assignments show.
+3. Toggle a chip off / use **Clear filters** → list fully resets (including a stale JK after a scope change).
+
+**M5 · Caller: outcomes + contact edits**
+1. Open a call. Confirm **Negotiated is gone** (5 outcomes).
+2. Edit First/Last/Cell/Email, mark **Accepted**. Confirm it saves and the note about iVol updating BI shows.
+3. Only **Accepted** flows to the iVol report (Thinking/No answer stay active).
+
+**M6 · Caller: reopen (changed mind)**
+1. On the **Done** tab, open an Accepted (or Withdrew) person → **Reopen** button shows.
+2. Reopen → they return to the **active** list. If they’d been entered in BI, they appear on **BI updates** as a reopen-correction.
+
+**M7 · iVol report**
+1. Confirm no rows with a blank outcome appear (only genuine Accepted).
+2. **Entered in BI** KPI updates immediately after marking entries — without toggling “show already entered”.
+3. Confirm the outcome dropdown is gone (redundant).
+
+**M8 · BI Updates Needed (Admin/Super)**
+1. After M5/M6, open **BI updates**: contact diffs show old → new; reopen-after-entry shows a correction flag.
+2. Select rows → **Mark done in BI** → they clear.
+
+**M9 · Dashboard (Admin/Super)**
+1. Open **Dashboard**; filter by region.
+2. Per area: Assigned / Called / Accepted / Declined / Pending, with a totals row. Export CSV.
+
+**M10 · Duties**
+1. Bulk-upload with a typo’d Area of Interest → rejected rows are listed by name with the bad area called out.
+2. Add a duty whose **name OR description** matches an existing one in the area (e.g., “Bus Driver” with the same description as “Driver”) → it’s flagged as a possible duplicate, not silently dropped.

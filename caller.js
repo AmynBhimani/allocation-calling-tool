@@ -6,7 +6,7 @@ let ACTIVE = [], COMPLETED = [], ROLES = [];
 let tab = "active";
 let current = null; // currently open volunteer
 let selectedOutcome = null;
-const OUTCOME_LABEL = { "Accepted":"Accepted","Negotiated":"Negotiated","Thinking":"Thinking about it",
+const OUTCOME_LABEL = { "Accepted":"Accepted","Thinking":"Thinking about it",
   "No answer":"No answer","Declined-referred":"Decline → refer","Withdrew":"Withdrew" };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
@@ -80,17 +80,26 @@ function renderPanel(v){
   const contact = readonly
     ? `<div class="contact"><label>Cell</label><div class="phone">${v.cell||'—'}</div><label>Email</label><div>${v.email||'—'}</div></div>`
     : `<div class="contact">
-         <label>Cell</label><input id="cCell" value="${v.cell||''}">
-         <label>Email</label><input id="cEmail" value="${v.email||''}">
-       </div>`;
+         <label>First</label><input id="cFirst" value="${escapeAttr(v.first||'')}">
+         <label>Last</label><input id="cLast" value="${escapeAttr(v.last||'')}">
+         <label>Cell</label><input id="cCell" value="${escapeAttr(v.cell||'')}">
+         <label>Email</label><input id="cEmail" value="${escapeAttr(v.email||'')}">
+       </div>
+       <div class="contact-note">Edits here are saved with the call and flagged for iVol to update in Better Impact (the source of truth).</div>`;
 
   const logHtml = (v.log&&v.log.length)
     ? `<div class="log"><h4>Call history</h4>${v.log.map(e=>`<div class="e"><span class="t">${new Date(e.ts).toLocaleString()}</span> — ${e.outcome}${e.note?': '+escapeHtml(e.note):''}</div>`).join('')}</div>`
     : '';
 
   if(readonly){
+    const canReopen = (v.outcome==="Accepted" || v.outcome==="Withdrew");
+    const reopenHtml = canReopen
+      ? `<div class="saverow"><button class="btn ghost2" id="reopenBtn">Reopen — they've changed their mind</button></div>
+         <div class="contact-note">Reopening returns them to your active call list. If they were already entered in Better Impact, they'll appear on the BI Updates list so iVol can correct it.</div>`
+      : '';
     p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk} · #${v.id}</div>
-      <div class="badge-row">${badges.join('')}</div>${contact}${logHtml}`;
+      <div class="badge-row">${badges.join('')}</div>${contact}${logHtml}${reopenHtml}`;
+    const rb=document.getElementById('reopenBtn'); if(rb) rb.addEventListener('click',()=>reopen(v));
     return;
   }
 
@@ -101,7 +110,6 @@ function renderPanel(v){
     <textarea class="note-area" id="note" placeholder="Notes from the call…"></textarea>
     <div class="outcomes">
       <button class="obtn accept" data-o="Accepted">Accepted<small>Confirmed for ${v.area||'their area'}</small></button>
-      <button class="obtn" data-o="Negotiated">Negotiated<small>Yes, with conditions (notes)</small></button>
       <button class="obtn" data-o="Thinking">Thinking about it<small>Will follow up</small></button>
       <button class="obtn" data-o="No answer">No answer<small>Logs an attempt</small></button>
       <button class="obtn decline" data-o="Declined-referred">Decline → refer<small>Send to another area</small></button>
@@ -148,7 +156,9 @@ async function commit(){
 async function save(outcome, extra){
   const note=(document.getElementById('note')||{}).value||"";
   const contact={};
+  const f=document.getElementById('cFirst'), l=document.getElementById('cLast');
   const cell=document.getElementById('cCell'), email=document.getElementById('cEmail');
+  if(f) contact.first=f.value; if(l) contact.last=l.value;
   if(cell) contact.cell=cell.value; if(email) contact.email=email.value;
   const body={ user_id:current.id, region:current.region, outcome, note, contact, ...extra };
   try{
@@ -161,6 +171,17 @@ async function save(outcome, extra){
   }catch(e){ banner('Could not save: '+e.message,true); }
 }
 
+async function reopen(v){
+  if(!confirm(`Reopen ${v.first} ${v.last} and return them to your active call list?`)) return;
+  try{
+    const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'reopen',user_id:v.id,region:v.region})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
+    banner(`Reopened ${v.first} ${v.last} — back in your active list.`, false);
+    current=null; tab="active"; await load();
+  }catch(e){ banner('Could not reopen: '+e.message,true); }
+}
+
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function escapeAttr(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 boot();

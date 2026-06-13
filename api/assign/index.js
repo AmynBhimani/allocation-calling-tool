@@ -107,19 +107,23 @@ module.exports = async function (context, req) {
       if (!REGIONS.includes(region)) { context.res = { status: 400, body: { error: "Valid region required." } }; return; }
       if (!ids.length) { context.res = { status: 400, body: { error: "No volunteers selected." } }; return; }
 
+      let callerScopes = [];
       if (op === "assign") {
         if (!caller) { context.res = { status: 400, body: { error: "A caller is required." } }; return; }
         // caller must be a caller within one of the requester's scopes
         const callerOk = store.some(a => clean(a.email).toLowerCase() === caller && clean(a.role) === "caller"
           && inScope(scopes, clean(a.area), clean(a.region)));
         if (!callerOk) { context.res = { status: 403, body: { error: "That caller isn't in your area." } }; return; }
+        // a volunteer can only be assigned to a caller whose OWN scope covers them
+        callerScopes = scopesFor(store, caller, "caller");
       }
 
-      let done = 0, skipped = 0;
+      let done = 0, skipped = 0, outOfCallerScope = 0;
       for (const id of ids) {
         const result = await mutateVolunteer(container, region, id, (v) => {
           // only act on volunteers in this requester's scope and callable
           if (!inScope(scopes, v.final_area, v.region) || v.callable_status !== "Stable") return { skip: true };
+          if (op === "assign" && !inScope(callerScopes, v.final_area, v.region)) return { skip: true, reason: "caller_scope" };
           v.activity_log = v.activity_log || [];
           if (op === "unassign") {
             v.assigned_caller = null;
@@ -131,9 +135,10 @@ module.exports = async function (context, req) {
             v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "assign", to: caller });
           }
         });
-        if (result.ok && !(result.extra && result.extra.skip)) done++; else skipped++;
+        if (result.ok && !(result.extra && result.extra.skip)) done++;
+        else { skipped++; if (result.extra && result.extra.reason === "caller_scope") outOfCallerScope++; }
       }
-      context.res = { body: { ok: true, op, done, skipped, caller: op === "assign" ? caller : null } };
+      context.res = { body: { ok: true, op, done, skipped, outOfCallerScope, caller: op === "assign" ? caller : null } };
       return;
     }
 

@@ -100,3 +100,13 @@
 
   /* No-BI-account badge */
   .badge.b-nobi{background:#FCEAE6;color:#B23A2B;border-color:#F3D2CC}
+
+/* --- additions: management dashboard, BI updates, caller edits --- */
+.grid th.num, .grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.grid tfoot .totalrow td { border-top: 2px solid var(--line, #d9e2e6); background: #f6f9fa; }
+.contact-note { font-size: 12px; color: var(--mute, #6b7c85); margin: 6px 0 2px; line-height: 1.4; }
+.chg { font-size: 13px; margin: 2px 0; }
+.chg .from { color: var(--mute, #6b7c85); text-decoration: line-through; }
+.chg .to { color: var(--ink, #1B3A4B); font-weight: 600; }
+.chg.reopen { color: var(--accent, #C44536); font-weight: 600; }
+.cols { font-size: 13px; }

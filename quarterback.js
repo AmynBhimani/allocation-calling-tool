@@ -3,7 +3,7 @@ let SCOPES = [];      // [{area, region}]
 let CALLERS = [];     // [{email, area, region}]
 let ROLES = [];
 const selected = new Set();
-const filters = { q:"", jk:"", scope:"", unassignedOnly:false, assignedOnly:false, leader:false, new:false };
+const filters = { q:"", jk:"", scope:"", caller:"", unassignedOnly:false, assignedOnly:false, leader:false, nobi:false, referred:false };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -22,7 +22,9 @@ async function boot(){
 
   document.getElementById('q').addEventListener('input',e=>{filters.q=e.target.value.toLowerCase();render();});
   document.getElementById('jk').addEventListener('change',e=>{filters.jk=e.target.value;render();});
-  document.getElementById('scopeSel').addEventListener('change',e=>{filters.scope=e.target.value;buildJk();render();});
+  document.getElementById('scopeSel').addEventListener('change',e=>{filters.scope=e.target.value;filters.jk="";buildJk();render();});
+  document.getElementById('callerFilter').addEventListener('change',e=>{filters.caller=e.target.value;render();});
+  document.getElementById('clearFilters').addEventListener('click',clearFilters);
   document.querySelectorAll('.chip').forEach(ch=>ch.addEventListener('click',()=>{
     const f=ch.dataset.f; filters[f]=!filters[f]; ch.setAttribute('aria-pressed',filters[f]);
     if(f==='unassignedOnly'&&filters[f]){filters.assignedOnly=false;document.querySelector('[data-f=assignedOnly]').setAttribute('aria-pressed','false');}
@@ -48,7 +50,7 @@ async function load(){
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("HTTP "+r.status));
     const d = await r.json();
     DATA = d.volunteers||[]; SCOPES = d.scopes||[]; CALLERS = d.callers||[];
-    buildScopeSelect(); buildCallerSelect(); buildCallerScopes(); buildJk();
+    buildScopeSelect(); buildCallerSelect(); buildCallerFilter(); buildCallerScopes(); buildJk();
     clearBanner(); render();
   }catch(e){
     banner('Could not load your pool: '+e.message, true);
@@ -73,10 +75,24 @@ function buildCallerScopes(){
   box.innerHTML = SCOPES.map((s,i)=>`<label><input type="checkbox" class="acscope" data-area="${s.area}" data-region="${s.region}"> ${scopeKey(s)}</label>`).join('')
     || '<span class="sub">You have no areas assigned yet.</span>';
 }
+function buildCallerFilter(){
+  const sel=document.getElementById('callerFilter');
+  const seen=new Set(); const opts=[];
+  for(const c of CALLERS){ if(seen.has(c.email))continue; seen.add(c.email); opts.push(`<option value="${c.email}" ${filters.caller===c.email?'selected':''}>${c.email}</option>`); }
+  sel.innerHTML='<option value="">Any caller</option>'+opts.join('');
+}
+function clearFilters(){
+  filters.q=""; filters.jk=""; filters.scope=""; filters.caller="";
+  filters.unassignedOnly=false; filters.assignedOnly=false; filters.leader=false; filters.nobi=false; filters.referred=false;
+  document.getElementById('q').value=""; document.getElementById('scopeSel').value=""; document.getElementById('callerFilter').value="";
+  document.querySelectorAll('.chip').forEach(ch=>ch.setAttribute('aria-pressed','false'));
+  buildJk(); render();
+}
 function buildJk(){
   const sel=document.getElementById('jk');
   const pool=DATA.filter(v=>!filters.scope || scopeKey({area:v.final,region:v.region})===filters.scope);
   const jks=[...new Set(pool.map(v=>v.jk))].sort();
+  if(filters.jk && !jks.includes(filters.jk)) filters.jk="";   // stale JK from a prior scope — clear it
   const cur=filters.jk;
   sel.innerHTML='<option value="">All Jamatkhanas</option>'+jks.map(j=>`<option value="${j}" ${j===cur?'selected':''}>${j}</option>`).join('');
 }
@@ -88,7 +104,9 @@ function matches(v){
   if(filters.unassignedOnly && v.assigned) return false;
   if(filters.assignedOnly && !v.assigned) return false;
   if(filters.leader && !v.leader) return false;
-  if(filters.new && !v.new) return false;
+  if(filters.nobi && !v.no_bi) return false;
+  if(filters.referred && !v.referred_from) return false;
+  if(filters.caller && v.assigned!==filters.caller) return false;
   return true;
 }
 
@@ -155,9 +173,18 @@ function selectedByRegion(){
   return byR;
 }
 
+function callerScopeSet(email){
+  return new Set(CALLERS.filter(c=>c.email===email).map(c=>`${c.region}|||${c.area}`));
+}
 async function assign(){
   const caller=document.getElementById('callerSel').value;
   if(!caller || !selected.size) return;
+  // a volunteer can only go to a caller whose area×region covers them
+  const cs=callerScopeSet(caller);
+  const out=[...selected].map(id=>DATA.find(v=>v.id===id)).filter(v=>v && !cs.has(`${v.region}|||${v.final}`));
+  if(out.length){
+    if(!confirm(`${out.length} of the selected volunteers are outside ${caller}'s assigned lists and will be skipped. Assign the rest?`)) return;
+  }
   await doAction('assign', caller);
 }
 async function unassign(){
@@ -169,14 +196,15 @@ async function doAction(op, caller){
   const byR=selectedByRegion();
   document.getElementById('assignBtn').disabled=true; document.getElementById('unassignBtn').disabled=true;
   try{
-    let done=0;
+    let done=0, outScope=0;
     for(const region of Object.keys(byR)){
       const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({op,region,user_ids:byR[region],caller_email:caller})});
       const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
-      done+=d.done||0;
+      done+=d.done||0; outScope+=d.outOfCallerScope||0;
     }
-    banner(op==='assign'?`Assigned <b>${done}</b> volunteer(s) to ${caller}.`:`Unassigned <b>${done}</b> volunteer(s).`, false);
+    const tail = outScope?` (${outScope} skipped — outside ${caller}'s lists)`:'';
+    banner(op==='assign'?`Assigned <b>${done}</b> volunteer(s) to ${caller}.${tail}`:`Unassigned <b>${done}</b> volunteer(s).`, false);
     selected.clear();
     await load();
   }catch(e){ banner('Action failed: '+e.message, true); updateActionBar(); }

@@ -36,7 +36,7 @@
 <body>
 <header class="app">
   <h1>Quarterback</h1>
-  <span class="sub">Assignment</span>
+  <span class="sub">Assign Callers</span>
   <div class="userbox">
     <a id="reconLink" class="ghost" href="/index.html" hidden>Reconciliation</a>
     <a id="callerLink2" class="ghost" href="/caller.html" hidden>My Calls</a>
@@ -79,12 +79,15 @@
   <div class="controls">
     <input type="search" id="q" placeholder="Search name…" aria-label="Search by name">
     <select id="jk"><option value="">All Jamatkhanas</option></select>
+    <select id="callerFilter"><option value="">Any caller</option></select>
     <div class="chips" id="chips">
       <button class="chip" data-f="unassignedOnly" aria-pressed="false">Unassigned</button>
       <button class="chip" data-f="assignedOnly" aria-pressed="false">Assigned</button>
       <button class="chip" data-f="leader" aria-pressed="false">Team Leads</button>
-      <button class="chip" data-f="new" aria-pressed="false">New</button>
+      <button class="chip" data-f="nobi" aria-pressed="false">No BI acct</button>
+      <button class="chip" data-f="referred" aria-pressed="false">Referred</button>
     </div>
+    <button class="btn ghost2" id="clearFilters">Clear filters</button>
   </div>
 
   <div class="panel">

@@ -160,3 +160,32 @@ including one flagged **No BI acct**. Then sign in as that caller (or use **My C
 **Boundaries**
 - ☐ A caller only sees their own assigned people (not the whole area).
 - ☐ Contact details never appear on the reconciliation or assignment screens — only here.
+
+---
+
+## H · Backup (do this BEFORE any sync change)
+
+- ☐ As Super Admin, the **Download backup** link appears in the reconciliation header.
+- ☐ Click it → a `volunteer-backup-<timestamp>.json` file downloads to your computer.
+- ☐ Open it → it contains all three regions and a total count. Keep it somewhere safe.
+- ☐ (Recommended, one-time in Azure) Storage account → Data protection → enable **soft delete**
+  for blobs and **versioning**, so overwrites are recoverable automatically.
+
+---
+
+## I · iVol Input Report
+
+Set up: have at least one volunteer a caller marked **Accepted** or **Negotiated** (Sequence G).
+Sign in as Super Admin or Admin → header link **iVol report**.
+
+- ☐ The report lists people ready for Better Impact entry: name, username, region, committee,
+  outcome, accepted date. (Pending-only by default.)
+- ☐ KPI cards: Pending entry / Entered in BI.
+- ☐ Tick a few rows (or **select-all**) → **Mark entered in BI** → they get a ✓ and leave the
+  pending list.
+- ☐ Turn on **Show already-entered too** → the entered ones reappear (with ✓).
+- ☐ Select an entered person → **Undo entered** → they return to pending.
+- ☐ **Export to Excel** → an `ivol-input-<date>.csv` downloads; opens in Excel with the committee
+  column and identifying fields. (Opens cleanly in Excel; full field list can be expanded once the
+  iVol Lead finalizes it.)
+- ☐ A caller/quarterback cannot reach `/ivol.html` or `/api/ivolreport` (admin-only).

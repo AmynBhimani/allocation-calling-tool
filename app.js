@@ -25,6 +25,8 @@ async function boot() {
       if (ROLES.includes('superadmin')) document.getElementById('adminLink').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('qbLink').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('callerLink').hidden = false;
+      if (ROLES.includes('superadmin')) document.getElementById('backupLink').hidden = false;
+      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('ivolLink').hidden = false;
     }
   } catch (e) { /* SWA will have redirected if unauthorized */ }
 

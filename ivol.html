@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iVol Input Report</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .rep-wrap{max-width:1200px;margin:0 auto;padding:18px 24px 70px}
+  .toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .toolbar .btn{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:9px 16px;cursor:pointer}
+  .toolbar .btn:hover{background:var(--teal-d)} .toolbar .btn:disabled{opacity:.45;cursor:default}
+  .toolbar .btn.ghost2{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+  .toolbar .btn.ghost2:hover{background:var(--wash)}
+  .toolbar .spacer{margin-left:auto}
+  .toggle{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--mute);cursor:pointer}
+  th.cbcol,td.cbcol{width:34px;text-align:center}
+  .entered-row{background:#F4FAF7}
+  .tick{font-size:12.5px;color:var(--stable);font-weight:600}
+  .committee-cell{font-weight:600;color:var(--ink)}
+  .selcount{font-weight:700;color:var(--ink)}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>iVol Input Report</h1>
+  <span class="sub">Accepted &amp; ready for Better Impact</span>
+  <div class="userbox">
+    <a class="ghost" href="/index.html">Reconciliation</a>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="rep-wrap">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="toolbar">
+    <span class="selcount" id="selcount">0 selected</span>
+    <button class="btn" id="markBtn" disabled>Mark entered in BI</button>
+    <button class="btn ghost2" id="unmarkBtn" disabled>Undo entered</button>
+    <label class="toggle"><input type="checkbox" id="showAll"> Show already-entered too</label>
+    <span class="spacer"></span>
+    <button class="btn ghost2" id="exportBtn">Export to Excel</button>
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead><tr>
+        <th class="cbcol"><input type="checkbox" id="cbAll" title="Select all on screen"></th>
+        <th>Volunteer</th>
+        <th>Region</th>
+        <th>Committee</th>
+        <th>Outcome</th>
+        <th>Accepted</th>
+        <th>In BI</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="count" id="count">Loading…</div>
+  </div>
+</div>
+
+<script src="ivol.js"></script>
+</body>
+</html>

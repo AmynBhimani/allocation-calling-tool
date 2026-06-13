@@ -69,39 +69,54 @@ module.exports = async function (context, req) {
       const body = req.body || {};
       const op = clean(body.op).toLowerCase();
       const e = body.entry || {};
-      const entry = {
-        email: clean(e.email).toLowerCase(),
-        role: clean(e.role).toLowerCase(),
-        area: clean(e.area),
-        region: clean(e.region),
-      };
-      // strip empty scope keys for cleanliness
-      if (!entry.area) delete entry.area;
-      if (!entry.region) delete entry.region;
+      const role = clean(e.role).toLowerCase();
+      const region = clean(e.region);
+      const email = clean(e.email).toLowerCase();
+      // areas can come as a single `area` or an array `areas`
+      let areas = Array.isArray(e.areas) ? e.areas.map(clean).filter(Boolean) : [];
+      if (!areas.length && clean(e.area)) areas = [clean(e.area)];
 
       let assignments = await readStore(c);
 
       if (op === "add") {
-        if (!entry.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(entry.email)) {
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
           context.res = { status: 400, body: { error: "A valid email is required." } }; return;
         }
-        if (!MANAGEABLE.includes(entry.role)) {
+        if (!MANAGEABLE.includes(role)) {
           context.res = { status: 400, body: { error: `Role must be one of: ${MANAGEABLE.join(", ")}. (Super Admin is managed via app settings.)` } }; return;
         }
-        if ((entry.role === "quarterback" || entry.role === "caller")) {
-          if (!entry.region || !REGIONS.includes(entry.region)) { context.res = { status: 400, body: { error: "Quarterback/Caller need a valid region." } }; return; }
-          if (!entry.area || !AREAS.includes(entry.area)) { context.res = { status: 400, body: { error: "Quarterback/Caller need a valid area." } }; return; }
+        // region is mandatory for Duty Allocation Team, Quarterback, and Caller
+        if (role === "dutyteam" || role === "quarterback" || role === "caller") {
+          if (!region || !REGIONS.includes(region)) { context.res = { status: 400, body: { error: "A valid region is required for this role." } }; return; }
         }
-        if (assignments.some(a => sameEntry(a, entry))) {
-          context.res = { status: 409, body: { error: "That exact assignment already exists." } }; return;
+        if (role === "quarterback" || role === "caller") {
+          if (!areas.length) { context.res = { status: 400, body: { error: "Pick at least one area for a Quarterback/Caller." } }; return; }
+          if (areas.some(a => !AREAS.includes(a))) { context.res = { status: 400, body: { error: "One or more areas are invalid." } }; return; }
         }
-        assignments.push(entry);
+
+        // build the entries to add (one per area for QB/caller; one otherwise)
+        const toAdd = [];
+        if (role === "quarterback" || role === "caller") {
+          for (const a of areas) { const en = { email, role, area: a, region }; toAdd.push(en); }
+        } else {
+          const en = { email, role }; if (region) en.region = region; toAdd.push(en);
+        }
+
+        let added = 0, dupes = 0;
+        for (const en of toAdd) {
+          if (assignments.some(a => sameEntry(a, en))) { dupes++; continue; }
+          assignments.push(en); added++;
+        }
+        if (added === 0) { context.res = { status: 409, body: { error: "Those assignments already exist." } }; return; }
         await writeStore(c, assignments);
-        context.res = { body: { ok: true, assignments } };
+        context.res = { body: { ok: true, added, dupes, assignments } };
         return;
       }
 
       if (op === "remove") {
+        const entry = { email, role, area: areas[0] || "", region };
+        if (!entry.area) delete entry.area;
+        if (!entry.region) delete entry.region;
         const before = assignments.length;
         assignments = assignments.filter(a => !sameEntry(a, entry));
         if (assignments.length === before) { context.res = { status: 404, body: { error: "No matching assignment found." } }; return; }

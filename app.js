@@ -40,6 +40,16 @@ async function boot() {
   }));
   document.getElementById('seedBtn').addEventListener('click', seed);
 
+  // Only the Duty Allocation Team (and admins) use this screen. Others get a friendly note,
+  // not a failed data load.
+  const canRecon = ROLES.includes('superadmin') || ROLES.includes('admin') || ROLES.includes('dutyteam');
+  if (!canRecon) {
+    const roleName = ROLES.includes('quarterback') ? 'Quarterback' : ROLES.includes('caller') ? 'Caller' : 'your role';
+    banner(`This is the reconciliation screen for the Duty Allocation Team. A dedicated screen for <b>${roleName}</b> is coming — you'll be routed there once it's built.`, false);
+    document.getElementById('count').textContent = '';
+    return;
+  }
+
   await load();
 }
 
@@ -148,7 +158,7 @@ function render(){
     const unset = !v.final;
     const opts = ['<option value="">— choose —</option>']
       .concat(AREAS.map(a=>`<option value="${a}" ${v.final===a?'selected':''}>${a}</option>`))
-      .concat(['<option value="__hold__">Hold aside</option>'])
+      
       .concat([`<option value="__leadership__" ${isLead?'selected':''}>⚑ Leadership – Do Not Allocate</option>`]).join('');
     return `<tr data-id="${v.id}" class="${v.status==='In reconciliation'?'recon-row':''}${isLead?' lead-row':''}">
       <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}</div>${conflict}</td>

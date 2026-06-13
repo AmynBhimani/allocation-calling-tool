@@ -10,9 +10,9 @@ function clearBanner(){ document.getElementById('banner').hidden = true; }
 const ROLE_LABEL = { admin: "Admin", dutyteam: "Duty Allocation Team", quarterback: "Quarterback", caller: "Caller" };
 const ROLE_HINT = {
   admin: "Global access: the iVol-input report and syncs. No scope needed.",
-  dutyteam: "Reconciliation. Region is optional — leave blank for all regions.",
-  quarterback: "Manages one area × region. Region and area are required.",
-  caller: "Makes calls for one area × region. Region and area are required.",
+  dutyteam: "Reconciliation. Region is required.",
+  quarterback: "Manages area(s) × region. Region and at least one area are required.",
+  caller: "Makes calls for area(s) × region. Region and at least one area are required.",
 };
 
 async function boot() {
@@ -32,6 +32,16 @@ async function boot() {
 function fillSelect(sel, items) {
   sel.innerHTML = '<option value="">—</option>' + items.map(x => `<option value="${x}">${x}</option>`).join('');
 }
+function buildAreaChecks(areas) {
+  document.getElementById('areaChecks').innerHTML = areas.map((a, i) =>
+    `<label><input type="checkbox" class="area-cb" value="${a}"> ${a}</label>`).join('');
+}
+function selectedAreas() {
+  return [...document.querySelectorAll('.area-cb')].filter(c => c.checked).map(c => c.value);
+}
+function clearAreaChecks() {
+  document.querySelectorAll('.area-cb').forEach(c => c.checked = false);
+}
 
 function onRoleChange() {
   const role = document.getElementById('role').value;
@@ -50,7 +60,7 @@ async function load() {
     const d = await r.json();
     META = d.meta || META;
     fillSelect(document.getElementById('region'), META.regions);
-    fillSelect(document.getElementById('area'), META.areas);
+    buildAreaChecks(META.areas);
     render(d.assignments || []);
     clearBanner();
   } catch (e) {
@@ -90,7 +100,7 @@ async function add() {
     email: document.getElementById('email').value.trim(),
     role,
     region: document.getElementById('region').value,
-    area: document.getElementById('area').value,
+    areas: selectedAreas(),
   };
   const btn = document.getElementById('addBtn');
   btn.disabled = true;
@@ -101,8 +111,15 @@ async function add() {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    const n = d.added || 0;
+    const dupeNote = d.dupes ? ` (${d.dupes} already existed)` : '';
+    banner(`Added <b>${entry.email}</b> as ${ROLE_LABEL[role]}${n > 1 ? ` for ${n} areas` : ''}.${dupeNote}`, false);
+    // clear ALL fields after a successful add
     document.getElementById('email').value = '';
-    banner(`Added <b>${entry.email}</b> as ${ROLE_LABEL[role]}.`, false);
+    document.getElementById('role').value = 'admin';
+    document.getElementById('region').value = '';
+    clearAreaChecks();
+    onRoleChange();
     render(d.assignments);
   } catch (e) {
     banner('Could not add: ' + e.message, true);

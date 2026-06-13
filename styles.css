@@ -90,3 +90,10 @@
   .banner{margin:0;padding:12px 24px;font-size:13.5px;background:#FBEEE2;color:#8A4B1F;border-bottom:1px solid #F1D9C2}
   .banner.err{background:#FCE8E6;color:#9A2B22;border-bottom-color:#F3CFCB}
   .banner b{font-weight:700}
+
+  /* Leadership – Do Not Allocate */
+  :root{ --lead:#5A4B81; --lead-bg:#ECE8F4; }
+  .pill.p-lead{background:var(--lead-bg);color:var(--lead)} .pill.p-lead::before{background:var(--lead)}
+  .kpi.lead .n{color:var(--lead)}
+  tr.lead-row{background:#F7F5FB}
+  tr.lead-row:hover{background:#F1EDF9}

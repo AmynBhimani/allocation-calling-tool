@@ -1,0 +1,87 @@
+# VE Allocation & Calling Tool — Test Plan
+
+Run these in order. Each section is a piece we've shipped. Check items off; note anything that
+doesn't behave as described. New sections get added as we build (quarterback, calling, etc.).
+
+Legend: ☐ = to test. Sign in as your **Super Admin** email unless a step says otherwise.
+
+---
+
+## A · Role Management (Team & Roles screen)
+
+**Access**
+- ☐ Signed in as Super Admin, the **Team & Roles** link shows in the header. Open it.
+- ☐ (If you can sign in as a non-admin email) `/admin.html` should bounce you — not load the page.
+
+**Adding each role type**
+- ☐ Add an email as **Admin** → no region/area required; appears under Admin.
+- ☐ Add an email as **Duty Allocation Team**, region BC → appears with "BC".
+- ☐ Add an email as **Quarterback** → it should *force* region + area (try without → refused).
+- ☐ Add an email as **Caller**, region + area → appears correctly.
+
+**Validation (all should be refused politely)**
+- ☐ Malformed email ("notanemail") → refused.
+- ☐ Exact same person + role + scope twice → refused as duplicate.
+- ☐ No way to add a Super Admin here (by design).
+
+**Removal & persistence**
+- ☐ Remove an assignment → it disappears, count drops.
+- ☐ Refresh the page → remaining people are still there (saved to storage).
+- ☐ A newly-added person's role only takes effect after they sign out/in (roles stamp at login).
+
+---
+
+## B · Data load (Seed)
+
+- ☐ On the reconciliation screen, as Super Admin you see **Load sandbox data** (top right).
+- ☐ Click it → banner confirms ~415 loaded; the table fills.
+- ☐ Refresh → data persists (it's in storage, not just on screen).
+
+---
+
+## C · Reconciliation screen (Armaan's tool)
+
+**View & filters**
+- ☐ KPI cards show counts: Total, Stable, In reconciliation, Unassigned, Leadership.
+- ☐ Region filter narrows the list; the **Jamatkhana** dropdown narrows to that region's JKs.
+- ☐ Each chip works: Needs decision, Unassigned, Leadership, Conflicts, Leaders, New.
+- ☐ Name search filters.
+
+**Setting a final area (the core action)**
+- ☐ Pick a Final area for an "In reconciliation" or "Unassigned" volunteer → status flips to
+  **Stable · callable**, the KPI counts update, the row flashes.
+- ☐ Refresh → the change persisted.
+- ☐ Set a volunteer to **Hold aside** → status becomes Unassigned.
+
+**Leadership – Do Not Allocate (new)**
+- ☐ On any volunteer, choose **⚑ Leadership – Do Not Allocate** from the Final-area dropdown →
+  status becomes **Leadership · do not allocate**, row tints, KPI "Leadership" increments.
+- ☐ The **Leadership** chip filters to exactly those people.
+- ☐ Refresh → it persisted.
+- ☐ On a Leadership volunteer, pick a real area → they leave Leadership and become Stable again.
+
+---
+
+## D · Concurrency / robustness (quick sanity, optional)
+
+You don't need to simulate 40 users, but you can confirm the safety behaviour:
+- ☐ Open the reconciliation screen in **two browser windows** (both as you).
+- ☐ In window 1, set volunteer X's area. In window 2 (without refreshing), set volunteer Y's area.
+- ☐ Refresh both → **both** changes are present. (Before the re-architecture, one could have been
+  lost — the storage layer now prevents that.)
+
+---
+
+## E · Better Impact sync (blocked on the API key)
+
+Can't run until BI enables the key. When it's live (`bitest.py` returns 200):
+- ☐ Add `BI_API_USER` / `BI_API_PASS` app settings; wait ~30s.
+- ☐ `/api/sync` (dry run) → summary shows biTotal ~25,500, western ~9,043, ~7,400 Stable /
+  ~1,550 Unassigned, areas roughly Safety ~2,100 / Reception ~2,000 / Medical ~1,200 / Food ~890.
+- ☐ If correct, `/api/sync?mode=commit` → writes real data, preserving any reconciliation already done.
+
+---
+
+## Health checks (any time something seems off)
+- ☐ `/api/ping` → JSON with `node: v18.x` (API host healthy).
+- ☐ `/.auth/me` → `userRoles` includes `superadmin` (and any roles you've been granted).

@@ -4,7 +4,7 @@ const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception 
 let DATA = [];
 let resolvedThisSession = 0;
 let ROLES = [];
-const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, conflict:false, leader:false, new:false };
+const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, leadership:false, conflict:false, leader:false, new:false };
 
 function banner(msg, isErr) {
   const b = document.getElementById('banner');
@@ -93,6 +93,7 @@ function buildJk() {
 function statusPill(s){
   if(s==="Stable") return '<span class="pill p-stable">Stable · callable</span>';
   if(s==="In reconciliation") return '<span class="pill p-recon">In reconciliation</span>';
+  if(s==="Leadership - Do Not Allocate") return '<span class="pill p-lead">Leadership · do not allocate</span>';
   return '<span class="pill p-un">Unassigned</span>';
 }
 function matches(v){
@@ -102,6 +103,7 @@ function matches(v){
   if(filters.area && v.final!==filters.area && v.computed!==filters.area) return false;
   if(filters.recon && v.status!=="In reconciliation") return false;
   if(filters.unassigned && v.status!=="Unassigned") return false;
+  if(filters.leadership && v.status!=="Leadership - Do Not Allocate") return false;
   if(filters.conflict && (!v.claims||!v.claims.length)) return false;
   if(filters.leader && !v.leader) return false;
   if(filters.new && !v.new) return false;
@@ -113,11 +115,13 @@ function render(){
   const stable=DATA.filter(v=>v.status==="Stable").length;
   const recon=DATA.filter(v=>v.status==="In reconciliation").length;
   const un=DATA.filter(v=>v.status==="Unassigned").length;
+  const lead=DATA.filter(v=>v.status==="Leadership - Do Not Allocate").length;
   document.getElementById('kpis').innerHTML = [
     ['',tot,'Total volunteers','var(--ink)'],
     ['callable',stable,'Stable · callable now','var(--stable)'],
     ['recon',recon,'In reconciliation','var(--recon)'],
     ['un',un,'Unassigned','var(--un)'],
+    ['lead',lead,'Leadership · do not allocate','var(--lead)'],
   ].map(([cls,n,l,col])=>`<div class="kpi ${cls}"><div class="n">${n.toLocaleString()}</div>
     <div class="l">${l}</div><div class="bar"><i style="width:${tot?Math.round(n/tot*100):0}%;background:${col}"></i></div></div>`).join('');
 
@@ -140,17 +144,19 @@ function render(){
     if(v.new) badges.push('<span class="badge b-new">New</span>');
     const computed = v.computed ? `<span class="area-cell">${v.computed}</span>` : '<span class="area-none">no area selected</span>';
     const conflict = (v.claims&&v.claims.length) ? `<div class="conflict">Claimed by: ${v.claims.join(' · ')}</div>` : '';
+    const isLead = v.status==="Leadership - Do Not Allocate";
     const unset = !v.final;
     const opts = ['<option value="">— choose —</option>']
       .concat(AREAS.map(a=>`<option value="${a}" ${v.final===a?'selected':''}>${a}</option>`))
-      .concat(['<option value="__hold__">Hold aside</option>']).join('');
-    return `<tr data-id="${v.id}" class="${v.status==='In reconciliation'?'recon-row':''}">
+      .concat(['<option value="__hold__">Hold aside</option>'])
+      .concat([`<option value="__leadership__" ${isLead?'selected':''}>⚑ Leadership – Do Not Allocate</option>`]).join('');
+    return `<tr data-id="${v.id}" class="${v.status==='In reconciliation'?'recon-row':''}${isLead?' lead-row':''}">
       <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}</div>${conflict}</td>
       <td class="hide-sm"><span class="sub">${v.jk}</span></td>
       <td>${computed}</td>
       <td><div class="badges">${badges.join('')||'<span class="sub">—</span>'}</div></td>
       <td>${statusPill(v.status)}</td>
-      <td><select class="final ${unset?'unset':''}" data-id="${v.id}" data-region="${v.region}">${opts}</select></td>
+      <td><select class="final ${unset&&!isLead?'unset':''}" data-id="${v.id}" data-region="${v.region}">${opts}</select></td>
     </tr>`;
   }).join('');
   rows.querySelectorAll('select.final').forEach(sel=>sel.addEventListener('change',onFinalChange));
@@ -166,9 +172,12 @@ async function onFinalChange(e){
   const wasNotCallable = v.status!=="Stable";
   sel.disabled = true;
   try {
+    const payload = (val === "__leadership__")
+      ? { user_id:id, region, op:"leadership" }
+      : { user_id:id, region, op:"final_area", final_area: val === "" ? null : val };
     const r = await fetch('/api/volunteers', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ user_id:id, region, final_area: val === "" ? null : val })
+      body: JSON.stringify(payload)
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));

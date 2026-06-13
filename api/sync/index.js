@@ -1,43 +1,25 @@
-const { BlobServiceClient } = require("@azure/storage-blob");
 const { fetchAllUsers } = require("./bi");
 const { allocate } = require("./allocate");
 const { normalize, WESTERN_JKS, REGIONS } = require("./fields");
+const { getContainer, overwriteRegion, mergeRegion } = require("../shared/store");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const BI_USER = process.env.BI_API_USER;
 const BI_PASS = process.env.BI_API_PASS;
 const BI_BASE = process.env.BI_API_BASE || "https://api.betterimpact.com/v1/enterprise/users/";
 
-// ---------- helpers ----------
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
   if (!h) return null;
   try { return JSON.parse(Buffer.from(h, "base64").toString("utf8")); } catch { return null; }
 }
-function streamToString(s) {
-  return new Promise((res, rej) => {
-    const ch = []; s.on("data", d => ch.push(Buffer.from(d)));
-    s.on("end", () => res(Buffer.concat(ch).toString("utf8"))); s.on("error", rej);
-  });
-}
-async function readShard(container, region) {
-  const b = container.getBlockBlobClient(`volunteers-${region}.json`);
-  if (!(await b.exists())) return [];
-  try { return JSON.parse(await streamToString((await b.download()).readableStreamBody)); }
-  catch { return []; }
-}
-async function writeShard(container, region, arr) {
-  const b = container.getBlockBlobClient(`volunteers-${region}.json`);
-  const body = JSON.stringify(arr);
-  await b.upload(body, Buffer.byteLength(body), { blobHTTPHeaders: { blobContentType: "application/json" }, overwrite: true });
-}
 
 // A volunteer is "touched" (call state to preserve) if reconciliation/calling has acted on them.
 function isTouched(v) {
-  return (Array.isArray(v.activity_log) && v.activity_log.length > 0) || !!v.assigned_caller || !!v.ivol_entered;
+  return (Array.isArray(v.activity_log) && v.activity_log.length > 0) || !!v.assigned_caller || !!v.ivol_entered
+    || v.callable_status === "Leadership - Do Not Allocate";
 }
 
-// ---------- main ----------
 module.exports = async function (context, req) {
   try {
     const principal = getPrincipal(req);
@@ -73,7 +55,7 @@ module.exports = async function (context, req) {
     for (const r of western) {
       const a = allocById.get(r.user_id) || {};
       const region = REGIONS.includes(a.region) ? a.region : null;
-      if (!region) continue; // skip anything whose region isn't one of the three (shouldn't happen for the 27)
+      if (!region) continue;
       byRegion[region].push({
         user_id: r.user_id, first: r.first, last: r.last, email: r.email, username: r.username,
         cell_phone: r.cell_phone, home_phone: r.home_phone, work_phone: r.work_phone,
@@ -88,42 +70,44 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 4) Upsert into the target container, preserving call state on commit.
-    const svc = BlobServiceClient.fromConnectionString(CONN);
-    const container = svc.getContainerClient(targetContainer);
-    await container.createIfNotExists();
-
+    // 4) Upsert into the target container. Commit preserves call state via a concurrency-safe merge.
+    const container = await getContainer(targetContainer);
     const summary = { mode, target: targetContainer, scanned, biTotal: total, pages,
       western: western.length, added: 0, preserved: 0, refreshed: 0, byRegion: {}, byArea: {}, byStatus: {} };
 
+    function mergeFn(fresh) {
+      return (existing) => {
+        const exById = new Map(existing.map(v => [v.user_id, v]));
+        return fresh.map(nv => {
+          const old = exById.get(nv.user_id);
+          if (old && isTouched(old)) {
+            summary.preserved++;
+            return {
+              ...old,
+              first: nv.first, last: nv.last, email: nv.email, username: nv.username,
+              cell_phone: nv.cell_phone, home_phone: nv.home_phone, work_phone: nv.work_phone,
+              ceremony_jk: nv.ceremony_jk, region: nv.region,
+              list: nv.list, computed_area: nv.computed_area, held_aside: nv.held_aside,
+              new_since_sync: false
+            };
+          }
+          if (old) { summary.refreshed++; return { ...nv, new_since_sync: false,
+            affinity_flag: old.affinity_flag, leader_flag: old.leader_flag, conflict_claims: old.conflict_claims || [] }; }
+          summary.added++;
+          return nv;
+        });
+      };
+    }
+
     for (const region of REGIONS) {
       const fresh = byRegion[region];
-      let existing = [];
-      if (mode === "commit") existing = await readShard(container, region);
-      const exById = new Map(existing.map(v => [v.user_id, v]));
-
-      const merged = fresh.map(nv => {
-        const old = exById.get(nv.user_id);
-        if (old && mode === "commit" && isTouched(old)) {
-          // preserve reconciliation/calling state; refresh contact + recomputed allocation + (later) flags
-          summary.preserved++;
-          return {
-            ...old,
-            first: nv.first, last: nv.last, email: nv.email, username: nv.username,
-            cell_phone: nv.cell_phone, home_phone: nv.home_phone, work_phone: nv.work_phone,
-            ceremony_jk: nv.ceremony_jk, region: nv.region,
-            list: nv.list, computed_area: nv.computed_area, held_aside: nv.held_aside,
-            new_since_sync: false
-            // final_area, callable_status, assigned_caller, ivol_entered, activity_log, flags: kept from old
-          };
-        }
-        if (old) { summary.refreshed++; return { ...nv, new_since_sync: false,
-          affinity_flag: old.affinity_flag, leader_flag: old.leader_flag, conflict_claims: old.conflict_claims || [] }; }
-        summary.added++;
-        return nv;
-      });
-
-      await writeShard(container, region, merged);
+      let merged;
+      if (mode === "commit") {
+        merged = await mergeRegion(container, region, mergeFn(fresh));
+      } else {
+        merged = fresh; summary.added += fresh.length;
+        await overwriteRegion(container, region, merged);
+      }
       summary.byRegion[region] = merged.length;
       for (const v of merged) {
         if (v.computed_area) summary.byArea[v.computed_area] = (summary.byArea[v.computed_area] || 0) + 1;

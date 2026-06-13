@@ -193,3 +193,34 @@ Sign in as Super Admin or Admin → header link **iVol report**.
 - ☐ **Export to Excel** exports exactly the filtered rows currently shown.
 - ☐ **Select all** selects the filtered set (so you can mark one committee's batch at a time).
 - ☐ A caller/quarterback cannot reach `/ivol.html` or `/api/ivolreport` (admin-only).
+
+---
+
+## J · New areas (Finance & Procurement, Environmental Sustainability)
+
+- ☐ On Armaan's reconciliation screen, the Final-area dropdown now lists both new areas.
+- ☐ A sync/file-import never *routes* anyone to them (they only appear when someone is placed there
+  via reconciliation override or the affinity import).
+- ☐ A quarterback/caller can be scoped to them in Team & Roles; a caller can refer into them.
+
+## K · Duties management (Super Admin / Admin / Quarterback)
+
+Header link **Duties**.
+- ☐ Add a duty: pick an Area, enter Duty Name + Description → it appears under that area.
+- ☐ As a quarterback, only *your* areas appear in the Area dropdown; you can't add to others.
+- ☐ Bulk upload: a CSV/Excel with columns **Area of Interest, Duty Name, Duty Description** →
+  "Upload duties" → reports added / duplicates / out-of-scope / invalid.
+- ☐ Remove a duty (only within your areas).
+- ☐ A caller cannot reach `/duties.html`.
+
+## L · BI File Import (Super Admin)
+
+Header link **BI import**. The manual alternative to the API sync.
+- ☐ Choose the ProfileExport .xlsx → it shows rows-in-file and Western count (~9,043) with a
+  per-region breakdown.
+- ☐ **Dry run** → writes to the preview area; shows ~7,488 Stable / ~1,555 Unassigned and the area
+  breakdown (Safety ~2,100, Reception ~2,000, Medical ~1,200, Food ~890…).
+- ☐ Review, then **Commit** → writes live data. Existing reconciliation, assignments, calls, and
+  no-BI-account people are preserved (not overwritten or deleted).
+- ☐ Pull a **Download backup** before committing (good habit).
+- ☐ A non-Super-Admin cannot reach `/fileimport.html` or `/api/fileimport`.

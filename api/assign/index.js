@@ -7,7 +7,8 @@ const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
 const AREAS = [
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
   "Seniors & Mobility", "Food Services", "Layout & Logistics",
-  "Registration & Access", "Medical Services"
+  "Registration & Access", "Medical Services",
+  "Finance & Procurement", "Environmental Sustainability"
 ];
 
 function getPrincipal(req) {

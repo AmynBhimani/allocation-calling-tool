@@ -1,5 +1,6 @@
 const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception & Hospitality",
-  "Seniors & Mobility","Food Services","Layout & Logistics","Registration & Access","Medical Services"];
+  "Seniors & Mobility","Food Services","Layout & Logistics","Registration & Access","Medical Services",
+  "Finance & Procurement","Environmental Sustainability"];
 
 let DATA = [];
 let resolvedThisSession = 0;
@@ -26,7 +27,9 @@ async function boot() {
       if (ROLES.includes('superadmin')) document.getElementById('qbLink').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('callerLink').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('backupLink').hidden = false;
+      if (ROLES.includes('superadmin')) document.getElementById('importLink').hidden = false;
       if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('ivolLink').hidden = false;
+      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('dutiesLink').hidden = false;
     }
   } catch (e) { /* SWA will have redirected if unauthorized */ }
 

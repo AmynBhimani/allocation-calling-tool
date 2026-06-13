@@ -129,8 +129,6 @@ function chooseOutcome(o){
   if(o==="Declined-referred"){
     inner=`<div class="refbox"><label>Refer to which area?</label>
       <select id="refArea"><option value="">Choose an area…</option>${AREAS.filter(a=>a!==current.area).map(a=>`<option>${a}</option>`).join('')}</select></div>`;
-  } else if(o==="Thinking"){
-    inner=`<div class="fubox"><label>Follow-up date (optional)</label><input type="date" id="fuDate"></div>`;
   }
   extra.innerHTML = inner +
     `<div class="saverow"><button class="btn" id="saveBtn">Save “${OUTCOME_LABEL[o]||o}”</button>
@@ -148,7 +146,6 @@ async function commit(){
     if(!ra){ banner('Pick an area to refer to.',true); return; }
     extra.referral_area = ra;
   }
-  if(o==="Thinking"){ extra.followup_date=(document.getElementById('fuDate')||{}).value||""; }
   document.getElementById('saveBtn').disabled = true;
   await save(o, extra);
 }

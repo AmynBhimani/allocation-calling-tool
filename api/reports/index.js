@@ -37,40 +37,38 @@ module.exports = async function (context, req) {
     const container = await getContainer(DATA_CONTAINER);
 
     const byArea = {};
-    const blank = () => ({ inPool: 0, assigned: 0, called: 0, accepted: 0, declined: 0, withdrew: 0, pending: 0 });
+    const blank = () => ({ assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 });
     const totals = blank();
 
     for (const region of regions) {
       const { records } = await readRegion(container, region);
       for (const v of records) {
-        // only the callable pipeline (excludes Leadership-do-not-allocate / not-yet-callable)
+        // only the callable pipeline (excludes Leadership-do-not-allocate)
         if (v.callable_status === "Leadership - Do Not Allocate") continue;
         const area = v.final_area || "(no area)";
         const b = byArea[area] || (byArea[area] = blank());
         const lo = lastOutcome(v);
-        b.inPool++; totals.inPool++;
 
-        // A person who declined and was referred elsewhere: the decline belongs to the area
-        // they left (referred_from), and in their new area they're a fresh, not-yet-called prospect.
+        // A person who declined and was referred onward: the decline belongs to the area they
+        // left (referred_from); in their new area they now hold a duty (if cleared/Stable).
         if (lo === "Declined-referred" && v.referred_from) {
           const da = byArea[v.referred_from] || (byArea[v.referred_from] = blank());
-          da.called++; da.declined++; totals.called++; totals.declined++;
-          if (v.assigned_caller) { b.assigned++; totals.assigned++; b.pending++; totals.pending++; }
+          da.declined++; totals.declined++;
+          if (v.callable_status === "Stable") { b.assignedDuty++; totals.assignedDuty++; }
+          if (v.assigned_caller && !v.call_done) { b.callPending++; totals.callPending++; }
           continue;
         }
 
-        const isAssigned = !!v.assigned_caller;
-        const isAccepted = !!v.ivol_ready || lo === "Accepted";
-        const isDeclined = lo === "Declined-referred";   // declined with no referral recorded
-        const isWithdrew = lo === "Withdrew";
-        const isCalled = lo != null;
+        // "Assigned a duty" = cleared into this area with no open conflict (Stable).
+        if (v.callable_status === "Stable") { b.assignedDuty++; totals.assignedDuty++; }
 
-        if (isAssigned) { b.assigned++; totals.assigned++; }
-        if (isCalled) { b.called++; totals.called++; }
+        const isAccepted = !!v.ivol_ready || lo === "Accepted";
+        const isDeclined = lo === "Declined-referred";              // declined, no referral recorded
+        const isCallPending = !!v.assigned_caller && !v.call_done;  // with a caller, call not completed
+
         if (isAccepted) { b.accepted++; totals.accepted++; }
         if (isDeclined) { b.declined++; totals.declined++; }
-        if (isWithdrew) { b.withdrew++; totals.withdrew++; }
-        if (isAssigned && !isCalled) { b.pending++; totals.pending++; }
+        if (isCallPending) { b.callPending++; totals.callPending++; }
       }
     }
 

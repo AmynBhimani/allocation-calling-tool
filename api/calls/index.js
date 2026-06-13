@@ -48,7 +48,7 @@ function full(v) {
     home: v.home_phone || "", work: v.work_phone || "",
     leader: !!v.leader_flag, affinity: !!v.affinity_flag, no_bi_account: !!v.no_bi_account,
     referred_from: v.referred_from || null,
-    outcome: v.call_outcome || null, done: !!v.call_done, followup: v.followup || null,
+    outcome: v.call_outcome || null, done: !!v.call_done,
     log: (v.activity_log || []).filter(e => e.action === "outcome")
   };
 }
@@ -117,7 +117,6 @@ module.exports = async function (context, req) {
       const outcome = clean(body.outcome);
       const note = clean(body.note);
       const referralArea = clean(body.referral_area);
-      const followup = clean(body.followup_date);
       const contact = body.contact || null;
       const op = clean(body.op);
       if (!REGIONS.includes(region) || user_id == null) { context.res = { status: 400, body: { error: "Valid region and user_id required." } }; return; }
@@ -167,7 +166,6 @@ module.exports = async function (context, req) {
         } else {
           // No answer / Thinking — stays in the active queue
           v.call_done = false;
-          if (outcome === "Thinking" && followup) v.followup = followup;
         }
       });
 

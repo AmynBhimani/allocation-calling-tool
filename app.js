@@ -169,7 +169,7 @@ function render(){
     const conflict = (v.claims&&v.claims.length) ? `<div class="conflict">Claimed by: ${v.claims.join(' · ')}</div>` : '';
     const isLead = v.status==="Leadership - Do Not Allocate";
     const unset = !v.final;
-    const needsChoice = (v.status==="In reconciliation" || v.status==="Unassigned") && !isLead;
+    const needsChoice = (v.status==="In reconciliation" || v.status==="Unassigned" || (v.claims&&v.claims.length)) && !isLead;
     const preselect = needsChoice ? "" : (v.final||"");
     const opts = [`<option value="" ${preselect===""&&!isLead?'selected':''}>— choose —</option>`]
       .concat(AREAS.map(a=>`<option value="${a}" ${preselect===a?'selected':''}>${a}</option>`))

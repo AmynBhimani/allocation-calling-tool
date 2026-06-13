@@ -34,18 +34,17 @@
     <table class="grid">
       <thead><tr>
         <th>Area of interest</th>
-        <th class="num">Assigned</th>
-        <th class="num">Called</th>
-        <th class="num">Accepted</th>
-        <th class="num">Declined</th>
-        <th class="num">Pending</th>
+        <th class="num">Assigned a Duty</th>
+        <th class="num">Accepted Duty</th>
+        <th class="num">Call Pending</th>
+        <th class="num">Declined Duty</th>
       </tr></thead>
       <tbody id="rows"></tbody>
       <tfoot id="foot"></tfoot>
     </table>
     <div class="count" id="count"></div>
   </div>
-  <p class="sub" style="margin-top:12px">“Pending” = assigned to a caller but not yet called. “Called” = at least one call outcome logged. A decline is counted against the area the person declined; if they were referred onward, they also appear in the new area’s pool. Leadership (do-not-allocate) is excluded.</p>
+  <p class="sub" style="margin-top:12px"><b>Assigned a Duty</b> = cleared into this area with no open conflict. <b>Accepted Duty</b> = confirmed on a call. <b>Call Pending</b> = assigned to a caller, call not yet completed. <b>Declined Duty</b> = declined (counted against the area the person declined; if referred onward they also hold a duty in the new area). Leadership (do-not-allocate) is excluded.</p>
 </div>
 
 <script src="reports.js"></script>

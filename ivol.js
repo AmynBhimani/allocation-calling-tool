@@ -1,6 +1,7 @@
 let ROWS = [];
 const selected = new Set();
 let showAll = false;
+const filters = { q:"", region:"", committee:"", jk:"", outcome:"" };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -15,6 +16,11 @@ async function boot(){
   document.getElementById('markBtn').addEventListener('click',()=>mark(true));
   document.getElementById('unmarkBtn').addEventListener('click',()=>mark(false));
   document.getElementById('exportBtn').addEventListener('click',exportCsv);
+  document.getElementById('q').addEventListener('input',e=>{filters.q=e.target.value.toLowerCase();render();});
+  document.getElementById('fRegion').addEventListener('change',e=>{filters.region=e.target.value;filters.jk="";buildFilterOptions();render();});
+  document.getElementById('fCommittee').addEventListener('change',e=>{filters.committee=e.target.value;render();});
+  document.getElementById('fJk').addEventListener('change',e=>{filters.jk=e.target.value;render();});
+  document.getElementById('fOutcome').addEventListener('change',e=>{filters.outcome=e.target.value;render();});
   await load();
 }
 
@@ -23,8 +29,30 @@ async function load(){
   try{
     const r=await fetch('/api/ivolreport'+(showAll?'?all=1':''));
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||("HTTP "+r.status));
-    const d=await r.json(); ROWS=d.rows||[]; clearBanner(); render();
+    const d=await r.json(); ROWS=d.rows||[]; clearBanner(); buildFilterOptions(); render();
   }catch(e){ banner('Could not load the report: '+e.message,true); document.getElementById('count').textContent="Load failed."; }
+}
+
+function buildFilterOptions(){
+  const regions=[...new Set(ROWS.map(r=>r.region))].sort();
+  const committees=[...new Set(ROWS.map(r=>r.committee).filter(Boolean))].sort();
+  const jkPool=ROWS.filter(r=>!filters.region || r.region===filters.region);
+  const jks=[...new Set(jkPool.map(r=>r.jk).filter(Boolean))].sort();
+  setOpts('fRegion','All regions',regions,filters.region);
+  setOpts('fCommittee','All committees',committees,filters.committee);
+  setOpts('fJk','All Jamatkhanas',jks,filters.jk);
+}
+function setOpts(id,allLabel,items,cur){
+  const sel=document.getElementById(id);
+  sel.innerHTML=`<option value="">${allLabel}</option>`+items.map(x=>`<option value="${x}" ${x===cur?'selected':''}>${x}</option>`).join('');
+}
+function matches(v){
+  if(filters.q && !((v.first+" "+v.last).toLowerCase().includes(filters.q))) return false;
+  if(filters.region && v.region!==filters.region) return false;
+  if(filters.committee && v.committee!==filters.committee) return false;
+  if(filters.jk && v.jk!==filters.jk) return false;
+  if(filters.outcome && v.outcome!==filters.outcome) return false;
+  return true;
 }
 
 function render(){
@@ -40,7 +68,12 @@ function render(){
     rows.innerHTML=`<tr><td colspan="7"><div class="empty">No volunteers are waiting for Better Impact entry. As callers mark people Accepted, they'll appear here.</div></td></tr>`;
     document.getElementById('count').textContent=""; updateBar(); return;
   }
-  rows.innerHTML=ROWS.map(v=>{
+  const view=ROWS.filter(matches);
+  if(!view.length){
+    rows.innerHTML=`<tr><td colspan="7"><div class="empty">No volunteers match these filters.</div></td></tr>`;
+    document.getElementById('count').textContent="No matches."; updateBar(); return;
+  }
+  rows.innerHTML=view.map(v=>{
     const checked=selected.has(v.id)?'checked':'';
     const date=v.accepted_at?new Date(v.accepted_at).toLocaleDateString():'—';
     return `<tr class="${v.entered?'entered-row':''}">
@@ -56,17 +89,18 @@ function render(){
   rows.querySelectorAll('.rowcb').forEach(cb=>cb.addEventListener('change',()=>{
     const id=+cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateBar();
   }));
-  document.getElementById('count').textContent=`${ROWS.length} shown · ${selected.size} selected`;
+  document.getElementById('count').textContent=`${view.length} shown · ${selected.size} selected`;
   updateBar();
 }
 
-function toggleAll(on){ if(on) ROWS.forEach(v=>selected.add(v.id)); else selected.clear(); render(); }
+function toggleAll(on){ const view=ROWS.filter(matches); if(on) view.forEach(v=>selected.add(v.id)); else view.forEach(v=>selected.delete(v.id)); render(); }
 function updateBar(){
   const n=selected.size;
+  const view=ROWS.filter(matches);
   document.getElementById('selcount').textContent=`${n} selected`;
   document.getElementById('markBtn').disabled=n===0;
   document.getElementById('unmarkBtn').disabled=n===0;
-  document.getElementById('cbAll').checked = n>0 && ROWS.length>0 && ROWS.every(v=>selected.has(v.id));
+  document.getElementById('cbAll').checked = view.length>0 && view.every(v=>selected.has(v.id));
 }
 
 async function mark(entered){
@@ -86,7 +120,7 @@ function exportCsv(){
   const cols=['First','Last','Username','Region','Jamatkhana','Committee','Outcome','Accepted','In BI'];
   const esc=s=>{ s=String(s==null?'':s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   const lines=[cols.join(',')];
-  for(const v of ROWS){
+  for(const v of ROWS.filter(matches)){
     lines.push([v.first,v.last,v.username,v.region,v.jk,v.committee,v.outcome,
       v.accepted_at?new Date(v.accepted_at).toLocaleDateString():'',v.entered?'Yes':'No'].map(esc).join(','));
   }

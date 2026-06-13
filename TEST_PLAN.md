@@ -188,4 +188,8 @@ Sign in as Super Admin or Admin → header link **iVol report**.
 - ☐ **Export to Excel** → an `ivol-input-<date>.csv` downloads; opens in Excel with the committee
   column and identifying fields. (Opens cleanly in Excel; full field list can be expanded once the
   iVol Lead finalizes it.)
+- ☐ Filters work: name search, Region, Committee, Jamatkhana (narrows to the chosen region),
+  and Outcome (Accepted/Negotiated). Filters combine.
+- ☐ **Export to Excel** exports exactly the filtered rows currently shown.
+- ☐ **Select all** selects the filtered set (so you can mark one committee's batch at a time).
 - ☐ A caller/quarterback cannot reach `/ivol.html` or `/api/ivolreport` (admin-only).

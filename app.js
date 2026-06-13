@@ -23,6 +23,7 @@ async function boot() {
       document.getElementById('whoami').innerHTML = `<b>${cp.userDetails}</b> · ${label}`;
       if (ROLES.includes('superadmin')) document.getElementById('seedBtn').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('adminLink').hidden = false;
+      if (ROLES.includes('superadmin')) document.getElementById('qbLink').hidden = false;
     }
   } catch (e) { /* SWA will have redirected if unauthorized */ }
 
@@ -44,7 +45,8 @@ async function boot() {
   // not a failed data load.
   const canRecon = ROLES.includes('superadmin') || ROLES.includes('admin') || ROLES.includes('dutyteam');
   if (!canRecon) {
-    const roleName = ROLES.includes('quarterback') ? 'Quarterback' : ROLES.includes('caller') ? 'Caller' : 'your role';
+    if (ROLES.includes('quarterback')) { window.location.replace('/quarterback.html'); return; }
+    const roleName = ROLES.includes('caller') ? 'Caller' : 'your role';
     banner(`This is the reconciliation screen for the Duty Allocation Team. A dedicated screen for <b>${roleName}</b> is coming — you'll be routed there once it's built.`, false);
     document.getElementById('count').textContent = '';
     return;

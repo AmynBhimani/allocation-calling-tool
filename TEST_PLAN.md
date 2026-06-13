@@ -85,3 +85,42 @@ Can't run until BI enables the key. When it's live (`bitest.py` returns 200):
 ## Health checks (any time something seems off)
 - ☐ `/api/ping` → JSON with `node: v18.x` (API host healthy).
 - ☐ `/.auth/me` → `userRoles` includes `superadmin` (and any roles you've been granted).
+
+---
+
+## F · Quarterback Assignment screen
+
+Set up first (as Super Admin, in Team & Roles): add a **Quarterback** for an area × region that has
+callable volunteers (e.g. Reception & Hospitality · BC). Then sign in as that quarterback (or use the
+**Assignment** link as Super Admin).
+
+**The pool**
+- ☐ The screen shows only **Stable/callable** volunteers whose **final area** is in your scope, in
+  your region. (Not In-reconciliation, Unassigned, or Leadership; not other areas.)
+- ☐ KPI cards: In your pool / Assigned / Unassigned.
+- ☐ If you own multiple areas, the **Viewing** dropdown filters to one area × region.
+- ☐ Filters work: JK (within scope), Team Leads, New, and the Unassigned/Assigned chips.
+- ☐ Name search works.
+
+**Adding your own callers**
+- ☐ Click **+ Add a caller** → enter an email, tick one or more of *your* areas → Add.
+- ☐ The caller appears in the **Choose a caller…** dropdown.
+- ☐ (Scope check) You only see your own areas to assign the caller to — not others.
+
+**Assigning (hand-pick)**
+- ☐ Tick a few volunteers → the action bar shows the count.
+- ☐ Pick a caller → **Assign** → those rows show the caller's email under "Assigned to."
+- ☐ Refresh → assignments persisted.
+
+**Assigning (bulk)**
+- ☐ Filter to a batch (e.g. unassigned Team Leads from one JK) → **Select all filtered** →
+  Assign to a caller in one go.
+- ☐ The "Unassigned" KPI drops by the batch size.
+
+**Unassign / reassign**
+- ☐ Select assigned volunteers → **Unassign** → they return to unassigned.
+- ☐ Assign already-assigned volunteers to a different caller → the caller updates.
+
+**Boundaries**
+- ☐ A quarterback only ever sees their own area × region pool (not the whole region).
+- ☐ As Super Admin, the **Assignment** screen shows the full pool (you can act for any area).

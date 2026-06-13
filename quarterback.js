@@ -15,7 +15,7 @@ async function boot(){
     const cp = me && me.clientPrincipal;
     if(cp){ ROLES = cp.userRoles||[];
       document.getElementById('whoami').innerHTML = `<b>${cp.userDetails}</b>`;
-      if(ROLES.includes('superadmin')) document.getElementById('reconLink').hidden=false;
+      if(ROLES.includes('superadmin')){document.getElementById('reconLink').hidden=false;var cl=document.getElementById('callerLink2');if(cl)cl.hidden=false;}
     }
   }catch(e){}
 
@@ -113,6 +113,8 @@ function render(){
     if(v.leader) badges.push('<span class="badge b-lead">Team Lead</span>');
     if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
     if(v.new) badges.push('<span class="badge b-new">New</span>');
+    if(v.no_bi) badges.push('<span class="badge b-nobi">No BI acct</span>');
+    if(v.referred_from) badges.push(`<span class="badge b-aff">Referred from ${v.referred_from}</span>`);
     const checked = selected.has(v.id)?'checked':'';
     const assignedCell = v.assigned ? `<span class="assigned-tag">${v.assigned}</span>` : '<span class="unassigned-tag">— unassigned —</span>';
     return `<tr data-id="${v.id}">

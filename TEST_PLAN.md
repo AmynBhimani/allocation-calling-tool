@@ -124,3 +124,39 @@ callable volunteers (e.g. Reception & Hospitality · BC). Then sign in as that q
 **Boundaries**
 - ☐ A quarterback only ever sees their own area × region pool (not the whole region).
 - ☐ As Super Admin, the **Assignment** screen shows the full pool (you can act for any area).
+
+---
+
+## G · Caller call screen
+
+Set up: as a quarterback (or Super Admin via Assignment), assign a few volunteers to a caller email,
+including one flagged **No BI acct**. Then sign in as that caller (or use **My Calls** as Super Admin).
+
+**Queue**
+- ☐ "To call" tab lists your assigned volunteers; count matches.
+- ☐ A **No BI acct** volunteer shows the red badge in the list.
+- ☐ Click someone → the call panel opens with their name, area, JK.
+
+**The call panel**
+- ☐ Contact info (cell, email) shows and is **editable**; only for your own assignments.
+- ☐ A **No BI account** person shows the "⚑ set them up" alert.
+- ☐ Notes box + six outcome buttons appear.
+
+**Outcomes**
+- ☐ **No answer** → logs an attempt, the person **stays** in "To call" (now showing "last: No answer").
+- ☐ **Thinking about it** → optional follow-up date; **stays** in queue.
+- ☐ **Accepted** → leaves "To call", appears in **Completed**.
+- ☐ **Withdrew** → leaves, appears in Completed.
+- ☐ **Decline → refer** → pick an area → confirm → leaves your queue.
+
+**Referral handoff**
+- ☐ As the **receiving area's** quarterback, the referred person appears in that pool,
+  unassigned, with a "Referred from …" badge — ready to assign to a caller there.
+
+**Completed view**
+- ☐ The **Completed** tab shows your finished calls (incl. referred-away ones, labelled with the
+  outcome you logged), read-only, with the call history.
+
+**Boundaries**
+- ☐ A caller only sees their own assigned people (not the whole area).
+- ☐ Contact details never appear on the reconciliation or assignment screens — only here.

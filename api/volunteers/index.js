@@ -25,6 +25,7 @@ function slim(v) {
     id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
     computed: v.computed_area, final: v.final_area, status: v.callable_status,
     affinity: !!v.affinity_flag, leader: !!v.leader_flag, new: !!v.never_reviewed,
+    no_bi: !!v.no_bi_account,
     claims: v.conflict_claims || []
   };
 }

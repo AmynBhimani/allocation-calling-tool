@@ -4,7 +4,7 @@ const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception 
 let DATA = [];
 let resolvedThisSession = 0;
 let ROLES = [];
-const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, leadership:false, conflict:false, leader:false, new:false };
+const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, leadership:false, conflict:false, leader:false, new:false, nobi:false };
 
 function banner(msg, isErr) {
   const b = document.getElementById('banner');
@@ -24,6 +24,7 @@ async function boot() {
       if (ROLES.includes('superadmin')) document.getElementById('seedBtn').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('adminLink').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('qbLink').hidden = false;
+      if (ROLES.includes('superadmin')) document.getElementById('callerLink').hidden = false;
     }
   } catch (e) { /* SWA will have redirected if unauthorized */ }
 
@@ -46,7 +47,8 @@ async function boot() {
   const canRecon = ROLES.includes('superadmin') || ROLES.includes('admin') || ROLES.includes('dutyteam');
   if (!canRecon) {
     if (ROLES.includes('quarterback')) { window.location.replace('/quarterback.html'); return; }
-    const roleName = ROLES.includes('caller') ? 'Caller' : 'your role';
+    if (ROLES.includes('caller')) { window.location.replace('/caller.html'); return; }
+    const roleName = 'your role';
     banner(`This is the reconciliation screen for the Duty Allocation Team. A dedicated screen for <b>${roleName}</b> is coming — you'll be routed there once it's built.`, false);
     document.getElementById('count').textContent = '';
     return;
@@ -119,6 +121,7 @@ function matches(v){
   if(filters.conflict && (!v.claims||!v.claims.length)) return false;
   if(filters.leader && !v.leader) return false;
   if(filters.new && !v.new) return false;
+  if(filters.nobi && !v.no_bi) return false;
   return true;
 }
 
@@ -154,6 +157,7 @@ function render(){
     if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
     if(v.leader) badges.push('<span class="badge b-lead">Leader</span>');
     if(v.new) badges.push('<span class="badge b-new">New</span>');
+    if(v.no_bi) badges.push('<span class="badge b-nobi">No BI acct</span>');
     const computed = v.computed ? `<span class="area-cell">${v.computed}</span>` : '<span class="area-none">no area selected</span>';
     const conflict = (v.claims&&v.claims.length) ? `<div class="conflict">Claimed by: ${v.claims.join(' · ')}</div>` : '';
     const isLead = v.status==="Leadership - Do Not Allocate";

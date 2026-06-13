@@ -53,6 +53,7 @@ function slim(v) {
     id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
     final: v.final_area, status: v.callable_status,
     affinity: !!v.affinity_flag, leader: !!v.leader_flag, new: !!v.never_reviewed,
+    no_bi: !!v.no_bi_account, referred_from: v.referred_from || null,
     assigned: v.assigned_caller || null
   };
 }
@@ -124,6 +125,8 @@ module.exports = async function (context, req) {
             v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "unassign" });
           } else {
             v.assigned_caller = caller;
+            v.call_done = false;          // fresh for the new caller (handles referred-in / reassigned)
+            v.call_outcome = null;
             v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "assign", to: caller });
           }
         });

@@ -97,3 +97,6 @@
   .kpi.lead .n{color:var(--lead)}
   tr.lead-row{background:#F7F5FB}
   tr.lead-row:hover{background:#F1EDF9}
+
+  /* No-BI-account badge */
+  .badge.b-nobi{background:#FCEAE6;color:#B23A2B;border-color:#F3D2CC}

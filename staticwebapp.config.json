@@ -26,7 +26,9 @@
     { "route": "/api/roleadmin", "allowedRoles": ["superadmin", "quarterback"] },
     { "route": "/admin.html", "allowedRoles": ["superadmin"] },
     { "route": "/quarterback.html", "allowedRoles": ["superadmin", "quarterback"] },
+    { "route": "/caller.html", "allowedRoles": ["superadmin", "caller"] },
     { "route": "/api/assign", "allowedRoles": ["superadmin", "quarterback"] },
+    { "route": "/api/calls", "allowedRoles": ["superadmin", "caller"] },
     { "route": "/api/volunteers", "allowedRoles": ["superadmin", "admin", "dutyteam"] },
     { "route": "/api/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] },
     { "route": "/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] }

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caller · My Calls</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .caller-wrap{max-width:1180px;margin:0 auto;padding:18px 24px 70px;display:grid;
+    grid-template-columns:minmax(320px,1fr) minmax(360px,1.1fr);gap:20px;align-items:start}
+  @media (max-width:880px){.caller-wrap{grid-template-columns:1fr}}
+  .tabs{display:flex;gap:8px;margin:4px 0 14px}
+  .tab{font:inherit;font-size:13.5px;font-weight:600;padding:7px 14px;border-radius:999px;cursor:pointer;
+    border:1px solid var(--line);background:var(--paper);color:var(--mute)}
+  .tab[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .queue{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+  .qitem{padding:12px 15px;border-bottom:1px solid #EDF3F4;cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:center}
+  .qitem:hover{background:#FAFCFC}
+  .qitem.active{background:#E9F4F4;box-shadow:inset 3px 0 0 var(--teal)}
+  .qitem .nm{font-weight:600;color:var(--ink)}
+  .qitem .meta{font-size:12px;color:var(--mute)}
+  .qitem .right{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+  .listcount{padding:10px 15px;font-size:12.5px;color:var(--mute);background:#FAFCFC;border-top:1px solid var(--line)}
+  .empty2{padding:40px 18px;text-align:center;color:var(--mute)}
+
+  .callcard{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+    padding:20px 22px;position:sticky;top:16px}
+  .callcard.empty-state{color:var(--mute);text-align:center;padding:50px 22px}
+  .callcard h2{font-family:Cambria,Georgia,serif;font-size:22px;margin:0 0 2px;color:var(--ink)}
+  .callcard .sub2{color:var(--mute);font-size:13px;margin-bottom:14px}
+  .nobi-alert{background:#FCEAE6;border:1px solid #F1C9C1;color:#A2392B;border-radius:10px;
+    padding:11px 13px;font-size:13.5px;margin-bottom:16px;line-height:1.45}
+  .nobi-alert b{color:#8A2C20}
+  .contact{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;margin-bottom:18px}
+  .contact label{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+  .contact input{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;width:100%;box-sizing:border-box}
+  .contact .phone{font-size:18px;font-weight:600;color:var(--ink)}
+  .note-area{width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:1px solid var(--line);
+    border-radius:9px;padding:10px;min-height:70px;resize:vertical;margin-bottom:14px}
+  .outcomes{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .obtn{font:inherit;font-size:14px;font-weight:600;padding:12px;border-radius:10px;cursor:pointer;border:1px solid var(--line);background:var(--paper);color:var(--ink);text-align:left}
+  .obtn:hover{border-color:var(--teal)}
+  .obtn small{display:block;font-weight:400;font-size:11.5px;color:var(--mute);margin-top:2px}
+  .obtn.accept{background:var(--stable-bg);border-color:#BfE6D8;color:var(--stable)}
+  .obtn.decline{background:#FBEEE2;border-color:#F0D9C4;color:var(--recon)}
+  .obtn.withdraw{background:#F3ECF1;border-color:#E6D2E0;color:#8A4B6B}
+  .refbox,.fubox{margin-top:12px;padding:12px;border:1px dashed var(--line);border-radius:10px;background:var(--wash)}
+  .refbox select,.fubox input{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:8px;width:100%;box-sizing:border-box;margin-top:6px}
+  .refbox .btn,.fubox .btn{margin-top:10px}
+  .btn{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:10px 16px;cursor:pointer}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.5}
+  .badge-row{margin-bottom:14px;display:flex;gap:6px;flex-wrap:wrap}
+  .log{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+  .log h4{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:0 0 8px}
+  .log .e{font-size:12.5px;color:var(--ink);margin-bottom:5px}
+  .log .e .t{color:var(--mute)}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>My Calls</h1>
+  <span class="sub" id="areaSub"></span>
+  <div class="userbox">
+    <a id="qbLink" class="ghost" href="/quarterback.html" hidden>Assignment</a>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="caller-wrap">
+  <div>
+    <div class="tabs">
+      <button class="tab" id="tabActive" aria-pressed="true">To call <span id="nActive"></span></button>
+      <button class="tab" id="tabDone" aria-pressed="false">Completed <span id="nDone"></span></button>
+    </div>
+    <div class="queue"><div id="qlist"></div><div class="listcount" id="qcount"></div></div>
+  </div>
+
+  <div id="callPanel" class="callcard empty-state">Select someone from your list to start a call.</div>
+</div>
+
+<script src="caller.js"></script>
+</body>
+</html>

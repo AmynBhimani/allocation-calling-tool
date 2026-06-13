@@ -4,6 +4,9 @@ const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception 
 let ACTIVE = [], COMPLETED = [], ROLES = [];
 let tab = "active";
 let current = null; // currently open volunteer
+let selectedOutcome = null;
+const OUTCOME_LABEL = { "Accepted":"Accepted","Negotiated":"Negotiated","Thinking":"Thinking about it",
+  "No answer":"No answer","Declined-referred":"Decline → refer","Withdrew":"Withdrew" };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -58,7 +61,7 @@ function renderAll(){
   document.getElementById('qcount').textContent=`${list.length} ${tab==="active"?"to call":"completed"}`;
 }
 
-function openCall(v){ current=v; renderAll(); renderPanel(v); }
+function openCall(v){ current=v; selectedOutcome=null; renderAll(); renderPanel(v); }
 
 function renderPanel(v){
   const p=document.getElementById('callPanel');
@@ -109,23 +112,36 @@ function renderPanel(v){
 }
 
 function chooseOutcome(o){
+  selectedOutcome = o;
+  // highlight the chosen outcome
+  document.querySelectorAll('.obtn').forEach(b=>b.classList.toggle('chosen', b.dataset.o===o));
   const extra=document.getElementById('extra');
+  let inner = '';
   if(o==="Declined-referred"){
-    extra.innerHTML=`<div class="refbox"><label>Refer to which area?</label>
-      <select id="refArea"><option value="">Choose an area…</option>${AREAS.filter(a=>a!==current.area).map(a=>`<option>${a}</option>`).join('')}</select>
-      <button class="btn" id="confirmRef">Confirm referral</button></div>`;
-    document.getElementById('confirmRef').addEventListener('click',()=>{
-      const ra=document.getElementById('refArea').value;
-      if(!ra){ banner('Pick an area to refer to.',true); return; }
-      save(o,{referral_area:ra});
-    });
+    inner=`<div class="refbox"><label>Refer to which area?</label>
+      <select id="refArea"><option value="">Choose an area…</option>${AREAS.filter(a=>a!==current.area).map(a=>`<option>${a}</option>`).join('')}</select></div>`;
   } else if(o==="Thinking"){
-    extra.innerHTML=`<div class="fubox"><label>Follow-up date (optional)</label>
-      <input type="date" id="fuDate"><button class="btn" id="confirmFu">Save</button></div>`;
-    document.getElementById('confirmFu').addEventListener('click',()=>save(o,{followup_date:document.getElementById('fuDate').value}));
-  } else {
-    save(o,{});
+    inner=`<div class="fubox"><label>Follow-up date (optional)</label><input type="date" id="fuDate"></div>`;
   }
+  extra.innerHTML = inner +
+    `<div class="saverow"><button class="btn" id="saveBtn">Save “${OUTCOME_LABEL[o]||o}”</button>
+       <button class="btn ghost2" id="cancelBtn">Cancel</button></div>`;
+  document.getElementById('saveBtn').addEventListener('click',commit);
+  document.getElementById('cancelBtn').addEventListener('click',()=>{ selectedOutcome=null; document.querySelectorAll('.obtn').forEach(b=>b.classList.remove('chosen')); extra.innerHTML=''; });
+}
+
+async function commit(){
+  const o = selectedOutcome;
+  if(!o) return;
+  const extra = {};
+  if(o==="Declined-referred"){
+    const ra=(document.getElementById('refArea')||{}).value||"";
+    if(!ra){ banner('Pick an area to refer to.',true); return; }
+    extra.referral_area = ra;
+  }
+  if(o==="Thinking"){ extra.followup_date=(document.getElementById('fuDate')||{}).value||""; }
+  document.getElementById('saveBtn').disabled = true;
+  await save(o, extra);
 }
 
 async function save(outcome, extra){
@@ -137,10 +153,10 @@ async function save(outcome, extra){
   try{
     const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
-    const stays = outcome==="No answer"||outcome==="Thinking";
     banner(`Logged <b>${outcome}</b> for ${current.first} ${current.last}.`, false);
-    current=null;
+    current=null; selectedOutcome=null;
     await load();
+    renderPanel(null);   // clear the right panel, ready for the next person
   }catch(e){ banner('Could not save: '+e.message,true); }
 }
 

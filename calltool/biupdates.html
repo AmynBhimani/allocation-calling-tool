@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BI Updates Needed</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="app">
+  <h1>BI Updates Needed</h1>
+  <span class="sub">Changes for iVol to apply in Better Impact</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap" style="max-width:1100px;margin:0 auto;padding:18px 24px 70px">
+  <p class="sub" style="margin:0 0 14px">Better Impact is the source of truth. When a caller edits a name, email, or phone — or reopens someone already entered in BI — it shows here so iVol can update BI, then mark it done.</p>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="actionbar idle" id="actionbar" style="margin:14px 0">
+    <span class="selcount" id="selcount">0 selected</span>
+    <button class="btn" id="doneBtn" disabled>Mark done in BI</button>
+  </div>
+
+  <div class="panel">
+    <table class="grid">
+      <thead><tr>
+        <th class="cbcol"><input type="checkbox" id="cbAll" aria-label="Select all"></th>
+        <th>Volunteer</th><th>Area</th><th>Region</th><th>What to update in BI</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="count" id="count"></div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="biupdates.js"></script>
+</body>
+</html>

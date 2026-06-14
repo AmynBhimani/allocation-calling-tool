@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calling Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="app">
+  <h1>Calling Dashboard</h1>
+  <span class="sub">Progress by area of interest</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap" style="max-width:1100px;margin:0 auto;padding:18px 24px 70px">
+  <div class="controls" style="margin-bottom:14px">
+    <label class="sub" style="color:var(--mute)">Region</label>
+    <select id="regionSel"><option value="">All regions</option></select>
+    <button class="btn ghost2" id="exportBtn">Export CSV</button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="panel" style="margin-top:14px">
+    <table class="grid">
+      <thead><tr>
+        <th>Area of interest</th>
+        <th class="num">Assigned a Duty</th>
+        <th class="num">Accepted Duty</th>
+        <th class="num">Call Pending</th>
+        <th class="num">Declined Duty</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+      <tfoot id="foot"></tfoot>
+    </table>
+    <div class="count" id="count"></div>
+  </div>
+  <p class="sub" style="margin-top:12px"><b>Assigned a Duty</b> = cleared into this area with no open conflict. <b>Accepted Duty</b> = confirmed on a call. <b>Call Pending</b> = assigned to a caller, call not yet completed. <b>Declined Duty</b> = declined (counted against the area the person declined; if referred onward they also hold a duty in the new area). Leadership (do-not-allocate) is excluded.</p>
+</div>
+
+<script src="nav.js"></script>
+<script src="reports.js"></script>
+</body>
+</html>

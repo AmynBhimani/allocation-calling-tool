@@ -138,3 +138,6 @@
 .backuplink summary { font-size: 12px; color: var(--mute, #6b7c85); cursor: pointer; }
 .backuplink .frow { display: flex; gap: 8px; margin-top: 8px; }
 .backuplink input { flex: 1; padding: 8px; border: 1px solid var(--line, #d9e2e6); border-radius: 8px; font: inherit; }
+
+/* caller: "Emailed" status pill */
+.badge.b-email{background:#FBF1E0;color:#9A6A12;border-color:#F0DEBE}

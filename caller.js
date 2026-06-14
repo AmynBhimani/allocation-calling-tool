@@ -7,7 +7,7 @@ let tab = "active";
 let current = null; // currently open volunteer
 let selectedOutcome = null;
 const OUTCOME_LABEL = { "Accepted":"Accepted","Thinking":"Thinking about it",
-  "No answer":"No answer","Declined-referred":"Decline → refer","Withdrew":"Withdrew" };
+  "No answer":"No answer","Declined-referred":"Decline → refer","Withdrew":"Withdrew","Emailed":"Emailed" };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -49,7 +49,7 @@ function renderAll(){
   }
   ql.innerHTML=list.map(v=>{
     const tag = tab==="done" ? `<span class="meta">${v.outcome||'done'}</span>`
-      : (v.confirm_sent && !v.confirmed ? `<span class="meta">✉ link sent${v.outcome?' · '+v.outcome:''}</span>`
+      : (v.confirm_sent && !v.confirmed ? `<span class="badge b-email">✉ Emailed</span>`
         : (v.outcome ? `<span class="meta">last: ${v.outcome}</span>` : '<span class="unassigned-tag">not yet called</span>'));
     const nobi = v.no_bi_account ? ' <span class="badge b-nobi">No BI acct</span>' : '';
     return `<div class="qitem ${current&&current.id===v.id?'active':''}" data-id="${v.id}">

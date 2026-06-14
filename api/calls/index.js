@@ -155,6 +155,9 @@ module.exports = async function (context, req) {
           v.confirm_token = token;
           v.confirm_sent_at = new Date().toISOString();
           v.confirmed_at = null;          // fresh send resets any prior confirmation state
+          // Reflect the email in the calling-status tag. They stay in the active queue
+          // (call_done stays false) until they click the link (→ Accepted) or are re-handled.
+          if (!v.call_done) v.call_outcome = "Emailed";
           v.activity_log = v.activity_log || [];
           v.activity_log.push({ ts: v.confirm_sent_at, actor: me, action: "confirm_email_sent" });
           info = { token, first: v.first, last: v.last, email: v.email || "", area: v.final_area || "" };

@@ -293,3 +293,9 @@ Header link **BI import**. The manual alternative to the API sync.
 1. A tampered/!valid token shows "This link isn't valid" (never a login prompt).
 2. Re-clicking an already-accepted link is harmless ("already confirmed").
 3. If the caller **reopens** the person or a QB **reassigns** them, the old link stops working (a fresh email would be needed).
+
+**N4 — Emailed status tag**
+1. Create an accept-link email for someone in your active list. Their tag changes to a gold **✉ Emailed** pill and they stay in your active queue (not Done).
+2. Open the confirm link as the volunteer and accept. Back in the caller view, refresh: they move to **Done** tagged **Accepted**, and appear on the iVol-input report.
+3. On the Dashboard they count under **Call Pending** while Emailed, then under **Accepted Duty** once confirmed.
+

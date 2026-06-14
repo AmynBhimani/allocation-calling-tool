@@ -128,3 +128,13 @@
 /* --- shared top nav --- */
 .navlinks { display: contents; }
 .userbox .ghost.active { color: var(--teal, #028090); font-weight: 700; }
+
+/* --- caller: rich email preview --- */
+.empreview { border: 1px solid var(--line, #d9e2e6); border-radius: 8px; padding: 12px 14px; background: #fff; font: inherit; line-height: 1.5; }
+.empreview p { margin: 0 0 10px; }
+.empreview p:last-child { margin-bottom: 0; }
+.empreview a { color: var(--teal, #028090); font-weight: 600; }
+.backuplink { margin-top: 10px; }
+.backuplink summary { font-size: 12px; color: var(--mute, #6b7c85); cursor: pointer; }
+.backuplink .frow { display: flex; gap: 8px; margin-top: 8px; }
+.backuplink input { flex: 1; padding: 8px; border: 1px solid var(--line, #d9e2e6); border-radius: 8px; font: inherit; }

@@ -281,7 +281,7 @@ Header link **BI import**. The manual alternative to the API sync.
 
 **N1 · Caller creates the email (copy & paste)**
 1. As a caller, open someone you couldn't reach (e.g., after logging "No answer"). Confirm the **Create accept-link email** button shows (hidden with a note if they have no email on file).
-2. Click it → a box appears with **To / Subject / Message** (the message contains the accept link on its own line). Use the **Copy** buttons, then paste into a new email from iiCanada Outlook (web) and send.
+2. Click it → a box appears with **To / Subject** and a formatted **Message preview** showing a clickable "Click here to accept this seva" link. Click **Copy email**, paste into a new message in iiCanada Outlook (web) — the link stays clickable — paste To/Subject into their fields, and send. (A collapsible "plain link" backup is there if a paste ever strips the link.)
 3. The person stays in your **active** list, now tagged **✉ link sent**; the button becomes **Re-create accept-link email**.
 
 **N2 · Volunteer accepts via the link (no login)**

@@ -197,29 +197,43 @@ async function sendConfirmEmail(v){
     const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'send_confirm',user_id:v.id,region:v.region})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
     const url=`${location.origin}/confirm.html?u=${encodeURIComponent(v.id)}&r=${encodeURIComponent(v.region)}&t=${encodeURIComponent(d.token)}`;
+    const urlAttr=url.replace(/&/g,'&amp;');
     const to=d.email||v.email;
     let signName=''; try{ signName=(document.getElementById('callerName')||{}).value||localStorage.getItem('vrt_caller_name')||''; }catch(e){}
     signName=(signName||'').trim()||'[Your name]';
     const subject="Volunteer Duty Confirmation - Mawlana Hazar Imam's Visit";
-    const body=`Ya Ali Madad dear ${d.first||v.first},\n\nWe are pleased to inform you that you have been assigned to a duty at the upcoming visit of our beloved Mawlana Hazar Imam to Canada. This assignment was based on the area(s) of interest you indicated during the registration process. We hope you are excited to meet your fellow volunteers and participate in delivering a truly memorable, blessed, and joyous event.\n\nYour assigned role is as follows:\n\n${d.area||v.area}\n\nPlease click the link below to accept this assignment (or paste it into your web browser):\n\n${url}\n\nYou will receive another email confirming the details of your seva shortly. If you have questions, please do not hesitate to reach out to me at this email address.\n\nWarm regards,\n${signName}\nVolunteer Experience Team`;
+    const first=escapeHtml(d.first||v.first), areaTxt=escapeHtml(d.area||v.area), sign=escapeHtml(signName);
+    const intro="We are pleased to inform you that you have been assigned to a duty at the upcoming visit of our beloved Mawlana Hazar Imam to Canada. This assignment was based on the area(s) of interest you indicated during the registration process. We hope you are excited to meet your fellow volunteers and participate in delivering a truly memorable, blessed, and joyous event.";
+    const closing="You will receive another email confirming the details of your seva shortly. If you have questions, please do not hesitate to reach out to me at this email address.";
+    // rich HTML version — the link shows as friendly text and stays clickable when pasted into Outlook
+    const bodyHtml=`<p>Ya Ali Madad dear ${first},</p>`
+      +`<p>${intro}</p>`
+      +`<p>Your assigned role is as follows:</p>`
+      +`<p><b>${areaTxt}</b></p>`
+      +`<p><a href="${urlAttr}">Click here to accept this seva</a></p>`
+      +`<p>${closing}</p>`
+      +`<p>Warm regards,<br>${sign}<br>Volunteer Experience Team</p>`;
+    // plain-text fallback (used if pasted into a plain-text field) — keeps the full URL
+    const bodyPlain=`Ya Ali Madad dear ${d.first||v.first},\n\n${intro}\n\nYour assigned role is as follows:\n\n${d.area||v.area}\n\nTo accept this seva, click here:\n${url}\n\n${closing}\n\nWarm regards,\n${signName}\nVolunteer Experience Team`;
     const box=document.getElementById('emailCompose');
     box.innerHTML=`
       <div class="compose">
         <div class="frow"><label>To</label><input id="emTo" readonly value="${escapeAttr(to)}"><button class="btn ghost2 cbtn" data-c="emTo">Copy</button></div>
         <div class="frow"><label>Subject</label><input id="emSubj" readonly value="${escapeAttr(subject)}"><button class="btn ghost2 cbtn" data-c="emSubj">Copy</button></div>
-        <label class="emlabel">Message (you can edit before copying)</label>
-        <textarea id="emBody" class="embody" rows="16">${escapeHtml(body)}</textarea>
+        <label class="emlabel">Message preview</label>
+        <div id="emPreview" class="empreview">${bodyHtml}</div>
         <div class="composeacts">
-          <button class="btn" id="copyBody">Copy message</button>
-          <button class="btn ghost2" id="copyAll">Copy everything</button>
+          <button class="btn" id="copyMsg">Copy email</button>
         </div>
-        <div class="contact-note">Open a new email in your <b>iiCanada Outlook</b>, paste the To/Subject/Message, and send. Keep the link on its own line so it stays clickable. The link works when clicked or pasted into a browser.</div>
+        <div class="contact-note">Click <b>Copy email</b>, then paste into a new message in your <b>iiCanada Outlook</b> — the “Click here to accept this seva” link stays clickable. Paste the To and Subject into their own fields.</div>
+        <details class="backuplink"><summary>Link not clickable after pasting? Use the plain link instead</summary>
+          <div class="frow"><input id="emUrl" readonly value="${escapeAttr(url)}"><button class="btn ghost2 cbtn" data-c="emUrl">Copy link</button></div>
+        </details>
       </div>`;
     box.querySelectorAll('.cbtn').forEach(b=>b.addEventListener('click',()=>copyText((document.getElementById(b.dataset.c)||{}).value||'',b)));
-    document.getElementById('copyBody').addEventListener('click',e=>copyText((document.getElementById('emBody')||{}).value||'',e.currentTarget));
-    document.getElementById('copyAll').addEventListener('click',e=>copyText(`To: ${to}\nSubject: ${subject}\n\n`+((document.getElementById('emBody')||{}).value||''),e.currentTarget));
+    document.getElementById('copyMsg').addEventListener('click',e=>copyRich(bodyHtml,bodyPlain,e.currentTarget));
     v.confirm_sent=true;
-    banner(`Accept-link email ready for ${v.first} ${v.last}. Copy it into a new Outlook message and send.`, false);
+    banner(`Accept-link email ready for ${v.first} ${v.last}. Click “Copy email”, then paste into a new Outlook message.`, false);
   }catch(e){ banner('Could not prepare the email: '+e.message,true); }
   finally{ if(btn) btn.disabled=false; }
 }
@@ -229,6 +243,33 @@ function copyText(txt, btn){
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt,done));
   } else { fallbackCopy(txt,done); }
+}
+// Copy as rich text (HTML) with a plain-text fallback, so a pasted link keeps its friendly wording.
+function copyRich(html, plain, btn){
+  const done=()=>{ if(btn){ const o=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=o,1500);} };
+  if(navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem!=='undefined'){
+    try{
+      const item=new ClipboardItem({
+        'text/html': new Blob([html],{type:'text/html'}),
+        'text/plain': new Blob([plain],{type:'text/plain'})
+      });
+      navigator.clipboard.write([item]).then(done).catch(()=>fallbackRich(html,plain,done));
+      return;
+    }catch(e){ /* fall through */ }
+  }
+  fallbackRich(html, plain, done);
+}
+function fallbackRich(html, plain, done){
+  // select a temporary rich element and use execCommand so the HTML link is preserved
+  const div=document.createElement('div');
+  div.setAttribute('contenteditable','true'); div.innerHTML=html;
+  div.style.position='fixed'; div.style.left='-9999px'; div.style.opacity='0';
+  document.body.appendChild(div);
+  const range=document.createRange(); range.selectNodeContents(div);
+  const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  sel.removeAllRanges(); document.body.removeChild(div);
+  if(ok){ done&&done(); } else { fallbackCopy(plain, done); }
 }
 function fallbackCopy(txt, done){
   const ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';

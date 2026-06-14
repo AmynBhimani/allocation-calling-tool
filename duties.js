@@ -9,8 +9,6 @@ async function boot(){
     const me=await (await fetch('/.auth/me')).json();
     const cp=me&&me.clientPrincipal;
     if(cp){ ROLES=cp.userRoles||[]; document.getElementById('whoami').innerHTML=`<b>${cp.userDetails}</b>`;
-      if(ROLES.includes('superadmin')||ROLES.includes('admin')) document.getElementById('reconLink').hidden=false;
-      if(ROLES.includes('superadmin')||ROLES.includes('quarterback')) document.getElementById('qbLink').hidden=false;
     }
   }catch(e){}
   document.getElementById('addBtn').addEventListener('click', addOne);

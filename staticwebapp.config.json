@@ -21,6 +21,8 @@
     { "route": "/.auth/login/aad", "statusCode": 404 },
     { "route": "/api/ping", "allowedRoles": ["anonymous"] },
     { "route": "/unauthorized.html", "allowedRoles": ["anonymous"] },
+    { "route": "/confirm.html", "allowedRoles": ["anonymous"] },
+    { "route": "/api/confirm", "allowedRoles": ["anonymous"] },
     { "route": "/api/seed", "allowedRoles": ["superadmin"] },
     { "route": "/api/sync", "allowedRoles": ["superadmin"] },
     { "route": "/api/backup", "allowedRoles": ["superadmin"] },

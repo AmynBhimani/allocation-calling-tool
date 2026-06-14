@@ -15,8 +15,6 @@ async function boot(){
     const cp = me && me.clientPrincipal;
     if(cp){ ROLES = cp.userRoles||[];
       document.getElementById('whoami').innerHTML = `<b>${cp.userDetails}</b>`;
-      if(ROLES.includes('superadmin')){document.getElementById('reconLink').hidden=false;var cl=document.getElementById('callerLink2');if(cl)cl.hidden=false;}
-      var dl=document.getElementById('dutiesLink'); if(dl && (ROLES.includes('superadmin')||ROLES.includes('quarterback'))) dl.hidden=false;
     }
   }catch(e){}
 

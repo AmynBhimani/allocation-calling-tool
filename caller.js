@@ -16,8 +16,7 @@ async function boot(){
   try{
     const me=await (await fetch('/.auth/me')).json();
     const cp=me&&me.clientPrincipal;
-    if(cp){ ROLES=cp.userRoles||[]; document.getElementById('whoami').innerHTML=`<b>${cp.userDetails}</b>`;
-      if(ROLES.includes('superadmin')||ROLES.includes('quarterback')) document.getElementById('qbLink').hidden=false; }
+    if(cp){ ROLES=cp.userRoles||[]; document.getElementById('whoami').innerHTML=`<b>${cp.userDetails}</b>`; }
   }catch(e){}
   document.getElementById('tabActive').addEventListener('click',()=>{tab="active";current=null;renderAll();});
   document.getElementById('tabDone').addEventListener('click',()=>{tab="done";current=null;renderAll();});
@@ -50,7 +49,8 @@ function renderAll(){
   }
   ql.innerHTML=list.map(v=>{
     const tag = tab==="done" ? `<span class="meta">${v.outcome||'done'}</span>`
-      : (v.outcome ? `<span class="meta">last: ${v.outcome}</span>` : '<span class="unassigned-tag">not yet called</span>');
+      : (v.confirm_sent && !v.confirmed ? `<span class="meta">✉ link sent${v.outcome?' · '+v.outcome:''}</span>`
+        : (v.outcome ? `<span class="meta">last: ${v.outcome}</span>` : '<span class="unassigned-tag">not yet called</span>'));
     const nobi = v.no_bi_account ? ' <span class="badge b-nobi">No BI acct</span>' : '';
     return `<div class="qitem ${current&&current.id===v.id?'active':''}" data-id="${v.id}">
       <div><div class="nm">${v.first} ${v.last}${nobi}</div><div class="meta">${v.area||'—'} · ${v.jk}</div></div>
@@ -103,10 +103,21 @@ function renderPanel(v){
     return;
   }
 
+  let savedName=''; try{ savedName=localStorage.getItem('vrt_caller_name')||''; }catch(e){}
+  const emailRow = v.email
+    ? `<div class="emailbox">
+         ${(v.confirm_sent && !v.confirmed) ? `<div class="contact-note">✉ Accept-link email prepared earlier — awaiting their click.</div>` : ''}
+         <div class="frow"><label>Your name</label><input id="callerName" placeholder="e.g., Amyn Bhimani" value="${escapeAttr(savedName)}"></div>
+         <button class="btn ghost2" id="emailBtn">${(v.confirm_sent && !v.confirmed) ? 'Re-create accept-link email' : 'Create accept-link email'}</button>
+         <div class="contact-note">Tried and couldn't reach them? Create a ready-to-send email with an accept link, then copy &amp; paste it into a new message from your iiCanada Outlook. Once they confirm, no more calls needed.</div>
+         <div id="emailCompose"></div>
+       </div>`
+    : `<div class="contact-note">No email on file — an accept link can't be sent. Keep trying by phone.</div>`;
   p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk} · #${v.id}</div>
     <div class="badge-row">${badges.join('')}</div>
     ${nobiAlert}
     ${contact}
+    ${emailRow}
     <textarea class="note-area" id="note" placeholder="Notes from the call…"></textarea>
     <div class="outcomes">
       <button class="obtn accept" data-o="Accepted">Accepted<small>Confirmed for ${v.area||'their area'}</small></button>
@@ -117,6 +128,8 @@ function renderPanel(v){
     </div>
     <div id="extra"></div>`;
   p.querySelectorAll('.obtn').forEach(b=>b.addEventListener('click',()=>chooseOutcome(b.dataset.o)));
+  const eb=document.getElementById('emailBtn'); if(eb) eb.addEventListener('click',()=>sendConfirmEmail(v));
+  const cn=document.getElementById('callerName'); if(cn) cn.addEventListener('input',()=>{ try{ localStorage.setItem('vrt_caller_name', cn.value); }catch(e){} });
   current=v;
 }
 
@@ -176,6 +189,52 @@ async function reopen(v){
     banner(`Reopened ${v.first} ${v.last} — back in your active list.`, false);
     current=null; tab="active"; await load();
   }catch(e){ banner('Could not reopen: '+e.message,true); }
+}
+
+async function sendConfirmEmail(v){
+  const btn=document.getElementById('emailBtn'); if(btn) btn.disabled=true;
+  try{
+    const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'send_confirm',user_id:v.id,region:v.region})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
+    const url=`${location.origin}/confirm.html?u=${encodeURIComponent(v.id)}&r=${encodeURIComponent(v.region)}&t=${encodeURIComponent(d.token)}`;
+    const to=d.email||v.email;
+    let signName=''; try{ signName=(document.getElementById('callerName')||{}).value||localStorage.getItem('vrt_caller_name')||''; }catch(e){}
+    signName=(signName||'').trim()||'[Your name]';
+    const subject="Volunteer Duty Confirmation - Mawlana Hazar Imam's Visit";
+    const body=`Ya Ali Madad dear ${d.first||v.first},\n\nWe are pleased to inform you that you have been assigned to a duty at the upcoming visit of our beloved Mawlana Hazar Imam to Canada. This assignment was based on the area(s) of interest you indicated during the registration process. We hope you are excited to meet your fellow volunteers and participate in delivering a truly memorable, blessed, and joyous event.\n\nYour assigned role is as follows:\n\n${d.area||v.area}\n\nPlease click the link below to accept this assignment (or paste it into your web browser):\n\n${url}\n\nYou will receive another email confirming the details of your seva shortly. If you have questions, please do not hesitate to reach out to me at this email address.\n\nWarm regards,\n${signName}\nVolunteer Experience Team`;
+    const box=document.getElementById('emailCompose');
+    box.innerHTML=`
+      <div class="compose">
+        <div class="frow"><label>To</label><input id="emTo" readonly value="${escapeAttr(to)}"><button class="btn ghost2 cbtn" data-c="emTo">Copy</button></div>
+        <div class="frow"><label>Subject</label><input id="emSubj" readonly value="${escapeAttr(subject)}"><button class="btn ghost2 cbtn" data-c="emSubj">Copy</button></div>
+        <label class="emlabel">Message (you can edit before copying)</label>
+        <textarea id="emBody" class="embody" rows="16">${escapeHtml(body)}</textarea>
+        <div class="composeacts">
+          <button class="btn" id="copyBody">Copy message</button>
+          <button class="btn ghost2" id="copyAll">Copy everything</button>
+        </div>
+        <div class="contact-note">Open a new email in your <b>iiCanada Outlook</b>, paste the To/Subject/Message, and send. Keep the link on its own line so it stays clickable. The link works when clicked or pasted into a browser.</div>
+      </div>`;
+    box.querySelectorAll('.cbtn').forEach(b=>b.addEventListener('click',()=>copyText((document.getElementById(b.dataset.c)||{}).value||'',b)));
+    document.getElementById('copyBody').addEventListener('click',e=>copyText((document.getElementById('emBody')||{}).value||'',e.currentTarget));
+    document.getElementById('copyAll').addEventListener('click',e=>copyText(`To: ${to}\nSubject: ${subject}\n\n`+((document.getElementById('emBody')||{}).value||''),e.currentTarget));
+    v.confirm_sent=true;
+    banner(`Accept-link email ready for ${v.first} ${v.last}. Copy it into a new Outlook message and send.`, false);
+  }catch(e){ banner('Could not prepare the email: '+e.message,true); }
+  finally{ if(btn) btn.disabled=false; }
+}
+
+function copyText(txt, btn){
+  const done=()=>{ if(btn){ const o=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=o,1500);} };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt,done));
+  } else { fallbackCopy(txt,done); }
+}
+function fallbackCopy(txt, done){
+  const ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try{ document.execCommand('copy'); done&&done(); }catch(e){}
+  document.body.removeChild(ta);
 }
 
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

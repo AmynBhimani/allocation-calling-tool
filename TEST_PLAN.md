@@ -274,3 +274,22 @@ Header link **BI import**. The manual alternative to the API sync.
 **M10 · Duties**
 1. Bulk-upload with a typo’d Area of Interest → rejected rows are listed by name with the bad area called out.
 2. Add a duty whose **name OR description** matches an existing one in the area (e.g., “Bus Driver” with the same description as “Driver”) → it’s flagged as a possible duplicate, not silently dropped.
+
+---
+
+## Sequence N — Email accept-link (couldn't-reach fallback)
+
+**N1 · Caller creates the email (copy & paste)**
+1. As a caller, open someone you couldn't reach (e.g., after logging "No answer"). Confirm the **Create accept-link email** button shows (hidden with a note if they have no email on file).
+2. Click it → a box appears with **To / Subject / Message** (the message contains the accept link on its own line). Use the **Copy** buttons, then paste into a new email from iiCanada Outlook (web) and send.
+3. The person stays in your **active** list, now tagged **✉ link sent**; the button becomes **Re-create accept-link email**.
+
+**N2 · Volunteer accepts via the link (no login)**
+1. Open the confirm link in a browser where you're NOT signed in (clicking it, or pasting it into the address bar — both work) → a clean page: "Hi <name>! … Accept my duty".
+2. Click **Accept my duty** → success screen. Behind the scenes they're marked **Accepted** and flow to the iVol report like any accept.
+3. Back in the caller's view, they leave Active and appear in **Done → Accepted**. No further email/call needed.
+
+**N3 · Safety checks**
+1. A tampered/!valid token shows "This link isn't valid" (never a login prompt).
+2. Re-clicking an already-accepted link is harmless ("already confirmed").
+3. If the caller **reopens** the person or a QB **reassigns** them, the old link stops working (a fresh email would be needed).

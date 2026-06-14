@@ -11,9 +11,7 @@
   <h1>Calling Dashboard</h1>
   <span class="sub">Progress by area of interest</span>
   <div class="userbox">
-    <a class="ghost" href="/index.html">Reconcile</a>
-    <a class="ghost" href="/quarterback.html">Assign Callers</a>
-    <a class="ghost" href="/ivol.html">iVol report</a>
+    <nav id="navlinks" class="navlinks"></nav>
     <span id="whoami" class="whoami"></span>
     <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
   </div>
@@ -47,6 +45,7 @@
   <p class="sub" style="margin-top:12px"><b>Assigned a Duty</b> = cleared into this area with no open conflict. <b>Accepted Duty</b> = confirmed on a call. <b>Call Pending</b> = assigned to a caller, call not yet completed. <b>Declined Duty</b> = declined (counted against the area the person declined; if referred onward they also hold a duty in the new area). Leadership (do-not-allocate) is excluded.</p>
 </div>
 
+<script src="nav.js"></script>
 <script src="reports.js"></script>
 </body>
 </html>

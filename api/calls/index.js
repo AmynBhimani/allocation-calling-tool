@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { getContainer, readRegion, mutateVolunteer, REGIONS } = require("../shared/store");
 
@@ -49,6 +50,7 @@ function full(v) {
     leader: !!v.leader_flag, affinity: !!v.affinity_flag, no_bi_account: !!v.no_bi_account,
     referred_from: v.referred_from || null,
     outcome: v.call_outcome || null, done: !!v.call_done,
+    confirm_sent: !!v.confirm_sent_at, confirmed: !!v.confirmed_at,
     log: (v.activity_log || []).filter(e => e.action === "outcome")
   };
 }
@@ -97,11 +99,16 @@ module.exports = async function (context, req) {
         const { records } = await readRegion(container, region);
         for (const v of records) {
           const mineNow = v.assigned_caller === me;
-          if (mineNow && !v.call_done) active.push(full(v));
-          else if (loggedByMe(v, me)) {
+          if (mineNow && !v.call_done) { active.push(full(v)); continue; }
+          const iLoggedOutcome = loggedByMe(v, me);
+          const iSentEmail = (v.activity_log || []).some(e => e.actor === me && e.action === "confirm_email_sent");
+          // show in Done if I logged an outcome, OR it's mine/I emailed it and it's now done (e.g. self-confirmed via the link)
+          if (iLoggedOutcome || ((mineNow || iSentEmail) && v.call_done)) {
             const f = full(v);
-            const mine = (v.activity_log || []).filter(e => e.actor === me && e.action === "outcome").pop();
-            if (mine) f.outcome = mine.outcome;   // show what I logged, even if the record moved on
+            // latest outcome from me or from the volunteer's own link-accept (which my email triggered)
+            const rel = (v.activity_log || []).filter(e => e.action === "outcome" && (e.actor === me || e.actor === "self-confirm")).pop();
+            if (rel) f.outcome = rel.outcome;
+            else if (v.call_outcome) f.outcome = v.call_outcome;
             completed.push(f);
           }
         }
@@ -129,12 +136,33 @@ module.exports = async function (context, req) {
           v.activity_log.push({ ts: new Date().toISOString(), actor: me, action: "reopen", from: v.call_outcome || null });
           if (v.ivol_entered) v.bi_correction_needed = true;   // was entered in BI, now reopened → iVol must correct
           v.call_done = false; v.call_outcome = null; v.ivol_ready = false;
+          v.confirm_token = null; v.confirm_sent_at = null; v.confirmed_at = null;
           // assigned_caller stays, so it reappears in that caller's active list
         });
         if (rr.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
         if (rr.extra && rr.extra.skip) { context.res = { status: 403, body: { error: "That volunteer isn't assigned to you." } }; return; }
         if (!rr.ok) { context.res = { status: 409, body: { error: "Couldn't reopen — please retry." } }; return; }
         context.res = { body: { ok: true, reopened: true } };
+        return;
+      }
+
+      // Generate a one-time confirmation link the caller emails from their own mail app.
+      if (op === "send_confirm") {
+        let info = null;
+        const rr = await mutateVolunteer(container, region, user_id, (v) => {
+          if (v.assigned_caller !== me && !isSuper) return { skip: true };
+          const token = crypto.randomBytes(24).toString("base64url");
+          v.confirm_token = token;
+          v.confirm_sent_at = new Date().toISOString();
+          v.confirmed_at = null;          // fresh send resets any prior confirmation state
+          v.activity_log = v.activity_log || [];
+          v.activity_log.push({ ts: v.confirm_sent_at, actor: me, action: "confirm_email_sent" });
+          info = { token, first: v.first, last: v.last, email: v.email || "", area: v.final_area || "" };
+        });
+        if (rr.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
+        if (rr.extra && rr.extra.skip) { context.res = { status: 403, body: { error: "That volunteer isn't assigned to you." } }; return; }
+        if (!rr.ok) { context.res = { status: 409, body: { error: "Couldn't prepare the email — please retry." } }; return; }
+        context.res = { body: { ok: true, user_id, region, token: info.token, email: info.email, first: info.first, last: info.last, area: info.area } };
         return;
       }
 

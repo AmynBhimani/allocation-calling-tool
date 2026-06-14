@@ -1,0 +1,32 @@
+// Shared top navigation — renders the same role-appropriate links on every page,
+// so the menu is identical wherever you are. Gates match the route permissions.
+(function(){
+  var NAV=[
+    {href:'/index.html',       label:'Reconcile',       roles:['superadmin','admin','dutyteam']},
+    {href:'/quarterback.html', label:'Assign Callers',   roles:['superadmin','quarterback']},
+    {href:'/caller.html',      label:'My Calls',         roles:['superadmin','caller']},
+    {href:'/ivol.html',        label:'iVol report',      roles:['superadmin','admin']},
+    {href:'/biupdates.html',   label:'BI updates',       roles:['superadmin','admin']},
+    {href:'/reports.html',     label:'Dashboard',        roles:['superadmin','admin']},
+    {href:'/duties.html',      label:'Duties',           roles:['superadmin','admin','quarterback']},
+    {href:'/admin.html',       label:'Team & Roles',     roles:['superadmin']},
+    {href:'/fileimport.html',  label:'BI import',        roles:['superadmin']},
+    {href:'/api/backup',       label:'Download backup',  roles:['superadmin']}
+  ];
+  function curPath(){ var p=location.pathname; if(!p||p==='/') p='/index.html'; return p; }
+  function render(roles){
+    var box=document.getElementById('navlinks'); if(!box) return;
+    var path=curPath(), html='';
+    for(var i=0;i<NAV.length;i++){
+      var n=NAV[i], ok=false;
+      for(var j=0;j<n.roles.length;j++){ if(roles.indexOf(n.roles[j])>=0){ ok=true; break; } }
+      if(!ok) continue;
+      var active=(n.href===path);
+      html+='<a class="ghost'+(active?' active':'')+'" href="'+n.href+'"'+(active?' aria-current="page"':'')+'>'+n.label+'</a>';
+    }
+    box.innerHTML=html;
+  }
+  fetch('/.auth/me').then(function(r){return r.json();}).then(function(me){
+    var cp=me&&me.clientPrincipal; render((cp&&cp.userRoles)||[]);
+  }).catch(function(){ render([]); });
+})();

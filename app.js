@@ -22,17 +22,7 @@ async function boot() {
       ROLES = cp.userRoles || [];
       const label = ROLES.filter(r => r !== 'anonymous' && r !== 'authenticated').join(', ') || 'no role';
       document.getElementById('whoami').innerHTML = `<b>${cp.userDetails}</b> · ${label}`;
-      if (ROLES.includes('superadmin') || ROLES.includes('admin') || ROLES.includes('dutyteam')) document.getElementById('reconLinkSelf').hidden = false;
       if (ROLES.includes('superadmin')) document.getElementById('seedBtn').hidden = false;
-      if (ROLES.includes('superadmin')) document.getElementById('adminLink').hidden = false;
-      if (ROLES.includes('superadmin')) document.getElementById('qbLink').hidden = false;
-      if (ROLES.includes('superadmin')) document.getElementById('callerLink').hidden = false;
-      if (ROLES.includes('superadmin')) document.getElementById('backupLink').hidden = false;
-      if (ROLES.includes('superadmin')) document.getElementById('importLink').hidden = false;
-      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('ivolLink').hidden = false;
-      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('dutiesLink').hidden = false;
-      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('biLink').hidden = false;
-      if (ROLES.includes('superadmin') || ROLES.includes('admin')) document.getElementById('reportsLink').hidden = false;
     }
   } catch (e) { /* SWA will have redirected if unauthorized */ }
 

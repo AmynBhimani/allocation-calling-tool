@@ -110,3 +110,21 @@
 .chg .to { color: var(--ink, #1B3A4B); font-weight: 600; }
 .chg.reopen { color: var(--accent, #C44536); font-weight: 600; }
 .cols { font-size: 13px; }
+
+/* --- caller: email-an-accept-link --- */
+.emailbox { margin: 6px 0 4px; }
+.copylink { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; color: var(--ink, #1B3A4B); }
+
+/* --- caller: compose-and-copy accept-link email --- */
+.compose { margin-top: 10px; border: 1px solid var(--line, #d9e2e6); border-radius: 10px; padding: 12px; background: #fbfdfd; }
+.compose .frow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.compose .frow label { width: 64px; font-size: 12px; color: var(--mute, #6b7c85); }
+.compose .frow input { flex: 1; padding: 8px; border: 1px solid var(--line, #d9e2e6); border-radius: 8px; background: #fff; font: inherit; }
+.compose .emlabel { display: block; font-size: 12px; color: var(--mute, #6b7c85); margin: 4px 0; }
+.compose .embody { width: 100%; padding: 10px; border: 1px solid var(--line, #d9e2e6); border-radius: 8px; font: inherit; resize: vertical; background: #fff; }
+.compose .composeacts { display: flex; gap: 8px; margin: 10px 0 4px; }
+.compose .cbtn { padding: 6px 12px; }
+
+/* --- shared top nav --- */
+.navlinks { display: contents; }
+.userbox .ghost.active { color: var(--teal, #028090); font-weight: 700; }

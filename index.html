@@ -11,18 +11,9 @@
   <h1>Duty Allocation Team</h1>
   <span class="sub">Reconciliation</span>
   <div class="userbox">
-    <span id="whoami" class="whoami"></span>
-    <a id="reconLinkSelf" class="ghost" href="/index.html" hidden>Reconcile</a>
-    <a id="adminLink" class="ghost" href="/admin.html" hidden>Team &amp; Roles</a>
-    <a id="qbLink" class="ghost" href="/quarterback.html" hidden>Assign Callers</a>
-    <a id="callerLink" class="ghost" href="/caller.html" hidden>My Calls</a>
-    <a id="ivolLink" class="ghost" href="/ivol.html" hidden>iVol report</a>
-    <a id="biLink" class="ghost" href="/biupdates.html" hidden>BI updates</a>
-    <a id="reportsLink" class="ghost" href="/reports.html" hidden>Dashboard</a>
-    <a id="dutiesLink" class="ghost" href="/duties.html" hidden>Duties</a>
-    <a id="importLink" class="ghost" href="/fileimport.html" hidden>BI import</a>
-    <a id="backupLink" class="ghost" href="/api/backup" hidden>Download backup</a>
+    <nav id="navlinks" class="navlinks"></nav>
     <button id="seedBtn" class="ghost" hidden>Load sandbox data</button>
+    <span id="whoami" class="whoami"></span>
     <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
   </div>
 </header>
@@ -67,6 +58,7 @@
   <div class="footer">Changes save to your team\u2019s shared workspace. Contact details are not shown here \u2014 they appear only on the caller\u2019s screen.</div>
 </div>
 
+<script src="nav.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

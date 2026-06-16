@@ -282,7 +282,7 @@ Header link **BI import**. The manual alternative to the API sync.
 **N1 · Caller creates the email (copy & paste)**
 1. As a caller, open someone you couldn't reach (e.g., after logging "No answer"). Confirm the **Create accept-link email** button shows (hidden with a note if they have no email on file).
 2. Click it → a box appears with **To / Subject** and a formatted **Message preview** showing a clickable "Click here to accept this seva" link. Click **Copy email**, paste into a new message in iiCanada Outlook (web) — the link stays clickable — paste To/Subject into their fields, and send. (A collapsible "plain link" backup is there if a paste ever strips the link.)
-3. The person stays in your **active** list, now tagged **✉ link sent**; the button becomes **Re-create accept-link email**.
+3. The person stays in your **active** list, now tagged **✉ email prepared**; the button becomes **Re-create accept-link email**. The **✉ Emailed** outcome button (greyed out until now) becomes clickable the moment the email is generated.
 
 **N2 · Volunteer accepts via the link (no login)**
 1. Open the confirm link in a browser where you're NOT signed in (clicking it, or pasting it into the address bar — both work) → a clean page: "Hi <name>! … Accept my duty".
@@ -294,8 +294,11 @@ Header link **BI import**. The manual alternative to the API sync.
 2. Re-clicking an already-accepted link is harmless ("already confirmed").
 3. If the caller **reopens** the person or a QB **reassigns** them, the old link stops working (a fresh email would be needed).
 
-**N4 — Emailed status tag**
-1. Create an accept-link email for someone in your active list. Their tag changes to a gold **✉ Emailed** pill and they stay in your active queue (not Done).
-2. Open the confirm link as the volunteer and accept. Back in the caller view, refresh: they move to **Done** tagged **Accepted**, and appear on the iVol-input report.
-3. On the Dashboard they count under **Call Pending** while Emailed, then under **Accepted Duty** once confirmed.
+**N4 — Emailed status (manual, most-recent-activity wins)**
+1. Before generating an email, the **✉ Emailed** outcome button is disabled ("Create the email above first"). Generating the accept-link email unlocks it immediately and the left-list tag updates to **✉ email prepared** with no page refresh.
+2. Click **✉ Emailed** → **Save**. Their tag becomes the gold **✉ Emailed** pill; they stay in the active queue (not Done).
+3. Now mark them **Thinking about it** → Save. The tag changes to **last: Thinking about it** — the status follows your *most recent* action, no longer stuck on Emailed. Re-mark **✉ Emailed** and it flips back.
+4. Open the confirm link as the volunteer and accept → they move to **Done** tagged **Accepted** and appear on the iVol-input report.
+5. On the Dashboard they count under **Call Pending** while Emailed/Thinking, then under **Accepted Duty** once confirmed.
+6. Edge: trying to mark **Emailed** with no email generated is refused server-side ("Create the accept-link email first").
 

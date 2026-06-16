@@ -48,9 +48,15 @@ function renderAll(){
     return;
   }
   ql.innerHTML=list.map(v=>{
-    const tag = tab==="done" ? `<span class="meta">${v.outcome||'done'}</span>`
-      : (v.confirm_sent && !v.confirmed ? `<span class="badge b-email">✉ Emailed</span>`
-        : (v.outcome ? `<span class="meta">last: ${v.outcome}</span>` : '<span class="unassigned-tag">not yet called</span>'));
+    const tag = tab==="done"
+      ? `<span class="meta">${OUTCOME_LABEL[v.outcome]||v.outcome||'done'}</span>`
+      : (v.outcome
+          ? (v.outcome==="Emailed"
+              ? `<span class="badge b-email">✉ Emailed</span>`
+              : `<span class="meta">last: ${OUTCOME_LABEL[v.outcome]||v.outcome}</span>`)
+          : (v.confirm_sent && !v.confirmed
+              ? `<span class="meta">✉ email prepared</span>`
+              : '<span class="unassigned-tag">not yet called</span>'));
     const nobi = v.no_bi_account ? ' <span class="badge b-nobi">No BI acct</span>' : '';
     return `<div class="qitem ${current&&current.id===v.id?'active':''}" data-id="${v.id}">
       <div><div class="nm">${v.first} ${v.last}${nobi}</div><div class="meta">${v.area||'—'} · ${v.jk}</div></div>
@@ -123,6 +129,7 @@ function renderPanel(v){
       <button class="obtn accept" data-o="Accepted">Accepted<small>Confirmed for ${v.area||'their area'}</small></button>
       <button class="obtn" data-o="Thinking">Thinking about it<small>Will follow up</small></button>
       <button class="obtn" data-o="No answer">No answer<small>Logs an attempt</small></button>
+      <button class="obtn email" data-o="Emailed" ${v.confirm_sent?'':'disabled'}>✉ Emailed<small>${v.confirm_sent?'Mark the accept-link email as sent':'Create the email above first'}</small></button>
       <button class="obtn decline" data-o="Declined-referred">Decline → refer<small>Send to another area</small></button>
       <button class="obtn withdraw" data-o="Withdrew">Withdrew<small>Out entirely</small></button>
     </div>
@@ -204,17 +211,17 @@ async function sendConfirmEmail(v){
     const subject="Volunteer Duty Confirmation - Mawlana Hazar Imam's Visit";
     const first=escapeHtml(d.first||v.first), areaTxt=escapeHtml(d.area||v.area), sign=escapeHtml(signName);
     const intro="We are pleased to inform you that you have been assigned to a duty at the upcoming visit of our beloved Mawlana Hazar Imam to Canada. This assignment was based on the area(s) of interest you indicated during the registration process. We hope you are excited to meet your fellow volunteers and participate in delivering a truly memorable, blessed, and joyous event.";
-    const closing="You will receive another email confirming the details of your seva shortly. If you have questions, please do not hesitate to reach out to me at this email address.";
+    const closing="You will receive another email confirming the details of your seva shortly. If you have questions or would rather serve in a different role, please reach out to me at this email address.";
     // rich HTML version — the link shows as friendly text and stays clickable when pasted into Outlook
     const bodyHtml=`<p>Ya Ali Madad dear ${first},</p>`
       +`<p>${intro}</p>`
-      +`<p>Your assigned role is as follows:</p>`
-      +`<p><b>${areaTxt}</b></p>`
-      +`<p><a href="${urlAttr}">Click here to accept this seva</a></p>`
+      +`<p>Your assigned role is as follows: <b>${areaTxt}</b>.</p>`
+      +`<p>Please click the link below to accept this assignment.</p>`
+      +`<p><a href="${urlAttr}">Accept this assignment</a></p>`
       +`<p>${closing}</p>`
       +`<p>Warm regards,<br>${sign}<br>Volunteer Experience Team</p>`;
     // plain-text fallback (used if pasted into a plain-text field) — keeps the full URL
-    const bodyPlain=`Ya Ali Madad dear ${d.first||v.first},\n\n${intro}\n\nYour assigned role is as follows:\n\n${d.area||v.area}\n\nTo accept this seva, click here:\n${url}\n\n${closing}\n\nWarm regards,\n${signName}\nVolunteer Experience Team`;
+    const bodyPlain=`Ya Ali Madad dear ${d.first||v.first},\n\n${intro}\n\nYour assigned role is as follows: ${d.area||v.area}.\n\nPlease click the link below to accept this assignment:\n${url}\n\n${closing}\n\nWarm regards,\n${signName}\nVolunteer Experience Team`;
     const box=document.getElementById('emailCompose');
     box.innerHTML=`
       <div class="compose">
@@ -225,7 +232,7 @@ async function sendConfirmEmail(v){
         <div class="composeacts">
           <button class="btn" id="copyMsg">Copy email</button>
         </div>
-        <div class="contact-note">Click <b>Copy email</b>, then paste into a new message in your <b>iiCanada Outlook</b> — the “Click here to accept this seva” link stays clickable. Paste the To and Subject into their own fields.</div>
+        <div class="contact-note">Click <b>Copy email</b>, then paste into a new message in your <b>iiCanada Outlook</b> — the “Accept this assignment” link stays clickable. Paste the To and Subject into their own fields.</div>
         <details class="backuplink"><summary>Link not clickable after pasting? Use the plain link instead</summary>
           <div class="frow"><input id="emUrl" readonly value="${escapeAttr(url)}"><button class="btn ghost2 cbtn" data-c="emUrl">Copy link</button></div>
         </details>
@@ -233,7 +240,11 @@ async function sendConfirmEmail(v){
     box.querySelectorAll('.cbtn').forEach(b=>b.addEventListener('click',()=>copyText((document.getElementById(b.dataset.c)||{}).value||'',b)));
     document.getElementById('copyMsg').addEventListener('click',e=>copyRich(bodyHtml,bodyPlain,e.currentTarget));
     v.confirm_sent=true;
-    banner(`Accept-link email ready for ${v.first} ${v.last}. Click “Copy email”, then paste into a new Outlook message.`, false);
+    // unlock the "Emailed" outcome button now that the template exists
+    const eo=document.querySelector('.obtn.email');
+    if(eo){ eo.disabled=false; const s=eo.querySelector('small'); if(s) s.textContent='Mark the accept-link email as sent'; }
+    renderAll();   // refresh the left list so its tag updates immediately (no page refresh needed)
+    banner(`Accept-link email ready for ${v.first} ${v.last}. Click “Copy email”, then paste into a new Outlook message. When sent, mark <b>✉ Emailed</b> and Save.`, false);
   }catch(e){ banner('Could not prepare the email: '+e.message,true); }
   finally{ if(btn) btn.disabled=false; }
 }

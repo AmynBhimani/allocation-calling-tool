@@ -1,6 +1,0 @@
-{
-  "name": "allocation-calling-tool-api",
-  "version": "1.0.0",
-  "description": "API for the VE Allocation & Calling Tool",
-  "dependencies": { "@azure/storage-blob": "^12.17.0" }
-}

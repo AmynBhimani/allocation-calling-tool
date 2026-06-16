@@ -7,7 +7,7 @@ const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
 
 const TERMINAL = ["Accepted", "Declined-referred", "Withdrew"]; // leave the active queue
-const ALL_OUTCOMES = TERMINAL.concat(["No answer", "Thinking"]);
+const ALL_OUTCOMES = TERMINAL.concat(["No answer", "Thinking", "Emailed"]); // non-terminal: No answer / Thinking / Emailed
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -81,7 +81,7 @@ module.exports = async function (context, req) {
     const me = emailOf(principal);
     const roles = (principal && principal.userRoles) || [];
     const isCaller = roles.includes("caller");
-    const isSuper = roles.includes("superadmin");
+    const isSuper = roles.includes("superadmin") || roles.includes("admin"); // admin mirrors Super Admin (sees all regions)
     if (!me || (!isCaller && !isSuper)) { context.res = { status: 403, body: { error: "Not authorized." } }; return; }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
@@ -155,9 +155,10 @@ module.exports = async function (context, req) {
           v.confirm_token = token;
           v.confirm_sent_at = new Date().toISOString();
           v.confirmed_at = null;          // fresh send resets any prior confirmation state
-          // Reflect the email in the calling-status tag. They stay in the active queue
-          // (call_done stays false) until they click the link (→ Accepted) or are re-handled.
-          if (!v.call_done) v.call_outcome = "Emailed";
+          // Generating the email no longer sets the calling status. It only records that an
+          // email was prepared (confirm_sent_at + the log entry below) and unlocks the
+          // "Emailed" outcome button. The caller marks "Emailed" deliberately so the status
+          // always reflects their most recent recorded action.
           v.activity_log = v.activity_log || [];
           v.activity_log.push({ ts: v.confirm_sent_at, actor: me, action: "confirm_email_sent" });
           info = { token, first: v.first, last: v.last, email: v.email || "", area: v.final_area || "" };
@@ -174,6 +175,8 @@ module.exports = async function (context, req) {
 
       const result = await mutateVolunteer(container, region, user_id, (v) => {
         if (v.assigned_caller !== me && !isSuper) return { skip: true };
+        // "Emailed" is only valid once the accept-link email has actually been generated.
+        if (outcome === "Emailed" && !v.confirm_sent_at) return { skip: true, noEmail: true };
         v.activity_log = v.activity_log || [];
         // optional contact correction (name / email / phone) — flagged for iVol to update in BI
         applyContact(v, contact);
@@ -195,12 +198,13 @@ module.exports = async function (context, req) {
         } else if (outcome === "Withdrew") {
           v.call_done = true;
         } else {
-          // No answer / Thinking — stays in the active queue
+          // No answer / Thinking / Emailed — stays in the active queue
           v.call_done = false;
         }
       });
 
       if (result.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
+      if (result.extra && result.extra.noEmail) { context.res = { status: 400, body: { error: "Create the accept-link email first, then mark Emailed." } }; return; }
       if (result.extra && result.extra.skip) { context.res = { status: 403, body: { error: "That volunteer isn't assigned to you." } }; return; }
       if (!result.ok) { context.res = { status: 409, body: { error: "Couldn't save — please retry." } }; return; }
       context.res = { body: { ok: true } };

@@ -3,7 +3,7 @@ let SCOPES = [];      // [{area, region}]
 let CALLERS = [];     // [{email, area, region}]
 let ROLES = [];
 const selected = new Set();
-const filters = { q:"", jk:"", scope:"", caller:"", unassignedOnly:false, assignedOnly:false, leader:false, nobi:false, referred:false };
+const filters = { q:"", jk:"", scope:"", area:"", caller:"", unassignedOnly:false, assignedOnly:false, leader:false, nobi:false, referred:false };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -20,6 +20,7 @@ async function boot(){
 
   document.getElementById('q').addEventListener('input',e=>{filters.q=e.target.value.toLowerCase();render();});
   document.getElementById('jk').addEventListener('change',e=>{filters.jk=e.target.value;render();});
+  document.getElementById('areaSel').addEventListener('change',e=>{filters.area=e.target.value;render();});
   document.getElementById('scopeSel').addEventListener('change',e=>{filters.scope=e.target.value;filters.jk="";buildJk();render();});
   document.getElementById('callerFilter').addEventListener('change',e=>{filters.caller=e.target.value;render();});
   document.getElementById('clearFilters').addEventListener('click',clearFilters);
@@ -48,7 +49,7 @@ async function load(){
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("HTTP "+r.status));
     const d = await r.json();
     DATA = d.volunteers||[]; SCOPES = d.scopes||[]; CALLERS = d.callers||[];
-    buildScopeSelect(); buildCallerSelect(); buildCallerFilter(); buildCallerScopes(); buildJk();
+    buildScopeSelect(); buildCallerSelect(); buildCallerFilter(); buildCallerScopes(); buildAreaSelect(); buildJk();
     clearBanner(); render();
   }catch(e){
     banner('Could not load your pool: '+e.message, true);
@@ -80,11 +81,19 @@ function buildCallerFilter(){
   sel.innerHTML='<option value="">Any caller</option>'+opts.join('');
 }
 function clearFilters(){
-  filters.q=""; filters.jk=""; filters.scope=""; filters.caller="";
+  filters.q=""; filters.jk=""; filters.scope=""; filters.area=""; filters.caller="";
   filters.unassignedOnly=false; filters.assignedOnly=false; filters.leader=false; filters.nobi=false; filters.referred=false;
   document.getElementById('q').value=""; document.getElementById('scopeSel').value=""; document.getElementById('callerFilter').value="";
+  const aSel=document.getElementById('areaSel'); if(aSel) aSel.value="";
   document.querySelectorAll('.chip').forEach(ch=>ch.setAttribute('aria-pressed','false'));
   buildJk(); render();
+}
+function buildAreaSelect(){
+  const sel=document.getElementById('areaSel');
+  const areas=[...new Set(DATA.map(v=>v.final).filter(Boolean))].sort();
+  if(filters.area && !areas.includes(filters.area)) filters.area="";   // stale area — clear it
+  const cur=filters.area;
+  sel.innerHTML='<option value="">All areas</option>'+areas.map(a=>`<option value="${a}" ${a===cur?'selected':''}>${a}</option>`).join('');
 }
 function buildJk(){
   const sel=document.getElementById('jk');
@@ -97,6 +106,7 @@ function buildJk(){
 
 function matches(v){
   if(filters.scope && scopeKey({area:v.final,region:v.region})!==filters.scope) return false;
+  if(filters.area && v.final!==filters.area) return false;
   if(filters.q && !((v.first+" "+v.last).toLowerCase().includes(filters.q))) return false;
   if(filters.jk && v.jk!==filters.jk) return false;
   if(filters.unassignedOnly && v.assigned) return false;

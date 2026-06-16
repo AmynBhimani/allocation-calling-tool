@@ -81,7 +81,7 @@ module.exports = async function (context, req) {
     const me = emailOf(principal);
     const roles = (principal && principal.userRoles) || [];
     const isCaller = roles.includes("caller");
-    const isSuper = roles.includes("superadmin");
+    const isSuper = roles.includes("superadmin") || roles.includes("admin"); // admin mirrors Super Admin (sees all regions)
     if (!me || (!isCaller && !isSuper)) { context.res = { status: 403, body: { error: "Not authorized." } }; return; }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 

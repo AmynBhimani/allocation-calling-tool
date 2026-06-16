@@ -3,13 +3,13 @@
 (function(){
   var NAV=[
     {href:'/index.html',       label:'Reconcile',       roles:['superadmin','admin','dutyteam']},
-    {href:'/quarterback.html', label:'Assign Callers',   roles:['superadmin','quarterback']},
-    {href:'/caller.html',      label:'My Calls',         roles:['superadmin','caller']},
+    {href:'/quarterback.html', label:'Assign Callers',   roles:['superadmin','admin','quarterback']},
+    {href:'/caller.html',      label:'My Calls',         roles:['superadmin','admin','caller']},
     {href:'/ivol.html',        label:'iVol report',      roles:['superadmin','admin']},
     {href:'/biupdates.html',   label:'BI updates',       roles:['superadmin','admin']},
     {href:'/reports.html',     label:'Dashboard',        roles:['superadmin','admin']},
     {href:'/duties.html',      label:'Duties',           roles:['superadmin','admin','quarterback']},
-    {href:'/admin.html',       label:'Team & Roles',     roles:['superadmin']},
+    {href:'/admin.html',       label:'Team & Roles',     roles:['superadmin','admin']},
     {href:'/fileimport.html',  label:'BI import',        roles:['superadmin']},
     {href:'/api/backup',       label:'Download backup',  roles:['superadmin']}
   ];

@@ -70,7 +70,7 @@ module.exports = async function (context, req) {
     const roles = (principal && principal.userRoles) || [];
     const isAdmin = roles.includes("superadmin") || roles.includes("admin");
     const isQB = roles.includes("quarterback");
-    if (!email || (!isAdmin && !isQB)) { context.res = { status: 403, body: { error: "Not authorized." } }; return; }
+    if (!email) { context.res = { status: 403, body: { error: "Not authorized." } }; return; }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
     const c = await container();
@@ -79,11 +79,14 @@ module.exports = async function (context, req) {
     const manageable = isAdmin ? AREAS.slice() : qbAreas(rstore, email);
 
     if (req.method === "GET") {
+      // Any signed-in role may READ the catalog (callers need it for duty capture, reconcile for the
+      // duties panel). manageableAreas is empty for non-managers, so they get a read-only view.
       context.res = { body: { duties, manageableAreas: manageable, allAreas: AREAS } };
       return;
     }
 
     if (req.method === "POST") {
+      if (!isAdmin && !isQB) { context.res = { status: 403, body: { error: "Not authorized to manage duties." } }; return; }
       const body = req.body || {};
       const op = clean(body.op).toLowerCase();
 

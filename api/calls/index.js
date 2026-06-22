@@ -51,6 +51,7 @@ function full(v) {
     referred_from: v.referred_from || null,
     outcome: v.call_outcome || null, done: !!v.call_done,
     confirm_sent: !!v.confirm_sent_at, confirmed: !!v.confirmed_at,
+    event_assignments: Array.isArray(v.event_assignments) ? v.event_assignments : [],
     log: (v.activity_log || []).filter(e => e.action === "outcome")
   };
 }
@@ -73,6 +74,28 @@ function applyContact(v, contact) {
     v[field] = nv;
   }
   v.bi_update_needed = Object.keys(v.contact_changes).length > 0;
+}
+
+// Normalize the per-event duty-capture rows from the caller. Deferred-session model:
+// area + multiple candidate duties are captured now; the single committed duty, session,
+// and session/support basis are filled later, so they stay null/pending here.
+function normAssignments(arr) {
+  if (!Array.isArray(arr)) return null; // null => caller didn't send any; leave existing untouched
+  const out = [];
+  for (const a of arr) {
+    const event = clean(a && a.event);
+    if (!event) continue;
+    out.push({
+      event,
+      area: clean(a.area),
+      candidate_duties: Array.isArray(a.candidate_duties)
+        ? [...new Set(a.candidate_duties.map(clean).filter(Boolean))] : [],
+      duty: a.duty ? clean(a.duty) : null,
+      basis: clean(a.basis) || "pending",
+      state: clean(a.state) || "confirmed",
+    });
+  }
+  return out;
 }
 
 module.exports = async function (context, req) {
@@ -161,6 +184,8 @@ module.exports = async function (context, req) {
           // always reflects their most recent recorded action.
           v.activity_log = v.activity_log || [];
           v.activity_log.push({ ts: v.confirm_sent_at, actor: me, action: "confirm_email_sent" });
+          const asg = normAssignments(body.event_assignments);
+          if (asg) v.event_assignments = asg;
           info = { token, first: v.first, last: v.last, email: v.email || "", area: v.final_area || "" };
         });
         if (rr.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
@@ -180,6 +205,9 @@ module.exports = async function (context, req) {
         v.activity_log = v.activity_log || [];
         // optional contact correction (name / email / phone) — flagged for iVol to update in BI
         applyContact(v, contact);
+        // per-event duty capture (deferred-session model) — saved with the outcome
+        const asg = normAssignments(body.event_assignments);
+        if (asg) v.event_assignments = asg;
         const entry = { ts: new Date().toISOString(), actor: me, action: "outcome", outcome };
         if (note) entry.note = note;
         v.activity_log.push(entry);

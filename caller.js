@@ -6,11 +6,77 @@ let ACTIVE = [], COMPLETED = [], ROLES = [];
 let tab = "active";
 let current = null; // currently open volunteer
 let selectedOutcome = null;
+let EVENTS = [];        // active top-level Didars, from /api/events
+let DUTY_NAMES = {};    // area -> sorted [duty name], from /api/duties
 const OUTCOME_LABEL = { "Accepted":"Accepted","Thinking":"Thinking about it",
   "No answer":"No answer","Declined-referred":"Decline → refer","Withdrew":"Withdrew","Emailed":"Emailed" };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
+
+// Events + duty catalog — fetched once; the caller can still log outcomes if these fail.
+async function loadConfig(){
+  try{
+    const [er,dr]=await Promise.all([fetch('/api/events'),fetch('/api/duties')]);
+    if(er.ok){ const e=await er.json(); EVENTS=(e.events||[]).filter(x=>!x.parent && x.active!==false); }
+    if(dr.ok){ const d=await dr.json(); DUTY_NAMES={};
+      (d.duties||[]).forEach(x=>{ (DUTY_NAMES[x.area]=DUTY_NAMES[x.area]||[]).push(x.name); });
+      Object.keys(DUTY_NAMES).forEach(a=>DUTY_NAMES[a].sort((p,q)=>p.localeCompare(q))); }
+  }catch(e){ /* non-fatal */ }
+}
+
+// Heuristic: which Didar is this person's "home" (session) event, pre-ticked by default.
+function isHomeDidar(ev, region){
+  const s=((ev.id||'')+' '+(ev.name||'')).toLowerCase();
+  if(region==='BC') return /\bbc\b|british columbia/.test(s);
+  if(region==='Prairies'||region==='Edmonton') return /prairie|edmonton|\bpe\b/.test(s);
+  return false;
+}
+
+// The per-event duty-capture block: tick the Didar(s) they'll serve and the candidate duties
+// in their area. Pre-populated from any saved event_assignments; otherwise the home Didar is ticked.
+function eventBlockHtml(v){
+  if(!EVENTS.length) return '';
+  const area=v.area||'';
+  const duties=DUTY_NAMES[area]||[];
+  const existing={}; let hasExisting=false;
+  (v.event_assignments||[]).forEach(a=>{ existing[a.event]=new Set(a.candidate_duties||[]); hasExisting=true; });
+  const rows=EVENTS.map(ev=>{
+    const evAsg=existing[ev.id];
+    const serving = evAsg ? true : (!hasExisting && isHomeDidar(ev, v.region));
+    const dutyChecks = duties.length
+      ? duties.map(dn=>{
+          const ck = evAsg && evAsg.has(dn) ? 'checked' : '';
+          return `<label class="dutychk"><input type="checkbox" class="ev-duty" data-ev="${escapeAttr(ev.id)}" value="${escapeAttr(dn)}" ${ck}> ${escapeHtml(dn)}</label>`;
+        }).join('')
+      : `<div class="nodut">No duty templates yet for ${escapeHtml(area||'this area')} — you can still confirm the Didar; a specific duty is assigned later.</div>`;
+    return `<div class="evrow">
+        <label class="evserve"><input type="checkbox" class="ev-serve" data-ev="${escapeAttr(ev.id)}" ${serving?'checked':''}> <b>${escapeHtml(ev.name)}</b></label>
+        <div class="ev-duties ${serving?'':'hidden'}" data-evbox="${escapeAttr(ev.id)}">
+          <div class="ev-duties-h">Possible duties in ${escapeHtml(area||'their area')}:</div>
+          ${dutyChecks}
+        </div>
+      </div>`;
+  }).join('');
+  return `<div class="eventcap">
+      <div class="eventcap-h">Events &amp; possible duties</div>
+      <div class="eventcap-sub">Tick the Didar(s) they'll serve and any duties they could do in <b>${escapeHtml(area||'their area')}</b>. More than one duty is fine — the single committed duty is assigned later.</div>
+      ${rows}
+    </div>`;
+}
+
+// Read the capture UI into event_assignments rows (deferred-session model).
+function collectAssignments(){
+  const out=[];
+  document.querySelectorAll('.ev-serve').forEach(cb=>{
+    if(!cb.checked) return;
+    const ev=cb.dataset.ev;
+    const duties=[...document.querySelectorAll('.ev-duty[data-ev="'+ev+'"]')].filter(x=>x.checked).map(x=>x.value);
+    out.push({ event:ev, area:(current&&current.area)||'', candidate_duties:duties, duty:null, basis:'pending', state:'confirmed' });
+  });
+  return out;
+}
+function eventName(id){ const e=EVENTS.find(x=>x.id===id); return e?e.name:id; }
 
 async function boot(){
   try{
@@ -20,6 +86,7 @@ async function boot(){
   }catch(e){}
   document.getElementById('tabActive').addEventListener('click',()=>{tab="active";current=null;renderAll();});
   document.getElementById('tabDone').addEventListener('click',()=>{tab="done";current=null;renderAll();});
+  await loadConfig();
   await load();
 }
 
@@ -103,8 +170,14 @@ function renderPanel(v){
       ? `<div class="saverow"><button class="btn ghost2" id="reopenBtn">Reopen — they've changed their mind</button></div>
          <div class="contact-note">Reopening returns them to your active call list. If they were already entered in Better Impact, they'll appear on the BI Updates list so iVol can correct it.</div>`
       : '';
+    const asgRO = (v.event_assignments&&v.event_assignments.length)
+      ? `<div class="log"><h4>Events &amp; duties captured</h4>${v.event_assignments.map(a=>{
+           const ds=(a.candidate_duties||[]).join(', ')||'duty to be assigned';
+           return `<div class="e"><b>${escapeHtml(eventName(a.event))}</b> — ${escapeHtml(ds)}</div>`;
+         }).join('')}</div>`
+      : '';
     p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk} · #${v.id}</div>
-      <div class="badge-row">${badges.join('')}</div>${contact}${logHtml}${reopenHtml}`;
+      <div class="badge-row">${badges.join('')}</div>${contact}${asgRO}${logHtml}${reopenHtml}`;
     const rb=document.getElementById('reopenBtn'); if(rb) rb.addEventListener('click',()=>reopen(v));
     return;
   }
@@ -123,6 +196,7 @@ function renderPanel(v){
     <div class="badge-row">${badges.join('')}</div>
     ${nobiAlert}
     ${contact}
+    ${eventBlockHtml(v)}
     ${emailRow}
     <textarea class="note-area" id="note" placeholder="Notes from the call…"></textarea>
     <div class="outcomes">
@@ -137,6 +211,10 @@ function renderPanel(v){
   p.querySelectorAll('.obtn').forEach(b=>b.addEventListener('click',()=>chooseOutcome(b.dataset.o)));
   const eb=document.getElementById('emailBtn'); if(eb) eb.addEventListener('click',()=>sendConfirmEmail(v));
   const cn=document.getElementById('callerName'); if(cn) cn.addEventListener('input',()=>{ try{ localStorage.setItem('vrt_caller_name', cn.value); }catch(e){} });
+  p.querySelectorAll('.ev-serve').forEach(cb=>cb.addEventListener('change',()=>{
+    const box=p.querySelector('.ev-duties[data-evbox="'+cb.dataset.ev+'"]');
+    if(box) box.classList.toggle('hidden', !cb.checked);
+  }));
   current=v;
 }
 
@@ -177,7 +255,7 @@ async function save(outcome, extra){
   const cell=document.getElementById('cCell'), email=document.getElementById('cEmail');
   if(f) contact.first=f.value; if(l) contact.last=l.value;
   if(cell) contact.cell=cell.value; if(email) contact.email=email.value;
-  const body={ user_id:current.id, region:current.region, outcome, note, contact, ...extra };
+  const body={ user_id:current.id, region:current.region, outcome, note, contact, event_assignments:collectAssignments(), ...extra };
   try{
     const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
@@ -201,7 +279,7 @@ async function reopen(v){
 async function sendConfirmEmail(v){
   const btn=document.getElementById('emailBtn'); if(btn) btn.disabled=true;
   try{
-    const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'send_confirm',user_id:v.id,region:v.region})});
+    const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'send_confirm',user_id:v.id,region:v.region,event_assignments:collectAssignments()})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
     const url=`${location.origin}/confirm.html?u=${encodeURIComponent(v.id)}&r=${encodeURIComponent(v.region)}&t=${encodeURIComponent(d.token)}`;
     const urlAttr=url.replace(/&/g,'&amp;');
@@ -213,15 +291,28 @@ async function sendConfirmEmail(v){
     const intro="We are pleased to inform you that you have been assigned to a duty at the upcoming visit of our beloved Mawlana Hazar Imam to Canada. This assignment was based on the area(s) of interest you indicated during the registration process. We hope you are excited to meet your fellow volunteers and participate in delivering a truly memorable, blessed, and joyous event.";
     const closing="You will receive another email confirming the details of your seva shortly. If you have questions or would rather serve in a different role, please reach out to me at this email address.";
     // rich HTML version — the link shows as friendly text and stays clickable when pasted into Outlook
+    // Role lines reflect the events + candidate duties captured during the call.
+    const asg=collectAssignments();
+    let roleHtml, rolePlain;
+    if(asg.length){
+      const items=asg.map(a=>({ nm:eventName(a.event), ds:(a.candidate_duties.length?a.candidate_duties.join(', '):'duty to be confirmed') }));
+      roleHtml=`<p>Based on our conversation, here's where you'll be helping:</p><ul>`
+        +items.map(i=>`<li><b>${escapeHtml(i.nm)}</b> — ${escapeHtml(i.ds)}</li>`).join('')+`</ul>`;
+      rolePlain=`Based on our conversation, here's where you'll be helping:\n`
+        +items.map(i=>`  - ${i.nm} - ${i.ds}`).join('\n');
+    } else {
+      roleHtml=`<p>Your assigned role is as follows: <b>${areaTxt}</b>.</p>`;
+      rolePlain=`Your assigned role is as follows: ${d.area||v.area}.`;
+    }
     const bodyHtml=`<p>Ya Ali Madad dear ${first},</p>`
       +`<p>${intro}</p>`
-      +`<p>Your assigned role is as follows: <b>${areaTxt}</b>.</p>`
+      +roleHtml
       +`<p>Please click the link below to accept this assignment.</p>`
       +`<p><a href="${urlAttr}">Accept this assignment</a></p>`
       +`<p>${closing}</p>`
       +`<p>Warm regards,<br>${sign}<br>Volunteer Experience Team</p>`;
     // plain-text fallback (used if pasted into a plain-text field) — keeps the full URL
-    const bodyPlain=`Ya Ali Madad dear ${d.first||v.first},\n\n${intro}\n\nYour assigned role is as follows: ${d.area||v.area}.\n\nPlease click the link below to accept this assignment:\n${url}\n\n${closing}\n\nWarm regards,\n${signName}\nVolunteer Experience Team`;
+    const bodyPlain=`Ya Ali Madad dear ${d.first||v.first},\n\n${intro}\n\n${rolePlain}\n\nPlease click the link below to accept this assignment:\n${url}\n\n${closing}\n\nWarm regards,\n${signName}\nVolunteer Experience Team`;
     const box=document.getElementById('emailCompose');
     box.innerHTML=`
       <div class="compose">

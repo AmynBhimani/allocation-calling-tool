@@ -34,6 +34,10 @@
   .pill.off{background:#F0E7E5;color:#9b5b50}
   .jkcount{color:var(--mute);font-size:12.5px}
   .hint{font-size:12.5px;color:var(--mute);margin-top:10px}
+  .reg-checks{display:flex;gap:16px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--paper)}
+  .reg-checks label{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);cursor:pointer}
+  .reg-checks input{width:15px;height:15px;margin:0;cursor:pointer}
+  .regtag{color:var(--mute);font-size:12.5px}
   td .actions{display:flex;justify-content:flex-end;gap:0;flex-wrap:wrap}
 </style>
 </head>
@@ -64,10 +68,17 @@
       <div class="field hide" id="parentField"><label>Parent Didar</label><select id="parent"></select></div>
       <div class="field hide" id="jkField"><label>Participating Jamatkhanas <span class="muted-note">(optional, one per line)</span></label>
         <textarea id="jks" placeholder="Leave blank for now — add when sessions are defined"></textarea></div>
+      <div class="field hide" id="regionsField"><label>Regions <span class="muted-note">(which regions this Didar covers)</span></label>
+        <div class="reg-checks">
+          <label><input type="checkbox" class="reg-cb" value="BC"> BC</label>
+          <label><input type="checkbox" class="reg-cb" value="Prairies"> Prairies</label>
+          <label><input type="checkbox" class="reg-cb" value="Edmonton"> Edmonton</label>
+        </div>
+      </div>
       <button class="btn" id="addBtn">Add event</button>
     </div>
-    <div class="hint">Didars are the two top-level events. Sessions (Mulaqats) sit under a Didar and carry their own Jamatkhana list —
-      add those later when they're known. Session vs. support is computed from each session's Jamatkhana list, so it isn't needed yet.</div>
+    <div class="hint">Didars are the two top-level events. A Didar's <b>regions</b> drive the team wall — people tagged to a Didar on Team &amp; Roles see only that Didar's regions.
+      Sessions (Mulaqats) sit under a Didar and carry their own Jamatkhana list — add those later when they're known; session vs. support is computed from each session's Jamatkhana list.</div>
   </div>
 
   <div class="panel">

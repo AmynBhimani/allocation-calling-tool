@@ -53,11 +53,18 @@ async function writeStore(c, arr) {
   await b.upload(body, Buffer.byteLength(body), { blobHTTPHeaders: { blobContentType: "application/json" }, overwrite: true });
 }
 function clean(s) { return String(s == null ? "" : s).trim(); }
+async function readEvents(c) {
+  const b = c.getBlockBlobClient("events.json");
+  if (!(await b.exists())) return [];
+  try { const o = JSON.parse(await streamToString((await b.download()).readableStreamBody)); return Array.isArray(o) ? o : (o.events || []); }
+  catch { return []; }
+}
 function sameEntry(a, b) {
   return clean(a.email).toLowerCase() === clean(b.email).toLowerCase()
     && clean(a.role) === clean(b.role)
     && clean(a.area) === clean(b.area)
-    && clean(a.region) === clean(b.region);
+    && clean(a.region) === clean(b.region)
+    && clean(a.event) === clean(b.event);
 }
 // The area×region scopes a given email holds for a given role.
 function scopesFor(store, email, role) {
@@ -80,19 +87,25 @@ module.exports = async function (context, req) {
 
     const c = await container();
     const store = await readStore(c);
+    const events = await readEvents(c);
+    const didars = events.filter(ev => !ev.parent && ev.active !== false)
+      .map(ev => ({ id: clean(ev.id), name: clean(ev.name), regions: (Array.isArray(ev.regions) ? ev.regions : []).map(clean).filter(Boolean) }));
+    const regionsForEvent = (id) => { const d = didars.find(x => x.id === id); return d ? d.regions.slice() : []; };
+    const eventName = (id) => { const d = didars.find(x => x.id === id); return d ? d.name : id; };
     const myScopes = isQuarterback ? scopesFor(store, email, "quarterback") : [];
 
     if (req.method === "GET") {
       if (isSuper) {
-        context.res = { body: { assignments: store, meta: { roles: MANAGEABLE, regions: REGIONS, areas: AREAS } } };
+        context.res = { body: { assignments: store, meta: { roles: MANAGEABLE, regions: REGIONS, areas: AREAS, events: didars } } };
         return;
       }
       // Quarterback: only their own scopes + the callers within those scopes.
       const myAreas = [...new Set(myScopes.map(s => s.area))];
       const myRegions = [...new Set(myScopes.map(s => s.region))];
+      const myEvents = didars.filter(d => d.regions.some(r => myRegions.includes(r)));
       const callers = store.filter(a => clean(a.role) === "caller" && scopeHas(myScopes, clean(a.area), clean(a.region)));
       context.res = { body: { assignments: callers, scopes: myScopes,
-        meta: { roles: ["caller"], regions: myRegions, areas: myAreas } } };
+        meta: { roles: ["caller"], regions: myRegions, areas: myAreas, events: myEvents } } };
       return;
     }
 
@@ -101,17 +114,20 @@ module.exports = async function (context, req) {
       const op = clean(body.op).toLowerCase();
       const e = body.entry || {};
       const role = clean(e.role).toLowerCase();
-      const region = clean(e.region);
+      const eventId = clean(e.event);
       const reqEmail = clean(e.email).toLowerCase();
       let areas = Array.isArray(e.areas) ? e.areas.map(clean).filter(Boolean) : [];
       if (!areas.length && clean(e.area)) areas = [clean(e.area)];
+      const evRegions = regionsForEvent(eventId);   // regions covered by the chosen Didar
 
       // ---- Quarterback path: may only manage CALLERS within their own area×region scopes ----
       if (!isSuper) {
         if (role !== "caller") { context.res = { status: 403, body: { error: "Quarterbacks can only manage callers." } }; return; }
-        if (!region || !areas.length) { context.res = { status: 400, body: { error: "Region and at least one area are required." } }; return; }
-        const outOfScope = areas.filter(a => !scopeHas(myScopes, a, region));
-        if (outOfScope.length) { context.res = { status: 403, body: { error: `Outside your areas: ${outOfScope.join(", ")}` } }; return; }
+        if (!eventId || !areas.length) { context.res = { status: 400, body: { error: "Pick an event and at least one area." } }; return; }
+        if (!evRegions.length) { context.res = { status: 400, body: { error: "That event has no regions set yet." } }; return; }
+        const out = [];
+        for (const r of evRegions) for (const a of areas) if (!scopeHas(myScopes, a, r)) out.push(`${a} · ${r}`);
+        if (out.length) { context.res = { status: 403, body: { error: `Outside your scope: ${out.join(", ")}` } }; return; }
       }
 
       let assignments = store;
@@ -123,18 +139,19 @@ module.exports = async function (context, req) {
         if (isSuper && !MANAGEABLE.includes(role)) {
           context.res = { status: 400, body: { error: `Role must be one of: ${MANAGEABLE.join(", ")}. (Super Admin is managed via app settings.)` } }; return;
         }
-        if (role === "dutyteam" || role === "quarterback" || role === "caller") {
-          if (!region || !REGIONS.includes(region)) { context.res = { status: 400, body: { error: "A valid region is required for this role." } }; return; }
-        }
+        if (!eventId) { context.res = { status: 400, body: { error: "Tag this person to an event." } }; return; }
+        if (!evRegions.length) { context.res = { status: 400, body: { error: "That event has no regions set — set them on the Events screen first." } }; return; }
         if (role === "quarterback" || role === "caller") {
           if (!areas.length) { context.res = { status: 400, body: { error: "Pick at least one area." } }; return; }
           if (areas.some(a => !AREAS.includes(a))) { context.res = { status: 400, body: { error: "One or more areas are invalid." } }; return; }
         }
+        // Expand the event tag into one role entry per region it covers (× area for qb/caller),
+        // stamping the event so the screen can group by it. The region on each row drives the data wall.
         const toAdd = [];
         if (role === "quarterback" || role === "caller") {
-          for (const a of areas) toAdd.push({ email: reqEmail, role, area: a, region });
+          for (const r of evRegions) for (const a of areas) toAdd.push({ email: reqEmail, role, area: a, region: r, event: eventId });
         } else {
-          const en = { email: reqEmail, role }; if (region) en.region = region; toAdd.push(en);
+          for (const r of evRegions) toAdd.push({ email: reqEmail, role, region: r, event: eventId });
         }
         let added = 0, dupes = 0;
         for (const en of toAdd) {
@@ -143,16 +160,25 @@ module.exports = async function (context, req) {
         }
         if (added === 0) { context.res = { status: 409, body: { error: "Those assignments already exist." } }; return; }
         await writeStore(c, assignments);
-        context.res = { body: { ok: true, added, dupes, assignments: scopedView(assignments, isSuper, myScopes) } };
+        context.res = { body: { ok: true, added, dupes, eventName: eventName(eventId), assignments: scopedView(assignments, isSuper, myScopes) } };
         return;
       }
 
       if (op === "remove") {
-        const entry = { email: reqEmail, role, area: areas[0] || "", region };
-        if (!entry.area) delete entry.area;
-        if (!entry.region) delete entry.region;
+        // Remove a whole event-tag group (email+role+event[, area]); legacy rows fall back to region match.
+        const region = clean(e.region);
         const before = assignments.length;
-        assignments = assignments.filter(a => !sameEntry(a, entry));
+        assignments = assignments.filter(a => {
+          if (clean(a.email).toLowerCase() !== reqEmail || clean(a.role) !== role) return true; // keep
+          if (eventId) {
+            if (clean(a.event) !== eventId) return true;
+            if (areas.length && !areas.includes(clean(a.area))) return true;
+            return false; // matches the group -> drop
+          }
+          if (region && clean(a.region) !== region) return true;
+          if (areas.length && !areas.includes(clean(a.area))) return true;
+          return false;
+        });
         if (assignments.length === before) { context.res = { status: 404, body: { error: "No matching assignment found." } }; return; }
         await writeStore(c, assignments);
         context.res = { body: { ok: true, assignments: scopedView(assignments, isSuper, myScopes) } };

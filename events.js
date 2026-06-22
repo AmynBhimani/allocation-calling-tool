@@ -24,6 +24,7 @@ function onType() {
   const isSession = document.getElementById('type').value === 'session';
   document.getElementById('parentField').classList.toggle('hide', !isSession);
   document.getElementById('jkField').classList.toggle('hide', !isSession);
+  document.getElementById('regionsField').classList.toggle('hide', isSession); // regions are a Didar property
 }
 function didars() { return EVENTS.filter(e => !e.parent); }
 function fillParents() {
@@ -62,7 +63,9 @@ function render() {
 
 function evRow(e, isSession) {
   const n = (e.jamatkhanas || []).length;
-  const jk = n ? `${n} Jamatkhana${n === 1 ? '' : 's'}` : '<span class="jkcount">none yet</span>';
+  const mid = isSession
+    ? (n ? `${n} Jamatkhana${n === 1 ? '' : 's'}` : '<span class="jkcount">none yet</span>')
+    : ((e.regions && e.regions.length) ? `<span class="regtag">Regions: ${e.regions.map(esc).join(', ')}</span>` : '<span class="jkcount">no regions set</span>');
   const active = e.active !== false;
   const nameCell = isSession
     ? `<span class="ev-session">↳ ${esc(e.name)}</span>`
@@ -70,10 +73,11 @@ function evRow(e, isSession) {
   const pill = active ? '' : '<span class="pill off">inactive</span>';
   return `<tr>
     <td>${nameCell}${pill}</td>
-    <td>${jk}</td>
+    <td>${mid}</td>
     <td><div class="actions">
       <button class="editbtn" data-act="rename" data-id="${esc(e.id)}">Rename</button>
-      ${isSession ? `<button class="editbtn" data-act="jks" data-id="${esc(e.id)}">Jamatkhanas</button>` : ''}
+      ${isSession ? `<button class="editbtn" data-act="jks" data-id="${esc(e.id)}">Jamatkhanas</button>`
+                  : `<button class="editbtn" data-act="regions" data-id="${esc(e.id)}">Regions</button>`}
       <button class="editbtn" data-act="toggle" data-id="${esc(e.id)}">${active ? 'Deactivate' : 'Activate'}</button>
       <button class="remove" data-act="remove" data-id="${esc(e.id)}">Remove</button>
     </div></td></tr>`;
@@ -97,6 +101,8 @@ async function add() {
     entry.parent = document.getElementById('parent').value;
     if (!entry.parent) { banner('Pick a parent Didar (create one first if there are none).', true); return; }
     entry.jamatkhanas = document.getElementById('jks').value;
+  } else {
+    entry.regions = [...document.querySelectorAll('.reg-cb')].filter(c => c.checked).map(c => c.value);
   }
   const btn = document.getElementById('addBtn'); btn.disabled = true;
   try {
@@ -104,6 +110,7 @@ async function add() {
     banner(`Added “${esc(name)}”.`, false);
     document.getElementById('name').value = '';
     document.getElementById('jks').value = '';
+    document.querySelectorAll('.reg-cb').forEach(c => c.checked = false);
     render(); fillParents();
   } catch (e) { banner('Could not add: ' + e.message, true); }
   btn.disabled = false;
@@ -131,6 +138,12 @@ async function onAct(ev) {
       if (v === null) return;
       await post({ op: 'update', entry: { id, jamatkhanas: v } });
       banner('Updated Jamatkhanas.', false);
+    } else if (act === 'regions') {
+      const cur = (e.regions || []).join(', ');
+      const v = prompt('Regions this Didar covers (comma-separated — BC, Prairies, Edmonton):', cur);
+      if (v === null) return;
+      await post({ op: 'update', entry: { id, regions: v } });
+      banner('Updated regions.', false);
     } else if (act === 'toggle') {
       await post({ op: 'update', entry: { id, active: e.active === false } });
       banner('Updated.', false);

@@ -1,4 +1,4 @@
-const { getContainer, readRegion, mutateVolunteer, REGIONS } = require("../shared/store");
+const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -39,11 +39,17 @@ module.exports = async function (context, req) {
     if (!email || !canRecon) { context.res = { status: 403, body: { error: "Not authorized." } }; return; }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
+    // Region wall: super-admins see all regions; everyone else is limited to the regions of the
+    // events they're tagged to (null = no event tags yet => global, so untagged admins aren't locked out).
+    const isSuper = roles.includes("superadmin");
+    const allowed = isSuper ? null : allowedRegionsFor(await readRolesStore(), email);
+    const scopeRegions = allowed ? REGIONS.filter(r => allowed.includes(r)) : REGIONS;
+
     const container = await getContainer(DATA_CONTAINER);
 
     if (req.method === "GET") {
       const only = req.query.region;
-      const regions = only && REGIONS.includes(only) ? [only] : REGIONS;
+      const regions = (only && scopeRegions.includes(only)) ? [only] : scopeRegions;
       const out = [];
       for (const r of regions) {
         const { records } = await readRegion(container, r);
@@ -59,6 +65,10 @@ module.exports = async function (context, req) {
       const op = (body.op || "final_area").toLowerCase();
       if (user_id == null || !region || !REGIONS.includes(region)) {
         context.res = { status: 400, body: { error: "user_id and a valid region are required." } };
+        return;
+      }
+      if (allowed && !scopeRegions.includes(region)) {
+        context.res = { status: 403, body: { error: "That region is outside your assigned events." } };
         return;
       }
 

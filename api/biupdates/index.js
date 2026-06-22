@@ -1,4 +1,4 @@
-const { getContainer, readRegion, mutateVolunteer, REGIONS } = require("../shared/store");
+const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -38,11 +38,15 @@ module.exports = async function (context, req) {
     if (!email || !allowed) { context.res = { status: 403, body: { error: "Admin or Super Admin only." } }; return; }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
+    // Region wall: super-admins see all; admins are limited to their tagged events' regions.
+    const isSuper = roles.includes("superadmin");
+    const allowRegions = isSuper ? null : allowedRegionsFor(await readRolesStore(), email);
+    const scopeRegions = allowRegions ? REGIONS.filter(r => allowRegions.includes(r)) : REGIONS;
     const container = await getContainer(DATA_CONTAINER);
 
     if (req.method === "GET") {
       const out = [];
-      for (const region of REGIONS) {
+      for (const region of scopeRegions) {
         const { records } = await readRegion(container, region);
         for (const v of records) if (needsRow(v)) out.push(row(v));
       }
@@ -59,7 +63,7 @@ module.exports = async function (context, req) {
       if (!items.length) { context.res = { status: 400, body: { error: "No volunteers given." } }; return; }
       let done = 0;
       for (const it of items) {
-        if (!REGIONS.includes(it.region)) continue;
+        if (!scopeRegions.includes(it.region)) continue;
         const result = await mutateVolunteer(container, it.region, it.user_id, (v) => {
           v.activity_log = v.activity_log || [];
           v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "bi_updated" });

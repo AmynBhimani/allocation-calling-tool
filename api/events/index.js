@@ -8,9 +8,11 @@ const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
 
 // Seeded automatically the first time the blob is missing, so the two Didars exist right after deploy.
 const DEFAULT_EVENTS = [
-  { id: "bc_didar", name: "British Columbia Didar", parent: null, jamatkhanas: [], active: true },
-  { id: "pe_didar", name: "Prairies / Edmonton Didar", parent: null, jamatkhanas: [], active: true },
+  { id: "bc_didar", name: "British Columbia Didar", parent: null, regions: ["BC"], jamatkhanas: [], active: true },
+  { id: "pe_didar", name: "Prairies / Edmonton Didar", parent: null, regions: ["Prairies", "Edmonton"], jamatkhanas: [], active: true },
 ];
+
+const VALID_REGIONS = ["BC", "Prairies", "Edmonton"];
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -31,11 +33,16 @@ function parseJk(v) {
   if (Array.isArray(v)) return v.map(clean).filter(Boolean);
   return clean(v).split(/[\n,]/).map(clean).filter(Boolean);
 }
+function parseRegions(v) {
+  const arr = Array.isArray(v) ? v : clean(v).split(/[\n,]/);
+  return [...new Set(arr.map(clean).filter(x => VALID_REGIONS.includes(x)))];
+}
 function norm(e) {
   return {
     id: clean(e.id),
     name: clean(e.name),
     parent: e.parent ? clean(e.parent) : null,
+    regions: parseRegions(e.regions),
     jamatkhanas: parseJk(e.jamatkhanas),
     active: e.active !== false,
   };
@@ -115,6 +122,7 @@ module.exports = async function (context, req) {
           ev.name = nm;
         }
         if (e.jamatkhanas !== undefined) ev.jamatkhanas = parseJk(e.jamatkhanas);
+        if (e.regions !== undefined) ev.regions = parseRegions(e.regions);
         if (e.active !== undefined) ev.active = !!e.active;
         await writeEvents(c, events);
         context.res = { body: { ok: true, events } };

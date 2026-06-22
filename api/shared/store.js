@@ -93,4 +93,34 @@ async function mergeRegion(container, region, mergeFn, { retries = 6 } = {}) {
 
 module.exports = {
   REGIONS, getContainer, readRegion, writeRegion, overwriteRegion, mutateVolunteer, mergeRegion, streamToString,
+  readRolesStore, allowedRegionsFor,
 };
+
+// ---- Event/region wall ----
+const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
+
+// Read the role store (app-config/roles.json) — [{ email, role, region?, area?, event? }, ...].
+async function readRolesStore() {
+  if (!CONN) return [];
+  try {
+    const c = BlobServiceClient.fromConnectionString(CONN).getContainerClient(CONFIG_CONTAINER);
+    const b = c.getBlockBlobClient("roles.json");
+    if (!(await b.exists())) return [];
+    const dl = await b.download();
+    const text = await streamToString(dl.readableStreamBody);
+    const obj = JSON.parse(text);
+    return Array.isArray(obj) ? obj : (obj.assignments || []);
+  } catch { return []; }
+}
+
+// The regions a person may see. Returns an array, or null meaning "all regions".
+// null is returned for super-admins (callers pass that in) and for anyone with no region-scoped
+// entries yet — so an untagged admin keeps global access until they're tagged to an event.
+function allowedRegionsFor(store, email) {
+  const e = String(email || "").toLowerCase().trim();
+  const regions = [...new Set(
+    store.filter(a => String(a.email || "").toLowerCase().trim() === e && String(a.region || "").trim())
+      .map(a => String(a.region).trim())
+  )];
+  return regions.length ? regions : null;
+}

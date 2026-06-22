@@ -1,4 +1,4 @@
-const { getContainer, readRegion, REGIONS } = require("../shared/store");
+const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -32,8 +32,13 @@ module.exports = async function (context, req) {
     if (!email || !allowed) { context.res = { status: 403, body: { error: "Admin or Super Admin only." } }; return; }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
+    // Region wall: super-admins see all; admins are limited to their tagged events' regions.
+    const isSuper = roles.includes("superadmin");
+    const allowRegions = isSuper ? null : allowedRegionsFor(await readRolesStore(), email);
+    const scopeRegions = allowRegions ? REGIONS.filter(r => allowRegions.includes(r)) : REGIONS;
+
     const qRegion = String(req.query.region || "").trim();
-    const regions = REGIONS.includes(qRegion) ? [qRegion] : REGIONS;
+    const regions = scopeRegions.includes(qRegion) ? [qRegion] : scopeRegions;
     const container = await getContainer(DATA_CONTAINER);
 
     const byArea = {};
@@ -73,7 +78,7 @@ module.exports = async function (context, req) {
     }
 
     const rows = Object.keys(byArea).sort().map(area => ({ area, ...byArea[area] }));
-    context.res = { body: { region: REGIONS.includes(qRegion) ? qRegion : "All", regions: REGIONS, rows, totals } };
+    context.res = { body: { region: scopeRegions.includes(qRegion) ? qRegion : "All", regions: scopeRegions, rows, totals } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }

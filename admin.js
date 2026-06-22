@@ -9,10 +9,10 @@ function clearBanner(){ document.getElementById('banner').hidden = true; }
 
 const ROLE_LABEL = { admin: "Admin", dutyteam: "Duty Allocation Team", quarterback: "Quarterback", caller: "Caller" };
 const ROLE_HINT = {
-  admin: "Global access: the iVol-input report and syncs. No scope needed.",
-  dutyteam: "Reconciliation. Region is required.",
-  quarterback: "Manages area(s) × region. Region and at least one area are required.",
-  caller: "Makes calls for area(s) × region. Region and at least one area are required.",
+  admin: "Manages everything within their event's regions. Tag them to an event.",
+  dutyteam: "Reconciliation within their event's regions. Tag them to an event.",
+  quarterback: "Manages area(s) within their event's regions. Event and at least one area required.",
+  caller: "Makes calls for area(s) within their event's regions. Event and at least one area required.",
 };
 
 async function boot() {
@@ -45,12 +45,18 @@ function clearAreaChecks() {
 
 function onRoleChange() {
   const role = document.getElementById('role').value;
-  const needsScope = role === 'quarterback' || role === 'caller';
-  const showRegion = needsScope || role === 'dutyteam';
-  document.getElementById('regionField').classList.toggle('hide', !showRegion);
-  document.getElementById('areaField').classList.toggle('hide', !needsScope);
+  const needsArea = role === 'quarterback' || role === 'caller';
+  document.getElementById('eventField').classList.remove('hide'); // every role is event-scoped now
+  document.getElementById('areaField').classList.toggle('hide', !needsArea);
   document.getElementById('roleHint').textContent = ROLE_HINT[role] || "";
 }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fillEventSelect(events){
+  const sel=document.getElementById('event');
+  sel.innerHTML='<option value="">—</option>'+(events||[]).map(e=>
+    `<option value="${esc(e.id)}">${esc(e.name)}${e.regions&&e.regions.length?` (${esc(e.regions.join(', '))})`:''}</option>`).join('');
+}
+function eventNameOf(id){ const e=(META.events||[]).find(x=>x.id===id); return e?e.name:(id||''); }
 
 async function load() {
   document.getElementById('count').textContent = "Loading…";
@@ -59,7 +65,7 @@ async function load() {
     if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("HTTP " + r.status));
     const d = await r.json();
     META = d.meta || META;
-    fillSelect(document.getElementById('region'), META.regions);
+    fillEventSelect(META.events);
     buildAreaChecks(META.areas);
     render(d.assignments || []);
     clearBanner();
@@ -71,24 +77,32 @@ async function load() {
 
 function render(list) {
   const rows = document.getElementById('rows');
-  document.getElementById('count').textContent = `${list.length} assignment${list.length === 1 ? "" : "s"}`;
   if (!list.length) {
+    document.getElementById('count').textContent = '0 assignments';
     rows.innerHTML = '<tr><td colspan="4"><div class="empty">No one added yet. Add your first team member above.</div></td></tr>';
     return;
   }
-  // group by role for readability
+  // Collapse the per-region rows back into one line per (email, role, event).
+  const groups = {};
+  for (const a of list) {
+    const key = [String(a.email).toLowerCase(), a.role, a.event || ''].join('|||');
+    const g = groups[key] || (groups[key] = { email: a.email, role: a.role, event: a.event || '', regions: new Set(), areas: new Set() });
+    if (a.region) g.regions.add(a.region);
+    if (a.area) g.areas.add(a.area);
+  }
+  const arr = Object.values(groups);
   const order = ["admin", "dutyteam", "quarterback", "caller"];
-  const sorted = [...list].sort((a, b) =>
-    order.indexOf(a.role) - order.indexOf(b.role) || (a.region||"").localeCompare(b.region||"") ||
-    (a.area||"").localeCompare(b.area||"") || a.email.localeCompare(b.email));
-  rows.innerHTML = sorted.map(a => {
-    const scope = [a.region, a.area].filter(Boolean).join(" · ") || '<span class="scope-txt">—</span>';
-    const entry = encodeURIComponent(JSON.stringify(a));
+  arr.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role) || (a.event || '').localeCompare(b.event || '') || a.email.localeCompare(b.email));
+  document.getElementById('count').textContent = `${arr.length} assignment${arr.length === 1 ? "" : "s"}`;
+  rows.innerHTML = arr.map(g => {
+    const evName = g.event ? esc(eventNameOf(g.event)) : '<span class="scope-txt">no event</span>';
+    const areaTxt = g.areas.size ? ' · ' + esc([...g.areas].join(', ')) : '';
+    const payload = encodeURIComponent(JSON.stringify({ email: g.email, role: g.role, event: g.event }));
     return `<tr>
-      <td>${a.email}</td>
-      <td><span class="role-pill r-${a.role}">${ROLE_LABEL[a.role] || a.role}</span></td>
-      <td>${scope}</td>
-      <td style="text-align:right"><button class="remove" data-entry="${entry}">Remove</button></td>
+      <td>${esc(g.email)}</td>
+      <td><span class="role-pill r-${g.role}">${ROLE_LABEL[g.role] || g.role}</span></td>
+      <td>${evName}${areaTxt}</td>
+      <td style="text-align:right"><button class="remove" data-entry="${payload}">Remove</button></td>
     </tr>`;
   }).join('');
   rows.querySelectorAll('.remove').forEach(b => b.addEventListener('click', () => remove(JSON.parse(decodeURIComponent(b.dataset.entry)))));
@@ -99,7 +113,7 @@ async function add() {
   const entry = {
     email: document.getElementById('email').value.trim(),
     role,
-    region: document.getElementById('region').value,
+    event: document.getElementById('event').value,
     areas: selectedAreas(),
   };
   const btn = document.getElementById('addBtn');
@@ -111,13 +125,11 @@ async function add() {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
-    const n = d.added || 0;
     const dupeNote = d.dupes ? ` (${d.dupes} already existed)` : '';
-    banner(`Added <b>${entry.email}</b> as ${ROLE_LABEL[role]}${n > 1 ? ` for ${n} areas` : ''}.${dupeNote}`, false);
-    // clear ALL fields after a successful add
+    banner(`Added <b>${esc(entry.email)}</b> as ${ROLE_LABEL[role]}${d.eventName ? ` — ${esc(d.eventName)}` : ''}.${dupeNote}`, false);
     document.getElementById('email').value = '';
     document.getElementById('role').value = 'admin';
-    document.getElementById('region').value = '';
+    document.getElementById('event').value = '';
     clearAreaChecks();
     onRoleChange();
     render(d.assignments);

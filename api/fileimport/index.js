@@ -1,6 +1,7 @@
 const { allocate } = require("../sync/allocate");
 const { WESTERN_JKS, REGIONS } = require("../sync/fields");
 const { getContainer, overwriteRegion, mergeRegion } = require("../shared/store");
+const { computeCallableStatus } = require("../shared/status");
 
 const CONN = process.env.RESPONSES_STORAGE;
 
@@ -44,11 +45,14 @@ module.exports = async function (context, req) {
         cell_phone: r.cell_phone, home_phone: r.home_phone, work_phone: r.work_phone,
         ceremony_jk: r.jk, region,
         list: a.list || null,
-        computed_area: a.computed_area, final_area: a.computed_area,
+        // computed_area is the engine's suggestion; final_area stays empty until a reconcile
+        // decision confirms it. That is what keeps never-reviewed people out of the callable pool.
+        computed_area: a.computed_area, final_area: null,
         held_aside: !!a.held_aside,
         affinity_flag: false, leader_flag: false, conflict_claims: [],
         never_reviewed: true, new_since_sync: true,
-        callable_status: a.held_aside ? "Unassigned" : "Stable",
+        callable_status: "Unassigned",
+        event_assignments: [],
         assigned_caller: null, ivol_entered: false, ivol_ready: false,
         no_bi_account: false, call_outcome: null, call_done: false, referred_from: null,
         activity_log: []
@@ -74,8 +78,15 @@ module.exports = async function (context, req) {
               list: nv.list, computed_area: nv.computed_area, held_aside: nv.held_aside,
               new_since_sync: false };
           }
-          if (old) { summary.refreshed++; return { ...nv, new_since_sync: false,
-            affinity_flag: old.affinity_flag, leader_flag: old.leader_flag, conflict_claims: old.conflict_claims || [] }; }
+          if (old) {
+            summary.refreshed++;
+            const m = { ...nv, new_since_sync: false,
+              affinity_flag: old.affinity_flag, leader_flag: old.leader_flag,
+              conflict_claims: old.conflict_claims || [],
+              event_assignments: old.event_assignments || [] };
+            m.callable_status = computeCallableStatus(m);   // respect any carried-over claims
+            return m;
+          }
           summary.added++;
           return nv;
         });

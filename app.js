@@ -102,10 +102,14 @@ function buildJk() {
     jks.map(j => `<option value="${j}" ${j===cur?'selected':''}>${j}</option>`).join('');
 }
 
-function statusPill(s){
-  if(s==="Stable") return '<span class="pill p-stable">Stable · callable</span>';
-  if(s==="In reconciliation") return '<span class="pill p-recon">In reconciliation</span>';
-  if(s==="Leadership - Do Not Allocate") return '<span class="pill p-lead">Leadership · do not allocate</span>';
+function statusPill(v){
+  // Accept the whole volunteer (or a bare status string, for back-compat) and derive defensively,
+  // so a contested or unconfirmed person can never render as "callable" even if a stale status says so.
+  if(typeof v === "string") v = { status: v };
+  if(v && v.status==="Leadership - Do Not Allocate") return '<span class="pill p-lead">Leadership · do not allocate</span>';
+  const claims = (v && Array.isArray(v.claims)) ? v.claims : [];
+  if(v && v.final) return '<span class="pill p-stable">Stable · callable</span>';   // confirmed area wins
+  if(claims.length > 1) return '<span class="pill p-recon">In reconciliation</span>';
   return '<span class="pill p-un">Unassigned</span>';
 }
 function matches(v){
@@ -169,7 +173,7 @@ function render(){
       <td class="hide-sm"><span class="sub">${v.jk}</span></td>
       <td>${computed}</td>
       <td><div class="badges">${badges.join('')||'<span class="sub">—</span>'}</div></td>
-      <td>${statusPill(v.status)}</td>
+      <td>${statusPill(v)}</td>
       <td><select class="final ${unset&&!isLead?'unset':''}" data-id="${v.id}" data-region="${v.region}">${opts}</select></td>
     </tr>`;
   }).join('');

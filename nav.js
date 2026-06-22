@@ -12,6 +12,7 @@
     {href:'/events.html',      label:'Events',           roles:['superadmin','admin']},
     {href:'/admin.html',       label:'Team & Roles',     roles:['superadmin','admin']},
     {href:'/fileimport.html',  label:'BI import',        roles:['superadmin']},
+    {href:'/migration.html',   label:'Migration',        roles:['superadmin']},
     {href:'/api/backup',       label:'Download backup',  roles:['superadmin']}
   ];
   function curPath(){ var p=location.pathname; if(!p||p==='/') p='/index.html'; return p; }

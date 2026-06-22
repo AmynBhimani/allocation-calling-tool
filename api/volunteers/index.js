@@ -1,4 +1,5 @@
-const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
+const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor, readDidars } = require("../shared/store");
+const { computeCallableStatus, seedEventAssignments } = require("../shared/status");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -72,6 +73,7 @@ module.exports = async function (context, req) {
         return;
       }
 
+      const didars = await readDidars();
       const result = await mutateVolunteer(container, region, user_id, (v) => {
         v.activity_log = v.activity_log || [];
         if (op === "leadership") {
@@ -81,15 +83,17 @@ module.exports = async function (context, req) {
           v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "set_leadership_dna" });
         } else if (op === "clear_leadership") {
           v.final_area = v._prev_final != null ? v._prev_final : v.computed_area;
-          v.callable_status = v.final_area ? "Stable" : "Unassigned";
           delete v._prev_final;
+          v.callable_status = computeCallableStatus(v);
+          if (v.final_area) v.event_assignments = seedEventAssignments(v, didars);
           v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "clear_leadership_dna" });
         } else {
           const fa = body.final_area;
           const hold = fa === "__hold__" || fa === null || fa === "";
           const before = v.final_area;
           v.final_area = hold ? null : fa;
-          v.callable_status = hold ? "Unassigned" : "Stable";
+          v.callable_status = computeCallableStatus(v);   // confirmed area -> Stable; else claims/Unassigned
+          if (v.final_area) v.event_assignments = seedEventAssignments(v, didars);  // pre-seed Didar rows
           v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "set_final_area", from: before || null, to: v.final_area || null });
         }
       });

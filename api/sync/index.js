@@ -2,6 +2,7 @@ const { fetchAllUsers } = require("./bi");
 const { allocate } = require("./allocate");
 const { normalize, WESTERN_JKS, REGIONS } = require("./fields");
 const { getContainer, overwriteRegion, mergeRegion } = require("../shared/store");
+const { computeCallableStatus } = require("../shared/status");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const BI_USER = process.env.BI_API_USER;
@@ -61,11 +62,12 @@ module.exports = async function (context, req) {
         cell_phone: r.cell_phone, home_phone: r.home_phone, work_phone: r.work_phone,
         ceremony_jk: r.jk, region,
         list: a.list || null,
-        computed_area: a.computed_area, final_area: a.computed_area,
+        computed_area: a.computed_area, final_area: null,
         held_aside: !!a.held_aside,
         affinity_flag: false, leader_flag: false, conflict_claims: [],
         never_reviewed: true, new_since_sync: true,
-        callable_status: a.held_aside ? "Unassigned" : "Stable",
+        callable_status: "Unassigned",
+        event_assignments: [],
         assigned_caller: null, ivol_entered: false, activity_log: []
       });
     }
@@ -91,8 +93,15 @@ module.exports = async function (context, req) {
               new_since_sync: false
             };
           }
-          if (old) { summary.refreshed++; return { ...nv, new_since_sync: false,
-            affinity_flag: old.affinity_flag, leader_flag: old.leader_flag, conflict_claims: old.conflict_claims || [] }; }
+          if (old) {
+            summary.refreshed++;
+            const m = { ...nv, new_since_sync: false,
+              affinity_flag: old.affinity_flag, leader_flag: old.leader_flag,
+              conflict_claims: old.conflict_claims || [],
+              event_assignments: old.event_assignments || [] };
+            m.callable_status = computeCallableStatus(m);
+            return m;
+          }
           summary.added++;
           return nv;
         });

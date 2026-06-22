@@ -93,8 +93,28 @@ async function mergeRegion(container, region, mergeFn, { retries = 6 } = {}) {
 
 module.exports = {
   REGIONS, getContainer, readRegion, writeRegion, overwriteRegion, mutateVolunteer, mergeRegion, streamToString,
-  readRolesStore, allowedRegionsFor,
+  readRolesStore, allowedRegionsFor, readConfigJson, readDidars,
 };
+
+// ---- Config readers (app-config/*.json) ----
+async function readConfigJson(blobName) {
+  if (!CONN) return null;
+  try {
+    const c = BlobServiceClient.fromConnectionString(CONN).getContainerClient(CONFIG_CONTAINER);
+    const b = c.getBlockBlobClient(blobName);
+    if (!(await b.exists())) return null;
+    const dl = await b.download();
+    return JSON.parse(await streamToString(dl.readableStreamBody));
+  } catch { return null; }
+}
+
+// Active top-level Didars with their regions — { id, name, regions, active }.
+async function readDidars() {
+  const o = await readConfigJson("events.json");
+  const arr = Array.isArray(o) ? o : ((o && o.events) || []);
+  return arr.filter(e => e && !e.parent && e.active !== false)
+    .map(e => ({ id: e.id, name: e.name, regions: Array.isArray(e.regions) ? e.regions : [], active: e.active !== false }));
+}
 
 // ---- Event/region wall ----
 const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";

@@ -1,6 +1,6 @@
 const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception & Hospitality",
   "Seniors & Mobility","Food Services","Layout & Logistics","Registration & Access","Medical Services",
-  "Finance & Procurement","Environmental Sustainability"];
+  "Finance & Procurement","Environmental Sustainability","Memorabilia & Design","Jamati Preparation"];
 
 let ACTIVE = [], COMPLETED = [], ROLES = [];
 let tab = "active";

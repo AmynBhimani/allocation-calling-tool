@@ -258,7 +258,7 @@ function render(){
     if(v.no_bi) badges.push('<span class="badge b-nobi">No BI acct</span>');
     if(v.dup) badges.push('<span class="badge b-dup">Possible duplicate</span>');
     if(v.referred_from) badges.push(`<span class="badge b-aff">Referred from ${v.referred_from}</span>`);
-    const checked = selected.has(v.id)?'checked':'';
+    const checked = selected.has(String(v.id))?'checked':'';
     const assignedCell = v.assigned ? `<span class="assigned-tag">${v.assigned}</span>` : '<span class="unassigned-tag">— unassigned —</span>';
     return `<tr data-id="${v.id}">
       <td class="cbcol"><input type="checkbox" class="rowcb" data-id="${v.id}" data-region="${v.region}" ${checked}></td>
@@ -270,7 +270,7 @@ function render(){
     </tr>`;
   }).join('');
   rows.querySelectorAll('.rowcb').forEach(cb=>cb.addEventListener('change',()=>{
-    const id=+cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateActionBar();
+    const id=cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateActionBar();
   }));
   rows.querySelectorAll('.dutysel').forEach(s=>s.addEventListener('change',()=>setDuty(s.dataset.id, s.dataset.region, s.value)));
   document.getElementById('count').textContent=`Showing ${list.length} of ${tot} · ${selected.size} selected`;
@@ -281,7 +281,7 @@ function render(){
 function visibleList(){ return DATA.filter(matches); }
 function toggleAllVisible(on){
   const vis=visibleList();
-  if(on) vis.forEach(v=>selected.add(v.id)); else vis.forEach(v=>selected.delete(v.id));
+  if(on) vis.forEach(v=>selected.add(String(v.id))); else vis.forEach(v=>selected.delete(String(v.id)));
   render();
 }
 function updateActionBar(){
@@ -291,12 +291,12 @@ function updateActionBar(){
   const caller=document.getElementById('callerSel').value;
   document.getElementById('assignBtn').disabled = n===0 || !caller;
   document.getElementById('unassignBtn').disabled = n===0;
-  document.getElementById('cbAll').checked = n>0 && visibleList().every(v=>selected.has(v.id));
+  document.getElementById('cbAll').checked = n>0 && visibleList().every(v=>selected.has(String(v.id)));
 }
 
 function selectedByRegion(){
   const byR={};
-  for(const v of DATA){ if(selected.has(v.id)){ (byR[v.region]=byR[v.region]||[]).push(v.id); } }
+  for(const v of DATA){ if(selected.has(String(v.id))){ (byR[v.region]=byR[v.region]||[]).push(v.id); } }
   return byR;
 }
 

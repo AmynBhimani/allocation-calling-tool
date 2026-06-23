@@ -189,9 +189,9 @@ function render(){
 
 async function onFinalChange(e){
   const sel = e.target;
-  const id = +sel.dataset.id;
   const region = sel.dataset.region;
-  const v = DATA.find(x=>x.id===id);
+  const v = DATA.find(x=>String(x.id)===String(sel.dataset.id));
+  const id = v ? v.id : sel.dataset.id;
   const val = sel.value;
   const wasNotCallable = v.status!=="Stable";
   sel.disabled = true;

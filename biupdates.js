@@ -35,7 +35,7 @@ function render(){
     document.getElementById('count').textContent=""; updateBar(); return;
   }
   rows.innerHTML=ROWS.map(v=>{
-    const checked=selected.has(v.id)?'checked':'';
+    const checked=selected.has(String(v.id))?'checked':'';
     let what='';
     if(v.changes){
       what=Object.entries(v.changes).map(([f,c])=>`<div class="chg"><b>${FIELD_LABEL[f]||f}:</b> <span class="from">${esc(c.from||'(blank)')}</span> → <span class="to">${esc(c.to||'(blank)')}</span></div>`).join('');
@@ -50,23 +50,23 @@ function render(){
     </tr>`;
   }).join('');
   rows.querySelectorAll('.rowcb').forEach(cb=>cb.addEventListener('change',()=>{
-    const id=+cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateBar();
+    const id=cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateBar();
   }));
   document.getElementById('count').textContent=`${ROWS.length} needing updates · ${selected.size} selected`;
   updateBar();
 }
 
-function toggleAll(on){ if(on) ROWS.forEach(v=>selected.add(v.id)); else selected.clear(); render(); }
+function toggleAll(on){ if(on) ROWS.forEach(v=>selected.add(String(v.id))); else selected.clear(); render(); }
 function updateBar(){
   const n=selected.size;
   document.getElementById('selcount').textContent=`${n} selected`;
   document.getElementById('actionbar').classList.toggle('idle', n===0);
   document.getElementById('doneBtn').disabled=n===0;
-  document.getElementById('cbAll').checked = ROWS.length>0 && ROWS.every(v=>selected.has(v.id));
+  document.getElementById('cbAll').checked = ROWS.length>0 && ROWS.every(v=>selected.has(String(v.id)));
 }
 
 async function markDone(){
-  const items=ROWS.filter(v=>selected.has(v.id)).map(v=>({user_id:v.id,region:v.region}));
+  const items=ROWS.filter(v=>selected.has(String(v.id))).map(v=>({user_id:v.id,region:v.region}));
   if(!items.length) return;
   document.getElementById('doneBtn').disabled=true;
   try{

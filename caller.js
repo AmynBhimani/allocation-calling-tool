@@ -155,7 +155,7 @@ function renderAll(){
       <div class="right">${tag}</div></div>`;
   }).join('');
   ql.querySelectorAll('.qitem').forEach(el=>el.addEventListener('click',()=>{
-    const v=list.find(x=>x.id===+el.dataset.id); openCall(v);
+    const v=list.find(x=>String(x.id)===String(el.dataset.id)); openCall(v);
   }));
   document.getElementById('qcount').textContent=`${list.length} ${tab==="active"?"to call":"completed"}`;
 }

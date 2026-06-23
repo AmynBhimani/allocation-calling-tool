@@ -73,7 +73,7 @@ function render(){
     document.getElementById('count').textContent="No matches."; updateBar(); return;
   }
   rows.innerHTML=view.map(v=>{
-    const checked=selected.has(v.id)?'checked':'';
+    const checked=selected.has(String(v.id))?'checked':'';
     const date=v.accepted_at?new Date(v.accepted_at).toLocaleDateString():'—';
     return `<tr class="${v.entered?'entered-row':''}">
       <td class="cbcol"><input type="checkbox" class="rowcb" data-id="${v.id}" data-region="${v.region}" ${checked}></td>
@@ -86,24 +86,24 @@ function render(){
     </tr>`;
   }).join('');
   rows.querySelectorAll('.rowcb').forEach(cb=>cb.addEventListener('change',()=>{
-    const id=+cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateBar();
+    const id=cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateBar();
   }));
   document.getElementById('count').textContent=`${view.length} shown · ${selected.size} selected`;
   updateBar();
 }
 
-function toggleAll(on){ const view=ROWS.filter(matches); if(on) view.forEach(v=>selected.add(v.id)); else view.forEach(v=>selected.delete(v.id)); render(); }
+function toggleAll(on){ const view=ROWS.filter(matches); if(on) view.forEach(v=>selected.add(String(v.id))); else view.forEach(v=>selected.delete(String(v.id))); render(); }
 function updateBar(){
   const n=selected.size;
   const view=ROWS.filter(matches);
   document.getElementById('selcount').textContent=`${n} selected`;
   document.getElementById('markBtn').disabled=n===0;
   document.getElementById('unmarkBtn').disabled=n===0;
-  document.getElementById('cbAll').checked = view.length>0 && view.every(v=>selected.has(v.id));
+  document.getElementById('cbAll').checked = view.length>0 && view.every(v=>selected.has(String(v.id)));
 }
 
 async function mark(entered){
-  const items=ROWS.filter(v=>selected.has(v.id)).map(v=>({user_id:v.id,region:v.region}));
+  const items=ROWS.filter(v=>selected.has(String(v.id))).map(v=>({user_id:v.id,region:v.region}));
   if(!items.length) return;
   document.getElementById('markBtn').disabled=true; document.getElementById('unmarkBtn').disabled=true;
   try{

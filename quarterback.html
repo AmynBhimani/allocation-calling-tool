@@ -104,9 +104,11 @@
     <div class="count" id="count">Loading…</div>
   </div>
 
-  <div class="card" id="resolvedCard" style="display:none">
-    <h2 style="font-family:Cambria,Georgia,serif;font-size:17px;color:var(--ink);margin:0 0 2px">Resolved by a caller</h2>
-    <p class="sub" style="margin:0 0 10px">Already accepted or withdrawn — not assignable. If someone changes their mind, their caller can re-open them and they return to the pool above.</p>
+  <div class="panel" id="resolvedCard" style="display:none;margin-top:20px">
+    <div style="padding:15px 16px 2px">
+      <h2 style="font-family:Cambria,Georgia,serif;font-size:17px;color:var(--ink);margin:0 0 2px">Resolved by a caller</h2>
+      <p class="sub" style="margin:0 0 10px">Already accepted or withdrawn — not assignable. If someone changes their mind, their caller can re-open them and they return to the pool above.</p>
+    </div>
     <table class="grid">
       <thead><tr><th>Name</th><th>Area</th><th>Outcome</th><th>Caller</th><th></th></tr></thead>
       <tbody id="resolvedRows"></tbody>

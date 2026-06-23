@@ -25,14 +25,28 @@ module.exports = async function (context, req) {
     const strip = (body.strip && typeof body.strip === "object") ? body.strip : DEFAULT_STRIP;
     const targets = Array.isArray(body.targets) ? body.targets : null;
 
-    // Read all shards and assemble the engine's input records.
+    // Read all shards and assemble the engine's input records — counting each person ONCE.
+    // A user_id can wrongly appear in two shards if their region changed between imports
+    // (the old shard keeps a touched copy). We dedupe by user_id and report the conflicts.
     const container = await getContainer(DATA_CONTAINER);
     const recordsByRegion = {};
     const records = [];
+    const seenRegion = new Map();     // user_id -> first region it was counted in
+    const dupMap = new Map();         // user_id -> [regions...]
+    let rawRecords = 0, writeIns = 0;
     for (const region of REGIONS) {
       const { records: rs } = await readRegion(container, region);
       recordsByRegion[region] = rs;
       for (const v of rs) {
+        rawRecords++;
+        if (v.no_bi_account || v.source === "writein") writeIns++;
+        const id = String(v.user_id);
+        if (seenRegion.has(id)) {                         // already counted — this is a duplicate row
+          if (!dupMap.has(id)) dupMap.set(id, [seenRegion.get(id)]);
+          dupMap.get(id).push(region);
+          continue;
+        }
+        seenRegion.set(id, region);
         records.push({
           user_id: v.user_id, region,
           computed_area: v.computed_area || null, final_area: v.final_area || null,
@@ -43,6 +57,9 @@ module.exports = async function (context, req) {
         });
       }
     }
+    const duplicates = [...dupMap.entries()].map(([user_id, regions]) => ({ user_id, regions }));
+    const audit = { rawRecords, unique: records.length, duplicateIds: duplicates.length,
+      duplicateRows: rawRecords - records.length, writeIns, duplicates: duplicates.slice(0, 300) };
 
     const plan = allocate(records, { asOf: AS_OF, seed, strip, targets });
 
@@ -61,7 +78,7 @@ module.exports = async function (context, req) {
       for (const d of plan.decisions) {
         if (!pred(d)) continue;
         const i = info.get(String(d.user_id)) || {};
-        out.push({ user_id: d.user_id, name: i.name || "", region: d.region, jk: i.jk || "", age: d.age });
+        out.push({ user_id: d.user_id, name: i.name || "", region: d.region, jk: i.jk || "", age: d.age, bucket: d.bucket, area: d.area });
         if (out.length >= CAP) break;
       }
       out.sort((a, b) => (a.region + a.name).localeCompare(b.region + b.name));
@@ -79,11 +96,12 @@ module.exports = async function (context, req) {
       mode: commit ? "commit" : "preview", asOf: plan.asOf, seed: plan.seed, strip,
       total: records.length, affinityTotal: plan.affinityTotal, affinityLeaders: plan.affinityLeaders,
       contestedTotal: plan.contestedTotal, nullAge: plan.nullAge,
+      noAgeHeld: plan.decisions.filter(d => d.bucket === "noage").length,
       matrix: plan.matrix, totalsByArea,
       stripReport: plan.stripReport, distReport: plan.distReport,
       withAge: records.filter(r => (r.age != null && Number.isFinite(Number(r.age))) || r.birthday).length,
       targets: (plan.distReport[REGIONS[0]] && plan.distReport[REGIONS[0]].targets) || [],
-      lists, listCap: CAP,
+      audit, lists, listCap: CAP,
     };
 
     if (!commit) {
@@ -99,6 +117,7 @@ module.exports = async function (context, req) {
       await mergeRegion(container, region, (existing) => existing.map(v => {
         const d = decById.get(String(v.user_id));
         if (!d || d.bucket === "affinity" || d.bucket === "contested") return v;   // review-touched: leave alone
+        if (String(d.region) !== region) return v;   // a stale duplicate copy in another shard — don't re-allocate it
         const nv = { ...v };
         if (d.bucket === "assigned" || d.bucket === "kept") {
           nv.final_area = d.area; nv.conflict_claims = []; nv.alloc_category = null;

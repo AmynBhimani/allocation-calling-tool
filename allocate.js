@@ -105,11 +105,20 @@
     return html + "</table>";
   }
 
-  function listSection(title, key, rows, hint) {
+  function placeLabel(r) {
+    if (r.bucket === "affinity" || r.bucket === "kept" || r.bucket === "assigned") return r.area || "—";
+    if (r.bucket === "contested") return "In reconciliation";
+    if (r.bucket === "iff") return "IFF";
+    if (r.bucket === "noage") return "No age — held out";
+    if (r.bucket === "young") return "Young Volunteers";
+    return "Unassigned";
+  }
+  function listSection(title, key, rows, hint, showPlace) {
     if (!rows || !rows.length) return "";
-    var head = '<tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th>Age</th></tr>';
+    var head = '<tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th>Age</th>' + (showPlace ? "<th>Where they landed</th>" : "") + "</tr>";
     var body = rows.slice(0, 250).map(function (r) {
-      return "<tr><td>" + esc(r.name || "—") + "</td><td>" + esc(r.region) + "</td><td>" + esc(r.jk || "—") + '</td><td class="n">' + (r.age == null ? "—" : r.age) + "</td></tr>";
+      return "<tr><td>" + esc(r.name || "—") + "</td><td>" + esc(r.region) + "</td><td>" + esc(r.jk || "—") + '</td><td class="n">' + (r.age == null ? "—" : r.age) + "</td>"
+        + (showPlace ? "<td>" + esc(placeLabel(r)) + "</td>" : "") + "</tr>";
     }).join("");
     var more = rows.length > 250 ? '<div class="small" style="margin-top:6px">Showing first 250 of ' + rows.length + ". Use Copy CSV for the full list.</div>" : "";
     return '<details class="lst"><summary>' + esc(title) + " (" + rows.length + ")</summary>"
@@ -121,17 +130,39 @@
   function render(d) {
     EL("empty").style.display = "none";
     var res = EL("res"); res.style.display = "block";
-    var ageWarn = (d.withAge < d.total)
-      ? '<div class="warn">' + d.nullAge + " of " + d.total + " volunteers have no age on file. They are held out of the allocation (not placed in any area) and flagged below so you can fix their birthdate/age in Better Impact and re-run.</div>"
+    var held = d.noAgeHeld || 0, placed = (d.nullAge || 0) - held;
+    var ageWarn = d.nullAge
+      ? '<div class="warn"><b>' + d.nullAge.toLocaleString() + "</b> volunteers have no age on file. <b>" + held.toLocaleString()
+        + "</b> of them are held out of the allocation (no age and not from the review) — that's the \u201cNo age on file\u201d row in the table. The other <b>" + placed.toLocaleString()
+        + "</b> were already assigned or claimed in the review tool (or are IFF), so they keep their place and are only flagged here. Everyone missing an age is in the \u201cNo age on file (all)\u201d list with where each landed. No one is counted twice.</div>"
       : "";
     var html = ""
       + '<div class="kpis">'
       + '<div class="kpi"><div class="n">' + d.affinityTotal.toLocaleString() + '</div><div class="l">Affinity (final area kept) — expect ~1,068</div></div>'
       + '<div class="kpi"><div class="n">' + d.affinityLeaders.toLocaleString() + '</div><div class="l">of which leaders — expect ~267</div></div>'
       + '<div class="kpi"><div class="n">' + (d.contestedTotal || 0).toLocaleString() + '</div><div class="l">In reconciliation (claimed, left alone)</div></div>'
-      + (d.nullAge ? '<div class="kpi flag"><div class="n">' + d.nullAge.toLocaleString() + '</div><div class="l">no age on file (held &amp; flagged)</div></div>' : "")
-      + "</div>"
-      + ageWarn
+      + (d.nullAge ? '<div class="kpi flag"><div class="n">' + d.nullAge.toLocaleString() + '</div><div class="l">missing an age (' + (d.noAgeHeld || 0).toLocaleString() + ' held · rest already placed)</div></div>' : "")
+      + "</div>";
+
+    var a = d.audit || {};
+    html += '<div class="sub2">Data check</div>';
+    html += '<div class="' + (a.duplicateRows ? "warn" : "ok") + '">Read <b>' + (a.rawRecords || 0).toLocaleString() + "</b> rows from the workspace → <b>"
+      + (a.unique || 0).toLocaleString() + "</b> unique people allocated"
+      + (a.writeIns ? " (includes " + a.writeIns.toLocaleString() + " written-in / No-BI people added during the review)" : "")
+      + (a.duplicateRows
+        ? '. ⚠ <b>' + a.duplicateRows.toLocaleString() + "</b> duplicate row(s) covering <b>" + a.duplicateIds.toLocaleString()
+          + "</b> people were found — the same person sitting in more than one region shard. They're counted once here, but the extra copies should be cleaned up so a re-import doesn't keep them."
+        : " — every person counted exactly once.")
+      + "</div>";
+    if (a.duplicates && a.duplicates.length) {
+      html += '<details class="lst"><summary>Duplicated people (' + a.duplicates.length + (a.duplicateIds > a.duplicates.length ? " of " + a.duplicateIds : "") + ")</summary>"
+        + '<button class="btn ghost2 dupcsv">Copy CSV</button>'
+        + '<table class="matrix"><tr><th>User ID</th><th>Appears in regions</th></tr>'
+        + a.duplicates.slice(0, 250).map(function (x) { return "<tr><td>" + esc(x.user_id) + "</td><td>" + esc((x.regions || []).join(", ")) + "</td></tr>"; }).join("")
+        + "</table></details>";
+    }
+
+    html += ageWarn
       + '<div class="sub2">Allocated by region &amp; area</div>' + matrixTable(d)
       + '<div class="sub2">Random removals into Unassigned</div>' + stripTable(d)
       + '<div class="sub2">Distribution of the Unassigned over-16 pool</div>' + distTable(d);
@@ -141,7 +172,7 @@
     html += listSection("In reconciliation — claimed in review, decision pending", "contested", L.contested, "These were assigned/claimed in the review tool and are NOT touched by the allocation.");
     html += listSection("IFF", "iff", L.iff, "Inter-faith family members — held in their own category, not assigned to a process area.");
     html += listSection("Young Volunteers (under 16)", "young", L.young, "Under 16 — held out of process areas (except those left in Reception & Hospitality).");
-    html += listSection("No age on file", "noAge", L.noAge, "No age in the import — held out and flagged for follow-up.");
+    html += listSection("No age on file (all) — everyone missing an age, and where each landed", "noAge", L.noAge, "The held subset (no area) plus people already assigned/claimed in review who also lack an age.", true);
     html += listSection("Unassigned (16+, no area / not placed)", "unassigned", L.unassigned, "");
 
     if (d.mode === "commit") html += '<div class="ok">' + esc(d.note || "Committed.") + "</div>";
@@ -150,13 +181,19 @@
     res.querySelectorAll(".csvbtn").forEach(function (b) {
       b.addEventListener("click", function () {
         var rows = (lastPlan.lists || {})[b.getAttribute("data-csv")] || [];
-        var csv = "Name,Region,Jamatkhana,Age\n" + rows.map(function (r) {
-          return [r.name, r.region, r.jk, (r.age == null ? "" : r.age)].map(function (x) {
+        var csv = "Name,Region,Jamatkhana,Age,Where they landed\n" + rows.map(function (r) {
+          return [r.name, r.region, r.jk, (r.age == null ? "" : r.age), placeLabel(r)].map(function (x) {
             x = String(x == null ? "" : x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x;
           }).join(",");
         }).join("\n");
         navigator.clipboard.writeText(csv).then(function () { b.textContent = "Copied " + rows.length + " rows"; setTimeout(function () { b.textContent = "Copy CSV"; }, 1800); });
       });
+    });
+    var db = res.querySelector(".dupcsv");
+    if (db) db.addEventListener("click", function () {
+      var rows = ((lastPlan.audit || {}).duplicates) || [];
+      var csv = "UserID,Regions\n" + rows.map(function (r) { return r.user_id + ',"' + (r.regions || []).join(", ") + '"'; }).join("\n");
+      navigator.clipboard.writeText(csv).then(function () { db.textContent = "Copied " + rows.length + " rows"; setTimeout(function () { db.textContent = "Copy CSV"; }, 1800); });
     });
   }
 

@@ -58,6 +58,7 @@ function normalize(u) {
     cell_phone: u.cell_phone || "", home_phone: u.home_phone || "", work_phone: u.work_phone || "",
     username: u.username || "",
     jk,
+    birthday: u.birthday || null,
     age: ageFromBirthday(u.birthday),
     interfaith: yes(cfVal("inter-faith family member")),
     healthcare: yes(cfVal("healthcare professional or provider")),

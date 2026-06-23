@@ -61,6 +61,7 @@ module.exports = async function (context, req) {
         user_id: r.user_id, first: r.first, last: r.last, email: r.email, username: r.username,
         cell_phone: r.cell_phone, home_phone: r.home_phone, work_phone: r.work_phone,
         ceremony_jk: r.jk, region,
+        birthday: r.birthday || null, interfaith: !!r.interfaith,
         list: a.list || null,
         computed_area: a.computed_area, final_area: null,
         held_aside: !!a.held_aside,
@@ -89,6 +90,7 @@ module.exports = async function (context, req) {
               first: nv.first, last: nv.last, email: nv.email, username: nv.username,
               cell_phone: nv.cell_phone, home_phone: nv.home_phone, work_phone: nv.work_phone,
               ceremony_jk: nv.ceremony_jk, region: nv.region,
+              birthday: nv.birthday || null, interfaith: !!nv.interfaith,
               list: nv.list, computed_area: nv.computed_area, held_aside: nv.held_aside,
               new_since_sync: false
             };

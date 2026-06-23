@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allocation</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .al-wrap{max-width:1000px;margin:0 auto;padding:18px 24px 70px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:18px}
+  .card h2{font-family:Cambria,Georgia,serif;font-size:18px;color:var(--ink);margin:0 0 4px}
+  .step{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--teal)}
+  .card .hint{font-size:13px;color:var(--mute);margin:6px 0 14px;line-height:1.55}
+  .btn{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:10px 18px;cursor:pointer}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.45;cursor:default}
+  .btn.commit{background:var(--accent)} .btn.commit:hover{background:#a83729}
+  .btn.ghost2{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:8px 0 4px}
+  .scfg{border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .scfg h4{margin:0 0 8px;font-size:13px;color:var(--ink)}
+  .scfg label{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--mute);margin:6px 0}
+  .scfg input{width:84px;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;text-align:right;font-variant-numeric:tabular-nums}
+  input.token{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;width:150px}
+  .resbox{margin-top:6px;font-size:13.5px;display:none}
+  table.matrix{width:100%;border-collapse:collapse;margin-top:8px}
+  table.matrix th,table.matrix td{padding:6px 10px;border-bottom:1px solid #EDF3F4;font-size:13px}
+  table.matrix th{color:var(--mute);font-weight:600;font-size:12px;text-align:right}
+  table.matrix th:first-child,table.matrix td:first-child{text-align:left}
+  table.matrix td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+  table.matrix tr.special td{color:#8a4a16}
+  table.matrix tr.tot td{font-weight:700;border-top:2px solid #DCE7E9}
+  table.matrix td.tcol{font-weight:700}
+  .kpis{display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 2px}
+  .kpi{flex:1;min-width:150px;background:#F3F8F8;border:1px solid #DCEAEA;border-radius:12px;padding:12px 14px}
+  .kpi .n{font-size:24px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:12px;color:var(--mute);margin-top:2px}
+  .kpi.flag{background:#FFF6E5;border-color:#F0D58A}
+  .sub2{font-size:12px;color:var(--mute);margin:14px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+  .warn{background:#FBEEE2;border:1px solid #F0D9C4;color:#8a4a16;border-radius:10px;padding:11px 13px;font-size:13px;margin-top:12px}
+  .ok{background:#E7F3EE;border:1px solid #C5E3D6;color:#1f6b4a;border-radius:10px;padding:11px 13px;font-size:13px;margin-top:12px}
+  .banner{margin:0 0 16px;padding:11px 14px;border-radius:10px;font-size:14px}
+  .banner.err{background:#FBEAE7;border:1px solid #F0C9C4;color:#9a2f1e}
+  .small{font-size:12px;color:var(--mute)}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Allocation</h1>
+  <span class="sub">Run the assignment engine · preview by region · then commit</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<main class="al-wrap">
+  <div id="banner" class="banner" hidden></div>
+
+  <div class="card">
+    <div class="step">Step 1 · Settings</div>
+    <h2>Random removals &amp; seed</h2>
+    <div class="hint">Affinity volunteers (anyone already given a final area by the review load) keep their area. Everyone else is placed from their computed area, with the removals below pulled at random into Unassigned for redistribution. The seed makes the random draw reproducible — preview and commit with the same seed produce the identical plan.</div>
+    <div class="grid">
+      <div class="scfg"><h4>BC</h4>
+        <label>Food Services <input id="bc_food" type="number" min="0" value="150"></label>
+        <label>Reception &amp; Hospitality <input id="bc_rh" type="number" min="0" value="400"></label>
+      </div>
+      <div class="scfg"><h4>Prairies</h4>
+        <label>Reception &amp; Hospitality <input id="pr_rh" type="number" min="0" value="400"></label>
+        <label>Food Services <input id="pr_food" type="number" min="0" value="300"></label>
+      </div>
+      <div class="scfg"><h4>Edmonton</h4>
+        <label>Reception &amp; Hospitality <input id="ed_rh" type="number" min="0" value="400"></label>
+        <label>Food Services <input id="ed_food" type="number" min="0" value="300"></label>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span class="small">Age as of <b>July 23, 2026</b> · Seed</span>
+      <input id="seed" class="token" type="number" value="20260723" style="width:130px">
+      <button id="previewBtn" class="btn">Preview allocation</button>
+      <button id="commitBtn" class="btn commit" disabled>Commit allocation</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step">Step 2 · Preview</div>
+    <h2>What this plan does</h2>
+    <div class="hint">Review the affinity checkpoint and the region breakdown before committing. Nothing is written until you commit.</div>
+    <div id="empty" class="small">Run a preview to see the breakdown.</div>
+    <div id="res" class="resbox"></div>
+  </div>
+</main>
+
+<script src="nav.js"></script>
+<script src="allocate.js"></script>
+</body>
+</html>

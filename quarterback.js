@@ -6,6 +6,17 @@ let CALLERS = [];     // [{email, area, region}]
 let ROLES = [];
 const selected = new Set();
 const filters = { q:"", jk:"", scope:"", area:"", caller:"", unassignedOnly:false, assignedOnly:false, leader:false, nobi:false, referred:false };
+let qtab = "pool";          // "pool" | "done"
+let doneQuery = "";         // search text for the Completed tab
+
+function switchTab(t){
+  qtab = t;
+  document.getElementById('poolView').hidden = (t!=='pool');
+  document.getElementById('doneView').hidden = (t!=='done');
+  document.getElementById('tabPool').setAttribute('aria-pressed', String(t==='pool'));
+  document.getElementById('tabDone').setAttribute('aria-pressed', String(t==='done'));
+  if(t==='done') renderResolved();
+}
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -40,6 +51,9 @@ async function boot(){
   document.getElementById('callerSel').addEventListener('change',updateActionBar);
   document.getElementById('toggleAddCaller').addEventListener('click',()=>{const a=document.getElementById('addCaller');a.hidden=!a.hidden;});
   document.getElementById('saveCaller').addEventListener('click',saveCaller);
+  document.getElementById('tabPool').addEventListener('click',()=>switchTab('pool'));
+  document.getElementById('tabDone').addEventListener('click',()=>switchTab('done'));
+  document.getElementById('doneSearch').addEventListener('input',e=>{ doneQuery=e.target.value.toLowerCase(); renderResolved(); });
 
   await load();
 }
@@ -128,22 +142,26 @@ function matches(v){
 
 let resolvedSel = null;
 function renderResolved(){
+  document.getElementById('doneN').textContent = RESOLVED.length ? '('+RESOLVED.length+')' : '';
   const card=document.getElementById('resolvedCard');
-  if(!RESOLVED.length){ card.style.display='none'; resolvedSel=null; return; }
-  card.style.display='';
-  if(resolvedSel && !RESOLVED.some(v=>String(v.id)===String(resolvedSel))) resolvedSel=null;
+  const empty=document.getElementById('doneEmpty');
+  if(!RESOLVED.length){ card.style.display='none'; empty.style.display=''; resolvedSel=null; return; }
+  card.style.display=''; empty.style.display='none';
+  const q=doneQuery.trim();
+  const shown=RESOLVED.filter(v=>!q || ((v.first+' '+v.last).toLowerCase().includes(q)));
+  if(resolvedSel && !shown.some(v=>String(v.id)===String(resolvedSel))) resolvedSel=null;
   const list=document.getElementById('resolvedList');
-  list.innerHTML=RESOLVED.map(v=>{
+  list.innerHTML = shown.length ? shown.map(v=>{
     const out=v.outcome==='Accepted'?'Accepted':'Withdrew';
     const cls=v.outcome==='Accepted'?'ok':'wd';
     const sel=String(resolvedSel)===String(v.id)?'sel':'';
     return `<button class="rqitem ${sel}" data-id="${v.id}" data-region="${esc(v.region)}">
       <span class="rq-name">${esc(v.first)} ${esc(v.last)}</span>
-      <span class="rq-meta">${esc(v.final||'—')} · <span class="rq-out ${cls}">${out}</span></span>
+      <span class="rq-meta">${esc(v.final||'\u2014')} \u00b7 <span class="rq-out ${cls}">${out}</span></span>
     </button>`;
-  }).join('');
+  }).join('') : '<div class="rd-empty" style="padding:14px">No matches.</div>';
   list.querySelectorAll('.rqitem').forEach(b=>b.addEventListener('click',()=>{ resolvedSel=b.dataset.id; renderResolved(); }));
-  document.getElementById('resolvedCount').textContent=`${RESOLVED.length} resolved`;
+  document.getElementById('resolvedCount').textContent = q ? `${shown.length} of ${RESOLVED.length}` : `${RESOLVED.length} completed`;
   const detail=document.getElementById('resolvedDetail');
   if(resolvedSel) showResolvedDetail(resolvedSel);
   else detail.innerHTML='<div class="rd-empty">Select someone to see their call record.</div>';
@@ -152,50 +170,35 @@ function showResolvedDetail(id){
   const v=RESOLVED.find(x=>String(x.id)===String(id)); if(!v) return;
   const out=v.outcome==='Accepted'?'Accepted':'Withdrew';
   const when=v.when?new Date(v.when).toLocaleString():'';
+  const badges=[];
+  if(v.leader) badges.push('<span class="badge b-lead">Team Lead</span>');
+  if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
+  if(v.referred_from) badges.push(`<span class="badge b-aff">Referred from ${esc(v.referred_from)}</span>`);
   const rows=[
-    ['Area', esc(v.final||'—')],
-    ['Outcome', out + (when?` <span class="sub">· ${esc(when)}</span>`:'') + (v.confirmed?' <span class="sub">· self-confirmed</span>':'')],
-    ['Caller', v.assigned?esc(v.assigned):'—'],
+    ['Area', esc(v.final||'\u2014')],
+    ['Outcome', out + (when?` <span class="sub">\u00b7 ${esc(when)}</span>`:'') + (v.confirmed?' <span class="sub">\u00b7 self-confirmed</span>':'')],
+    ['Caller', v.assigned?esc(v.assigned):'\u2014'],
   ];
-  if(v.duty) rows.push(['Duty', esc(v.duty)]);
+  if(v.duty) rows.push(['Pre-assigned', esc(v.duty)]);
   if(v.note) rows.push(['Note', esc(v.note)]);
+  const eas=(v.event_assignments||[]);
+  const dutiesHtml = eas.length
+    ? `<div class="rd-section"><h4>Events &amp; duties of interest</h4>${eas.map(a=>{
+        const ds=(a.candidate_duties||[]).map(esc).join(', ') || 'duty to be assigned';
+        return `<div class="rd-e"><b>${esc(a.eventName||a.event)}</b> \u2014 ${ds}</div>`;
+      }).join('')}</div>`
+    : '';
+  const logHtml = (v.log&&v.log.length)
+    ? `<div class="rd-section"><h4>Call history</h4>${v.log.map(e=>`<div class="rd-e"><span class="sub">${new Date(e.ts).toLocaleString()}</span> \u2014 ${esc(e.outcome)}${e.note?': '+esc(e.note):''}</div>`).join('')}</div>`
+    : '';
   document.getElementById('resolvedDetail').innerHTML=`
-    <div class="rd-head"><div class="rd-name">${esc(v.first)} ${esc(v.last)}</div><div class="sub">#${v.id} · ${esc(v.jk)}</div></div>
+    <div class="rd-head"><div class="rd-name">${esc(v.first)} ${esc(v.last)}</div><div class="sub">#${v.id} \u00b7 ${esc(v.jk)}</div></div>
+    ${badges.length?`<div class="badge-row" style="margin-bottom:8px">${badges.join(' ')}</div>`:''}
     ${rows.map(r=>`<div class="rd-row"><span class="rd-k">${r[0]}</span><span class="rd-v">${r[1]}</span></div>`).join('')}
+    ${dutiesHtml}
+    ${logHtml}
     <button class="btn commit" id="rdReopen" data-id="${v.id}" data-region="${esc(v.region)}">Re-open</button>`;
   document.getElementById('rdReopen').addEventListener('click',()=>reopenResolved(v.id, v.region));
-}
-
-function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-function dutyCell(v){
-  const opts=DUTY_NAMES[v.final]||[];
-  if(!opts.length) return '<span class="sub">—</span>';
-  const cur=v.duty||'';
-  return `<select class="dutysel" data-id="${v.id}" data-region="${esc(v.region)}">
-    <option value="">— none —</option>
-    ${opts.map(d=>`<option value="${esc(d)}" ${d===cur?'selected':''}>${esc(d)}</option>`).join('')}
-  </select>`;
-}
-async function setDuty(id, region, duty){
-  const idVal = isNaN(Number(id)) ? id : Number(id);
-  try{
-    const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({op:'set_duty',region,user_id:idVal,duty})});
-    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    const v=DATA.find(x=>String(x.id)===String(id)); if(v) v.duty=duty||null;   // keep local state in sync
-  }catch(e){ banner('Could not save duty: '+e.message, true); }
-}
-async function reopenResolved(id, region){
-  const idVal = isNaN(Number(id)) ? id : Number(id);
-  if(!confirm('Re-open this volunteer? They go back to the assignable pool, unassigned.')) return;
-  try{
-    const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({op:'reopen',region,user_ids:[idVal]})});
-    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    banner('Re-opened — back in the pool.', false);
-    await load();
-  }catch(e){ banner('Could not re-open: '+e.message, true); }
 }
 
 function render(){
@@ -238,6 +241,7 @@ function render(){
   }));
   rows.querySelectorAll('.dutysel').forEach(s=>s.addEventListener('change',()=>setDuty(s.dataset.id, s.dataset.region, s.value)));
   document.getElementById('count').textContent=`Showing ${list.length} of ${tot} · ${selected.size} selected`;
+  document.getElementById('poolN').textContent = DATA.length ? '('+DATA.length+')' : '';
   updateActionBar();
 }
 

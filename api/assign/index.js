@@ -1,5 +1,5 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
-const { getContainer, readRegion, mutateVolunteer, REGIONS } = require("../shared/store");
+const { getContainer, readRegion, mutateVolunteer, REGIONS, readDidars } = require("../shared/store");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -68,14 +68,23 @@ function lastOutcomeEntry(v) {
   for (const x of (v.activity_log || [])) if (x.action === "outcome") e = x;
   return e;
 }
-// Resolved view carries the call record so the quarterback can see it on click.
-function resolvedSlim(v) {
+// Resolved view carries the full call record so the quarterback's Completed tab can show it,
+// mirroring the caller's Completed panel (events & all candidate duties + call history).
+function resolvedSlim(v, didarMap) {
   const e = lastOutcomeEntry(v) || {};
+  const eas = (Array.isArray(v.event_assignments) ? v.event_assignments : []).map(a => ({
+    event: a.event, eventName: (didarMap && didarMap[a.event]) || a.event,
+    candidate_duties: Array.isArray(a.candidate_duties) ? a.candidate_duties : [],
+    duty: a.duty || null, area: a.area || v.final_area || null,
+  }));
   return {
     id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
     final: v.final_area, outcome: v.call_outcome || null, assigned: v.assigned_caller || null,
     duty: v.assigned_duty || null, note: e.note || null, when: e.ts || null,
-    confirmed: !!v.confirmed_at, ivol_ready: !!v.ivol_ready
+    confirmed: !!v.confirmed_at, ivol_ready: !!v.ivol_ready,
+    leader: !!v.leader_flag, affinity: !!v.affinity_flag, no_bi: !!v.no_bi_account, referred_from: v.referred_from || null,
+    event_assignments: eas,
+    log: (v.activity_log || []).filter(x => x.action === "outcome").map(x => ({ ts: x.ts, outcome: x.outcome, note: x.note || null })),
   };
 }
 
@@ -104,13 +113,16 @@ module.exports = async function (context, req) {
     const container = await getContainer(DATA_CONTAINER);
 
     if (req.method === "GET") {
+      const didars = await readDidars();
+      const didarMap = {};
+      for (const d of didars) didarMap[d.id] = d.name;
       const out = [];
       const resolved = [];
       for (const region of scopeRegions) {
         const { records } = await readRegion(container, region);
         for (const v of records) {
           if (!inScope(scopes, v.final_area, v.region) || v.callable_status !== "Stable") continue;
-          if (isResolved(v)) resolved.push(resolvedSlim(v));   // already settled by a caller — not assignable
+          if (isResolved(v)) resolved.push(resolvedSlim(v, didarMap));   // already settled by a caller — not assignable
           else out.push(slim(v));
         }
       }

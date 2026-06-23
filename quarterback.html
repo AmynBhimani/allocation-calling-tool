@@ -48,6 +48,15 @@
   .rd-v{flex:1;color:var(--ink)}
   #rdReopen{margin-top:16px}
   @media(max-width:760px){ .resolved-split{flex-direction:column} .resolved-list{flex-basis:auto;border-right:none;border-bottom:1px solid var(--line)} }
+  .qtabs{display:flex;gap:6px;margin:0 0 14px;border-bottom:1px solid var(--line)}
+  .qtab{font:inherit;font-size:14px;font-weight:600;color:var(--mute);background:none;border:none;border-bottom:2px solid transparent;padding:9px 14px;cursor:pointer;margin-bottom:-1px}
+  .qtab:hover{color:var(--ink)}
+  .qtab[aria-pressed="true"]{color:var(--teal,#028090);border-bottom-color:var(--teal,#028090)}
+  .qtab span{font-variant-numeric:tabular-nums;color:var(--mute);font-weight:700}
+  .rd-section{margin-top:14px}
+  .rd-section h4{margin:0 0 6px;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--mute)}
+  .rd-e{font-size:13.5px;color:var(--ink);padding:4px 0;border-bottom:1px solid #F0F5F6}
+  .rd-e:last-child{border-bottom:none}
 </style>
 </head>
 <body>
@@ -82,6 +91,12 @@
 
   <div class="kpis" id="kpis"></div>
 
+  <div class="qtabs">
+    <button class="qtab" id="tabPool" aria-pressed="true">To assign <span id="poolN"></span></button>
+    <button class="qtab" id="tabDone" aria-pressed="false">Completed <span id="doneN"></span></button>
+  </div>
+
+  <div id="poolView">
   <div class="actionbar idle" id="actionbar">
     <span class="selcount" id="selcount">0 selected</span>
     <select id="callerSel"><option value="">Choose a caller…</option></select>
@@ -120,18 +135,25 @@
     </table>
     <div class="count" id="count">Loading…</div>
   </div>
+  </div><!-- /poolView -->
 
-  <div class="panel" id="resolvedCard" style="display:none;margin-top:20px">
-    <div style="padding:15px 16px 8px">
-      <h2 style="font-family:Cambria,Georgia,serif;font-size:17px;color:var(--ink);margin:0 0 2px">Resolved by a caller</h2>
-      <p class="sub" style="margin:0 0 4px">Already accepted or withdrawn — not assignable. Pick a name to see the call record, and re-open if they change their mind.</p>
+  <div id="doneView" hidden>
+    <div class="controls">
+      <input type="search" id="doneSearch" placeholder="Search completed by name…" aria-label="Search completed">
     </div>
-    <div class="resolved-split">
-      <div class="resolved-list" id="resolvedList"></div>
-      <div class="resolved-detail" id="resolvedDetail"><div class="rd-empty">Select someone to see their call record.</div></div>
+    <div class="panel" id="resolvedCard">
+      <div style="padding:15px 16px 8px">
+        <h2 style="font-family:Cambria,Georgia,serif;font-size:17px;color:var(--ink);margin:0 0 2px">Completed calls</h2>
+        <p class="sub" style="margin:0 0 4px">Accepted or withdrawn — not assignable. Pick a name to see the full call record, and re-open if they change their mind.</p>
+      </div>
+      <div class="resolved-split">
+        <div class="resolved-list" id="resolvedList"></div>
+        <div class="resolved-detail" id="resolvedDetail"><div class="rd-empty">Select someone to see their call record.</div></div>
+      </div>
+      <div class="count" id="resolvedCount"></div>
     </div>
-    <div class="count" id="resolvedCount"></div>
-  </div>
+    <div class="empty" id="doneEmpty" style="display:none;padding:28px 6px;color:var(--mute)">No completed calls yet.</div>
+  </div><!-- /doneView -->
 </div>
 
 <script src="nav.js"></script>

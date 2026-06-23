@@ -9,9 +9,9 @@ const LEADERSHIP = "Leadership - Do Not Allocate";
 function computeCallableStatus(v) {
   if (!v) return "Unassigned";
   if (v.callable_status === LEADERSHIP) return LEADERSHIP;     // preserve do-not-allocate
-  if (v.final_area) return "Stable";                           // confirmed area wins
   const claims = Array.isArray(v.conflict_claims) ? v.conflict_claims : [];
-  if (claims.length > 1) return "In reconciliation";          // contested, not yet resolved
+  if (claims.length > 1) return "In reconciliation";          // still contested -> never callable
+  if (v.final_area) return "Stable";                          // confirmed, uncontested area
   return "Unassigned";                                        // no confirmed area yet
 }
 

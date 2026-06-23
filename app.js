@@ -102,14 +102,20 @@ function buildJk() {
     jks.map(j => `<option value="${j}" ${j===cur?'selected':''}>${j}</option>`).join('');
 }
 
+function effectiveStatus(v){
+  // Derive the true status from the record so stale stored values can't mislabel.
+  if(typeof v === 'string') v = { status: v };
+  if(v && v.status === 'Leadership - Do Not Allocate') return 'Leadership - Do Not Allocate';
+  const claims = (v && Array.isArray(v.claims)) ? v.claims.length : 0;
+  if(claims > 1) return 'In reconciliation';     // still contested -> not callable
+  if(v && v.final) return 'Stable';
+  return 'Unassigned';
+}
 function statusPill(v){
-  // Accept the whole volunteer (or a bare status string, for back-compat) and derive defensively,
-  // so a contested or unconfirmed person can never render as "callable" even if a stale status says so.
-  if(typeof v === "string") v = { status: v };
-  if(v && v.status==="Leadership - Do Not Allocate") return '<span class="pill p-lead">Leadership · do not allocate</span>';
-  const claims = (v && Array.isArray(v.claims)) ? v.claims : [];
-  if(v && v.final) return '<span class="pill p-stable">Stable · callable</span>';   // confirmed area wins
-  if(claims.length > 1) return '<span class="pill p-recon">In reconciliation</span>';
+  const s = effectiveStatus(v);
+  if(s === 'Leadership - Do Not Allocate') return '<span class="pill p-lead">Leadership · do not allocate</span>';
+  if(s === 'Stable') return '<span class="pill p-stable">Stable · callable</span>';
+  if(s === 'In reconciliation') return '<span class="pill p-recon">In reconciliation</span>';
   return '<span class="pill p-un">Unassigned</span>';
 }
 function matches(v){
@@ -117,9 +123,9 @@ function matches(v){
   if(filters.region && v.region!==filters.region) return false;
   if(filters.jk && v.jk!==filters.jk) return false;
   if(filters.area && v.final!==filters.area && v.computed!==filters.area) return false;
-  if(filters.recon && !(v.status==="In reconciliation" || (v.claims&&v.claims.length))) return false;
-  if(filters.unassigned && v.status!=="Unassigned") return false;
-  if(filters.leadership && v.status!=="Leadership - Do Not Allocate") return false;
+  if(filters.recon && effectiveStatus(v)!=="In reconciliation") return false;
+  if(filters.unassigned && effectiveStatus(v)!=="Unassigned") return false;
+  if(filters.leadership && effectiveStatus(v)!=="Leadership - Do Not Allocate") return false;
   if(filters.leader && !v.leader) return false;
   if(filters.new && !v.new) return false;
   if(filters.nobi && !v.no_bi) return false;
@@ -128,10 +134,10 @@ function matches(v){
 
 function render(){
   const tot=DATA.length;
-  const stable=DATA.filter(v=>v.status==="Stable").length;
-  const recon=DATA.filter(v=>v.status==="In reconciliation").length;
-  const un=DATA.filter(v=>v.status==="Unassigned").length;
-  const lead=DATA.filter(v=>v.status==="Leadership - Do Not Allocate").length;
+  const stable=DATA.filter(v=>effectiveStatus(v)==="Stable").length;
+  const recon=DATA.filter(v=>effectiveStatus(v)==="In reconciliation").length;
+  const un=DATA.filter(v=>effectiveStatus(v)==="Unassigned").length;
+  const lead=DATA.filter(v=>effectiveStatus(v)==="Leadership - Do Not Allocate").length;
   document.getElementById('kpis').innerHTML = [
     ['',tot,'Total volunteers','var(--ink)'],
     ['callable',stable,'Stable · callable now','var(--stable)'],

@@ -1,4 +1,6 @@
 let DATA = [];        // pool volunteers (slim)
+let RESOLVED = [];    // settled by a caller (accepted / withdrew)
+let DUTY_NAMES = {};  // area -> [duty names], from /api/duties
 let SCOPES = [];      // [{area, region}]
 let CALLERS = [];     // [{email, area, region}]
 let ROLES = [];
@@ -48,9 +50,15 @@ async function load(){
     const r = await fetch('/api/assign');
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("HTTP "+r.status));
     const d = await r.json();
-    DATA = d.volunteers||[]; SCOPES = d.scopes||[]; CALLERS = d.callers||[];
+    DATA = d.volunteers||[]; RESOLVED = d.resolved||[]; SCOPES = d.scopes||[]; CALLERS = d.callers||[];
+    try{
+      const dr = await fetch('/api/duties');
+      if(dr.ok){ const dd=await dr.json(); DUTY_NAMES={};
+        (dd.duties||[]).forEach(x=>{ (DUTY_NAMES[x.area]=DUTY_NAMES[x.area]||[]).push(x.name); });
+        Object.keys(DUTY_NAMES).forEach(a=>DUTY_NAMES[a].sort((p,q)=>p.localeCompare(q))); }
+    }catch(e){}
     buildScopeSelect(); buildCallerSelect(); buildCallerFilter(); buildCallerScopes(); buildAreaSelect(); buildJk();
-    clearBanner(); render();
+    clearBanner(); render(); renderResolved();
   }catch(e){
     banner('Could not load your pool: '+e.message, true);
     document.getElementById('count').textContent="Load failed.";
@@ -118,6 +126,57 @@ function matches(v){
   return true;
 }
 
+function renderResolved(){
+  const card=document.getElementById('resolvedCard');
+  const rows=document.getElementById('resolvedRows');
+  if(!RESOLVED.length){ card.style.display='none'; return; }
+  card.style.display='';
+  const pill=(o)=> o==='Accepted'
+    ? '<span class="assigned-tag">Accepted</span>'
+    : '<span class="badge b-nobi">Withdrew</span>';
+  rows.innerHTML=RESOLVED.map(v=>`<tr>
+      <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id} · ${v.jk}</div></td>
+      <td><span class="area-cell">${v.final||'—'}</span></td>
+      <td>${pill(v.outcome)}</td>
+      <td>${v.assigned?`<span class="sub">${v.assigned}</span>`:'<span class="sub">—</span>'}</td>
+      <td style="text-align:right"><button class="editbtn reopenbtn" data-id="${v.id}" data-region="${esc(v.region)}">Re-open</button></td>
+    </tr>`).join('');
+  rows.querySelectorAll('.reopenbtn').forEach(b=>b.addEventListener('click',()=>reopenResolved(b.dataset.id,b.dataset.region)));
+  document.getElementById('resolvedCount').textContent=`${RESOLVED.length} resolved`;
+}
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function dutyCell(v){
+  const opts=DUTY_NAMES[v.final]||[];
+  if(!opts.length) return '<span class="sub">—</span>';
+  const cur=v.duty||'';
+  return `<select class="dutysel" data-id="${v.id}" data-region="${esc(v.region)}">
+    <option value="">— none —</option>
+    ${opts.map(d=>`<option value="${esc(d)}" ${d===cur?'selected':''}>${esc(d)}</option>`).join('')}
+  </select>`;
+}
+async function setDuty(id, region, duty){
+  const idVal = isNaN(Number(id)) ? id : Number(id);
+  try{
+    const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({op:'set_duty',region,user_id:idVal,duty})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    const v=DATA.find(x=>String(x.id)===String(id)); if(v) v.duty=duty||null;   // keep local state in sync
+  }catch(e){ banner('Could not save duty: '+e.message, true); }
+}
+async function reopenResolved(id, region){
+  const idVal = isNaN(Number(id)) ? id : Number(id);
+  if(!confirm('Re-open this volunteer? They go back to the assignable pool, unassigned.')) return;
+  try{
+    const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({op:'reopen',region,user_ids:[idVal]})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    banner('Re-opened — back in the pool.', false);
+    await load();
+  }catch(e){ banner('Could not re-open: '+e.message, true); }
+}
+
 function render(){
   const tot=DATA.length;
   const assigned=DATA.filter(v=>v.assigned).length;
@@ -131,7 +190,7 @@ function render(){
   const list=DATA.filter(matches);
   const rows=document.getElementById('rows');
   if(!list.length){
-    rows.innerHTML=`<tr><td colspan="5"><div class="empty">${tot?'No volunteers match these filters.':'No callable volunteers in your pool yet. Once reconciliation marks people in your area(s) callable, they appear here.'}</div></td></tr>`;
+    rows.innerHTML=`<tr><td colspan="6"><div class="empty">${tot?'No volunteers match these filters.':'No callable volunteers in your pool yet. Once reconciliation marks people in your area(s) callable, they appear here.'}</div></td></tr>`;
     document.getElementById('count').textContent = tot?'No matches.':'';
     updateActionBar(); return;
   }
@@ -148,6 +207,7 @@ function render(){
       <td class="cbcol"><input type="checkbox" class="rowcb" data-id="${v.id}" data-region="${v.region}" ${checked}></td>
       <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id} · ${v.jk}</div></td>
       <td><span class="area-cell">${v.final||'—'}</span></td>
+      <td>${dutyCell(v)}</td>
       <td><div class="badges">${badges.join('')||'<span class="sub">—</span>'}</div></td>
       <td>${assignedCell}</td>
     </tr>`;
@@ -155,6 +215,7 @@ function render(){
   rows.querySelectorAll('.rowcb').forEach(cb=>cb.addEventListener('change',()=>{
     const id=+cb.dataset.id; if(cb.checked) selected.add(id); else selected.delete(id); updateActionBar();
   }));
+  rows.querySelectorAll('.dutysel').forEach(s=>s.addEventListener('change',()=>setDuty(s.dataset.id, s.dataset.region, s.value)));
   document.getElementById('count').textContent=`Showing ${list.length} of ${tot} · ${selected.size} selected`;
   updateActionBar();
 }
@@ -206,8 +267,13 @@ async function doAction(op, caller){
   try{
     let done=0, outScope=0;
     for(const region of Object.keys(byR)){
+      const reqBody={op,region,user_ids:byR[region],caller_email:caller};
+      if(op==='assign'){
+        const duties={}; byR[region].forEach(id=>{ const v=DATA.find(x=>String(x.id)===String(id)); if(v&&v.duty) duties[id]=v.duty; });
+        reqBody.duties=duties;   // optional pre-assigned duty per volunteer
+      }
       const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({op,region,user_ids:byR[region],caller_email:caller})});
+        body:JSON.stringify(reqBody)});
       const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
       done+=d.done||0; outScope+=d.outOfCallerScope||0;
     }

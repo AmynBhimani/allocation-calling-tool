@@ -54,25 +54,17 @@ module.exports = async function (context, req) {
         const b = byArea[area] || (byArea[area] = blank());
         const lo = lastOutcome(v);
 
-        // A person who declined and was referred onward: the decline belongs to the area they
-        // left (referred_from); in their new area they now hold a duty (if cleared/Stable).
-        if (lo === "Declined-referred" && v.referred_from) {
-          const da = byArea[v.referred_from] || (byArea[v.referred_from] = blank());
-          da.declined++; totals.declined++;
-          if (v.callable_status === "Stable") { b.assignedDuty++; totals.assignedDuty++; }
-          if (v.assigned_caller && !v.call_done) { b.callPending++; totals.callPending++; }
-          continue;
-        }
+        // A withdrawal is the only true decline — count it in their current area, not as a duty.
+        if (lo === "Withdrew") { b.declined++; totals.declined++; continue; }
 
-        // "Assigned a duty" = cleared into this area with no open conflict (Stable).
+        // Declined-referred: they've moved to their new area (final_area) and hold a duty there.
+        // Count them as assigned in that area — never as a decline.
         if (v.callable_status === "Stable") { b.assignedDuty++; totals.assignedDuty++; }
 
         const isAccepted = !!v.ivol_ready || lo === "Accepted";
-        const isDeclined = lo === "Declined-referred";              // declined, no referral recorded
         const isCallPending = !!v.assigned_caller && !v.call_done;  // with a caller, call not completed
 
         if (isAccepted) { b.accepted++; totals.accepted++; }
-        if (isDeclined) { b.declined++; totals.declined++; }
         if (isCallPending) { b.callPending++; totals.callPending++; }
       }
     }

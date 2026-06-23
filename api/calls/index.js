@@ -50,6 +50,7 @@ function full(v) {
     leader: !!v.leader_flag, affinity: !!v.affinity_flag, no_bi_account: !!v.no_bi_account,
     referred_from: v.referred_from || null,
     outcome: v.call_outcome || null, done: !!v.call_done,
+    duty: v.assigned_duty || null,
     confirm_sent: !!v.confirm_sent_at, confirmed: !!v.confirmed_at,
     event_assignments: Array.isArray(v.event_assignments) ? v.event_assignments : [],
     log: (v.activity_log || []).filter(e => e.action === "outcome")
@@ -205,6 +206,8 @@ module.exports = async function (context, req) {
         v.activity_log = v.activity_log || [];
         // optional contact correction (name / email / phone) — flagged for iVol to update in BI
         applyContact(v, contact);
+        // caller may adjust the pre-assigned duty (separate from the area the email confirms)
+        if (body.assigned_duty !== undefined) v.assigned_duty = clean(body.assigned_duty) || null;
         // per-event duty capture (deferred-session model) — saved with the outcome
         const asg = normAssignments(body.event_assignments);
         if (asg) v.event_assignments = asg;

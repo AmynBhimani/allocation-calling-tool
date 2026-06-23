@@ -31,6 +31,13 @@ async function load(){
     document.getElementById('scopeNote').textContent = ROLES.includes('admin')||ROLES.includes('superadmin')
       ? 'You can manage duties for all areas.'
       : `You can manage duties for: ${MANAGEABLE.join(', ')||'(none yet)'}.`;
+    const af=document.getElementById('areaFilter');
+    if(af){
+      const cur=af.value;
+      const present=ALL_AREAS.filter(a=>DUTIES.some(d=>d.area===a));
+      af.innerHTML='<option value="">All areas</option>'+present.map(a=>`<option value="${a}" ${a===cur?'selected':''}>${a}</option>`).join('');
+      if(!af.dataset.wired){ af.addEventListener('change', renderList); af.dataset.wired='1'; }
+    }
     clearBanner(); renderList();
   }catch(e){ banner('Could not load duties: '+e.message, true); document.getElementById('list').innerHTML='<div class="empty">Load failed.</div>'; }
 }
@@ -38,9 +45,11 @@ async function load(){
 function renderList(){
   const box=document.getElementById('list');
   if(!DUTIES.length){ box.innerHTML='<div class="empty">No duties yet. Add one above or upload a file.</div>'; return; }
+  const sel=document.getElementById('areaFilter'); const pick=sel?sel.value:'';
   const byArea={};
   for(const d of DUTIES){ (byArea[d.area]=byArea[d.area]||[]).push(d); }
-  const order = ALL_AREAS.filter(a=>byArea[a]);
+  const order = ALL_AREAS.filter(a=>byArea[a] && (!pick || a===pick));
+  if(!order.length){ box.innerHTML='<div class="empty">No duties in that area yet.</div>'; return; }
   box.innerHTML = order.map(area=>{
     const canManage = MANAGEABLE.includes(area);
     const items = byArea[area].sort((a,b)=>a.name.localeCompare(b.name)).map(d=>`

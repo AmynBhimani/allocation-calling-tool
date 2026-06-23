@@ -39,9 +39,13 @@ function eventBlockHtml(v){
   if(!EVENTS.length) return '';
   const area=v.area||'';
   const duties=DUTY_NAMES[area]||[];
+  // Only the Didar(s) whose regions include this volunteer's region — a caller can't assign into
+  // the other region's event. (JK-level session eligibility is layered on later.)
+  const evs=EVENTS.filter(ev=>Array.isArray(ev.regions) && ev.regions.includes(v.region));
+  if(!evs.length) return '';
   const existing={}; let hasExisting=false;
   (v.event_assignments||[]).forEach(a=>{ existing[a.event]=new Set(a.candidate_duties||[]); hasExisting=true; });
-  const rows=EVENTS.map(ev=>{
+  const rows=evs.map(ev=>{
     const evAsg=existing[ev.id];
     const serving = evAsg ? true : (!hasExisting && isHomeDidar(ev, v.region));
     const dutyChecks = duties.length
@@ -63,6 +67,21 @@ function eventBlockHtml(v){
       <div class="eventcap-sub">Tick the Didar(s) they'll serve and any duties they could do in <b>${escapeHtml(area||'their area')}</b>. More than one duty is fine — the single committed duty is assigned later.</div>
       ${rows}
     </div>`;
+}
+
+// The single pre-assigned duty (set by the quarterback), shown to the caller and changeable here.
+// This is separate from the accept-link email, which only ever confirms the area of interest.
+function dutyPickerHtml(v){
+  const opts=DUTY_NAMES[v.area]||[];
+  if(!opts.length) return '';
+  const cur=v.duty||'';
+  return `<div class="dutypick">
+    <label>Assigned duty <span class="sub">(optional — the email still confirms the area only)</span></label>
+    <select id="assignedDuty">
+      <option value="">— none —</option>
+      ${opts.map(d=>`<option value="${escapeAttr(d)}" ${d===cur?'selected':''}>${escapeHtml(d)}</option>`).join('')}
+    </select>
+  </div>`;
 }
 
 // Read the capture UI into event_assignments rows (deferred-session model).
@@ -196,6 +215,7 @@ function renderPanel(v){
     <div class="badge-row">${badges.join('')}</div>
     ${nobiAlert}
     ${contact}
+    ${dutyPickerHtml(v)}
     ${eventBlockHtml(v)}
     ${emailRow}
     <textarea class="note-area" id="note" placeholder="Notes from the call…"></textarea>
@@ -255,7 +275,7 @@ async function save(outcome, extra){
   const cell=document.getElementById('cCell'), email=document.getElementById('cEmail');
   if(f) contact.first=f.value; if(l) contact.last=l.value;
   if(cell) contact.cell=cell.value; if(email) contact.email=email.value;
-  const body={ user_id:current.id, region:current.region, outcome, note, contact, event_assignments:collectAssignments(), ...extra };
+  const body={ user_id:current.id, region:current.region, outcome, note, contact, event_assignments:collectAssignments(), assigned_duty:(document.getElementById('assignedDuty')||{}).value, ...extra };
   try{
     const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));

@@ -55,9 +55,13 @@ function slim(v) {
     final: v.final_area, status: v.callable_status,
     affinity: !!v.affinity_flag, leader: !!v.leader_flag, new: !!v.never_reviewed,
     no_bi: !!v.no_bi_account, referred_from: v.referred_from || null,
-    assigned: v.assigned_caller || null
+    assigned: v.assigned_caller || null, outcome: v.call_outcome || null, duty: v.assigned_duty || null
   };
 }
+// A volunteer is "resolved by a caller" once they Accepted or Withdrew. (Declined-referred clears
+// call_outcome so the receiving area can reassign them, so it is NOT treated as resolved here.)
+const RESOLVED_OUTCOMES = ["Accepted", "Withdrew"];
+const isResolved = (v) => RESOLVED_OUTCOMES.includes(v.call_outcome);
 
 module.exports = async function (context, req) {
   try {
@@ -85,16 +89,19 @@ module.exports = async function (context, req) {
 
     if (req.method === "GET") {
       const out = [];
+      const resolved = [];
       for (const region of scopeRegions) {
         const { records } = await readRegion(container, region);
         for (const v of records) {
-          if (inScope(scopes, v.final_area, v.region) && v.callable_status === "Stable") out.push(slim(v));
+          if (!inScope(scopes, v.final_area, v.region) || v.callable_status !== "Stable") continue;
+          if (isResolved(v)) resolved.push(slim(v));   // already settled by a caller — not assignable
+          else out.push(slim(v));
         }
       }
       // callers available within these scopes (for the assign dropdown)
       const callers = store.filter(a => clean(a.role) === "caller" && inScope(scopes, clean(a.area), clean(a.region)))
         .map(a => ({ email: clean(a.email), area: clean(a.area), region: clean(a.region) }));
-      context.res = { body: { volunteers: out, scopes, callers, count: out.length } };
+      context.res = { body: { volunteers: out, resolved, scopes, callers, count: out.length, resolvedCount: resolved.length } };
       return;
     }
 
@@ -104,6 +111,8 @@ module.exports = async function (context, req) {
       const region = clean(body.region);
       const ids = Array.isArray(body.user_ids) ? body.user_ids : (body.user_id != null ? [body.user_id] : []);
       const caller = clean(body.caller_email).toLowerCase();
+      const dutyMap = (body.duties && typeof body.duties === "object") ? body.duties : {};   // { id: dutyName } for assign
+      const singleDuty = clean(body.duty);                                                   // for op:set_duty
       if (!REGIONS.includes(region)) { context.res = { status: 400, body: { error: "Valid region required." } }; return; }
       if (!ids.length) { context.res = { status: 400, body: { error: "No volunteers selected." } }; return; }
 
@@ -123,16 +132,26 @@ module.exports = async function (context, req) {
         const result = await mutateVolunteer(container, region, id, (v) => {
           // only act on volunteers in this requester's scope and callable
           if (!inScope(scopes, v.final_area, v.region) || v.callable_status !== "Stable") return { skip: true };
+          if (op === "assign" && isResolved(v)) return { skip: true };   // settled by a caller — not reassignable
           if (op === "assign" && !inScope(callerScopes, v.final_area, v.region)) return { skip: true, reason: "caller_scope" };
           v.activity_log = v.activity_log || [];
           if (op === "unassign") {
             v.assigned_caller = null;
             v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "unassign" });
+          } else if (op === "reopen") {
+            // Quarterback re-opens a settled decision: back to the assignable pool, unassigned.
+            v.assigned_caller = null; v.call_done = false; v.call_outcome = null; v.ivol_ready = false;
+            v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "qb_reopen" });
+          } else if (op === "set_duty") {
+            v.assigned_duty = singleDuty || null;
+            v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "set_duty", to: v.assigned_duty });
           } else {
             v.assigned_caller = caller;
             v.call_done = false;          // fresh for the new caller (handles referred-in / reassigned)
             v.call_outcome = null;
-            v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "assign", to: caller });
+            const d = dutyMap[String(id)];                 // optional pre-assigned duty for this volunteer
+            if (d !== undefined) v.assigned_duty = clean(d) || null;
+            v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "assign", to: caller, duty: v.assigned_duty || null });
           }
         });
         if (result.ok && !(result.extra && result.extra.skip)) done++;

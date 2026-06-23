@@ -81,15 +81,18 @@ function allocate(records, cfg) {
   const rng = mulberry32(seed);
 
   // Annotate every record and assign an initial bucket.
-  const recs = records.map(r => ({
-    user_id: r.user_id, region: r.region,
-    computed_area: r.computed_area || null, final_area: r.final_area || null,
-    leader: !!r.leader_flag,
-    age: ageAsOf(r.birthday, asOf),
-    isIFF: (r.list === "IFF") || !!r.interfaith,
-    affinity: r.final_area != null,
-    bucket: null, area: null,
-  }));
+  const recs = records.map(r => {
+    const directAge = (r.age != null && Number.isFinite(Number(r.age))) ? Number(r.age) : null;
+    return {
+      user_id: r.user_id, region: r.region,
+      computed_area: r.computed_area || null, final_area: r.final_area || null,
+      leader: !!r.leader_flag,
+      age: directAge != null ? directAge : ageAsOf(r.birthday, asOf),
+      isIFF: (r.list === "IFF") || !!r.interfaith,
+      affinity: r.final_area != null,
+      bucket: null, area: null,
+    };
+  });
 
   for (const r of recs) {
     if (r.affinity) { r.bucket = "affinity"; r.area = r.final_area; continue; }

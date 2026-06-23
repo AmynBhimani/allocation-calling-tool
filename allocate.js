@@ -75,8 +75,8 @@
   function render(d) {
     EL("empty").style.display = "none";
     var res = EL("res"); res.style.display = "block";
-    var ageWarn = (d.withBirthday < d.total)
-      ? '<div class="warn">Only ' + d.withBirthday + " of " + d.total + " records have a birthday on file, so " + d.nullAge + " people read as unknown age — they stay Unassigned and aren't placed into age-gated areas. Re-import from Better Impact with this build to populate ages before you trust the numbers.</div>"
+    var ageWarn = (d.withAge < d.total)
+      ? '<div class="warn">Only ' + d.withAge + " of " + d.total + " records have an age on file, so " + d.nullAge + " people read as unknown age — they stay Unassigned and aren't placed into age-gated areas. Re-import with this build so the Age column is stored.</div>"
       : "";
     var html = ""
       + '<div class="kpis">'

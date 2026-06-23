@@ -36,7 +36,8 @@ module.exports = async function (context, req) {
           user_id: v.user_id, region,
           computed_area: v.computed_area || null, final_area: v.final_area || null,
           never_reviewed: !!v.never_reviewed, leader_flag: !!v.leader_flag,
-          list: v.list || null, interfaith: !!v.interfaith, birthday: v.birthday || null,
+          list: v.list || null, interfaith: !!v.interfaith,
+          age: (v.age != null ? v.age : null), birthday: v.birthday || null,
         });
       }
     }
@@ -52,7 +53,7 @@ module.exports = async function (context, req) {
       total: records.length, affinityTotal: plan.affinityTotal, affinityLeaders: plan.affinityLeaders,
       nullAge: plan.nullAge, matrix: plan.matrix, totalsByArea,
       stripReport: plan.stripReport, distReport: plan.distReport,
-      withBirthday: records.filter(r => r.birthday).length,
+      withAge: records.filter(r => (r.age != null && Number.isFinite(Number(r.age))) || r.birthday).length,
     };
 
     if (!commit) {

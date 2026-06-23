@@ -54,8 +54,9 @@
   var COMMIT = document.getElementById('tCommit');
   var ORDER = [
     { key: 'reviewerBlobs', label: 'Reviewers found' },
-    { key: 'reviewActiveIds', label: 'People reviewed' },
-    { key: 'matched', label: 'Matched in workspace' },
+    { key: 'reviewActiveRaw', label: 'Marked active in review' },
+    { key: 'emailFoldedNew', label: '+ email-matched write-ins folded in' },
+    { key: 'reviewActiveIds', label: '= People getting a review area' },
     { key: 'toStable', label: '→ Stable (single area)' },
     { key: 'toReconciliation', label: '→ In reconciliation (contested)' },
     { key: 'leaders', label: 'Leaders flagged' },
@@ -67,13 +68,25 @@
     renderCounts(TRES, d, ORDER);
     var w = d.writtenIn || {};
     var html = '';
-    html += '<table style="margin-top:10px"><tr><th colspan="2">Written-in people (' + (w.total || 0) + ')</th></tr>'
+    var cl = d.contestedList || [];
+    if (cl.length) {
+      html += '<details class="lst" style="margin-top:10px"><summary>In reconciliation — claimed in 2+ areas (' + cl.length + ')</summary>'
+        + '<div class="small" style="margin:6px 0">Each of these was marked active in more than one area, so the tool can\'t auto-assign — resolve them on the Reconcile screen.</div>'
+        + '<table style="margin-top:4px"><tr><th>Name</th><th>Region</th><th>Areas claimed</th></tr>'
+        + cl.map(function (p) { return '<tr><td>' + esc(p.name || ('#' + p.user_id)) + '</td><td>' + esc(p.region || '—') + '</td><td>' + esc((p.areas || []).join(', ')) + '</td></tr>'; }).join('')
+        + '</table></details>';
+    }
+    html += '<table style="margin-top:10px"><tr><th colspan="2">Written-in entries</th></tr>'
+      + '<tr><th>Write-in entries (raw)</th><td class="n">' + (w.rawEntries || 0) + '</td></tr>'
+      + '<tr><th>Unique people (after merging duplicate entries)</th><td class="n">' + (w.total || 0) + '</td></tr>'
       + '<tr><th>Matched by email → folded into existing record</th><td class="n">' + (w.matchedByEmail || 0) + '</td></tr>'
       + '<tr><th>Imported as callable No-BI records</th><td class="n">' + (w.imported || 0) + '</td></tr>'
       + '<tr><th>↳ of those, flagged as possible duplicate</th><td class="n">' + (w.duplicateFlagged || 0) + '</td></tr>'
       + '<tr><th>Couldn\'t place (no region from Jamatkhana)</th><td class="n">' + (w.noRegion || 0) + '</td></tr></table>';
     TRES.insertAdjacentHTML('beforeend', html);
     var notes = '';
+    var mergedDupes = (w.rawEntries || 0) - (w.total || 0);
+    notes += '<div class="ok" style="background:#EEF5F6;border-color:#CFE3E6;color:#1f5560">Reconciling with the review tool: <b>' + (d.reviewActiveRaw || 0) + '</b> people were marked active in review (this should match the review tool). The higher <b>' + (d.reviewActiveIds || 0) + '</b> total adds <b>' + (d.emailFoldedNew || 0) + '</b> email-matched write-ins who weren\'t separately marked active. Write-in entries: <b>' + (w.rawEntries || 0) + '</b> raw' + (mergedDupes > 0 ? ' → <b>' + (w.total || 0) + '</b> unique (' + mergedDupes + ' entered more than once, e.g. into two area cells, and were merged)' : '') + '.</div>';
     notes += '<div class="warn" style="background:#FFF6E5;border-color:#F0D58A;color:#7A5A12">Imported write-ins become callable No-BI records. Possible-duplicate ones carry a flag so the caller confirms with the volunteer and can mark “Duplicate / already registered” to drop them out. Email matches just update the existing person.</div>';
     if (w.noRegion) notes += '<div class="warn">' + w.noRegion + ' written-in people had no region in their Jamatkhana field, so they weren\'t imported. They need a JK like “BC - …” to be placed.</div>';
     if (d.reviewIdsNotInWorkspace) notes += '<div class="warn">' + d.reviewIdsNotInWorkspace + ' reviewed people aren\'t in the workspace yet. If this is most of them, run the BI import first (or the IDs don\'t line up — tell me before committing).</div>';

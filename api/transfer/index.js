@@ -125,11 +125,13 @@ module.exports = async function (context, req) {
     // Pre-pass: read all shards once to index the workspace by email and by name.
     const emailIndex = new Map();   // normEmail -> { region, user_id, name }
     const nameIndex = new Map();    // normName  -> [ { region, user_id, email } ]
+    const idInfo = new Map();       // user_id   -> { name, region }
     const recordsByRegion = {};
     for (const region of REGIONS) {
       const { records } = await readRegion(container, region);
       recordsByRegion[region] = records;
       for (const v of records) {
+        idInfo.set(String(v.user_id), { name: ((v.first || "") + " " + (v.last || "")).trim(), region });
         const em = normEmail(v.email);
         if (em && !emailIndex.has(em)) emailIndex.set(em, { region, user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() });
         const nm = normName(v.first, v.last);
@@ -142,13 +144,14 @@ module.exports = async function (context, req) {
     //  - everyone else -> import as a brand-new callable No-BI record, flagged "potential duplicate"
     //                     when their name matches an existing person (caller confirms on the call)
     const writeins = [];
-    let addedByEmail = 0, addedImported = 0, addedDuplicateFlagged = 0, addedNoRegion = 0;
+    const reviewActiveRaw = byId.size;   // people marked active in review cells, BEFORE folding write-ins
+    let addedByEmail = 0, addedImported = 0, addedDuplicateFlagged = 0, addedNoRegion = 0, emailFoldedNew = 0;
     for (const a of added) {
       const em = normEmail(a.email);
       if (em && emailIndex.has(em)) {
         const w = emailIndex.get(em);
         let e = byId.get(String(w.user_id));
-        if (!e) { e = { areas: new Set(), leader: false }; byId.set(String(w.user_id), e); }
+        if (!e) { e = { areas: new Set(), leader: false }; byId.set(String(w.user_id), e); emailFoldedNew++; } // a person not separately marked active
         for (const ar of a.areas) e.areas.add(ar);
         addedByEmail++;
         continue;
@@ -164,9 +167,20 @@ module.exports = async function (context, req) {
     const writeinsByRegion = {};
     for (const w of writeins) (writeinsByRegion[w.region] = writeinsByRegion[w.region] || []).push(w.record);
 
+    // The people who will land "In reconciliation": claimed in 2+ distinct areas, no single winner.
+    const contestedList = [];
+    for (const [id, e] of byId) {
+      if (e.areas && e.areas.size >= 2) {
+        const info = idInfo.get(String(id)) || {};
+        contestedList.push({ user_id: id, name: info.name || "", region: info.region || "", areas: [...e.areas].sort() });
+      }
+    }
+    contestedList.sort((a, b) => (a.region + a.name).localeCompare(b.region + b.name));
+
     const report = {
       mode: commit ? "commit" : "preview",
       reviewerBlobs: reviewerCount, reviewActiveIds: byId.size,
+      reviewActiveRaw, emailFoldedNew, contestedList: contestedList.slice(0, 300),
       matched: 0, toStable: 0, toReconciliation: 0, leaders: 0, noArea: 0,
       reviewIdsNotInWorkspace: 0, unknownAreas: [], byRegion: {},
       writtenIn: { total: added.length, rawEntries: addedRaw, matchedByEmail: addedByEmail,

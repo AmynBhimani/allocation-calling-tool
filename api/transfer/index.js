@@ -132,6 +132,10 @@ module.exports = async function (context, req) {
       recordsByRegion[region] = records;
       for (const v of records) {
         idInfo.set(String(v.user_id), { name: ((v.first || "") + " " + (v.last || "")).trim(), region });
+        // Skip records this tool imported on a previous transfer commit (written-in No-BI people).
+        // Otherwise a write-in re-matches its own imported copy by email/name on the next run, which
+        // would re-fold it and make the reviewed/contested counts creep up on every commit cycle.
+        if (v.source === "writein" || String(v.user_id).startsWith("wi-")) continue;
         const em = normEmail(v.email);
         if (em && !emailIndex.has(em)) emailIndex.set(em, { region, user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() });
         const nm = normName(v.first, v.last);

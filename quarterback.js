@@ -256,6 +256,7 @@ function render(){
     if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
     if(v.new) badges.push('<span class="badge b-new">New</span>');
     if(v.no_bi) badges.push('<span class="badge b-nobi">No BI acct</span>');
+    if(v.dup) badges.push('<span class="badge b-dup">Possible duplicate</span>');
     if(v.referred_from) badges.push(`<span class="badge b-aff">Referred from ${v.referred_from}</span>`);
     const checked = selected.has(v.id)?'checked':'';
     const assignedCell = v.assigned ? `<span class="assigned-tag">${v.assigned}</span>` : '<span class="unassigned-tag">— unassigned —</span>';

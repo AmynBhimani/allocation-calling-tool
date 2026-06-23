@@ -58,7 +58,7 @@ async function aggregateReview() {
         const k = em || (nm + "|" + String(a.ceremonyJk || "").toLowerCase().trim());
         if (!k.trim()) continue;
         let e = addedMap.get(k);
-        if (!e) { e = { first: a.first || "", last: a.last || "", email: a.email || "", phone: a.phone || "", ceremonyJk: a.ceremonyJk || "", areas: new Set() }; addedMap.set(k, e); }
+        if (!e) { e = { key: k, first: a.first || "", last: a.last || "", email: a.email || "", phone: a.phone || "", ceremonyJk: a.ceremonyJk || "", areas: new Set() }; addedMap.set(k, e); }
         if (area) e.areas.add(area);
       }
     }
@@ -71,6 +71,42 @@ function decisionFor(e) {
   if (areas.length === 1) return { final_area: areas[0], conflict_claims: [], leader: e.leader };
   if (areas.length >= 2) return { final_area: null, conflict_claims: areas, leader: e.leader };
   return { final_area: null, conflict_claims: [], leader: e.leader };
+}
+
+// Region is taken from the Jamatkhana prefix the reviewer entered ("BC - Burnaby Lake" -> "BC").
+function regionFromJk(jk) {
+  const s = String(jk || "").trim();
+  const pre = s.split(/\s*-\s*/)[0].trim();
+  if (REGIONS.includes(pre)) return pre;
+  if (REGIONS.includes(s)) return s;
+  return null;
+}
+const safeKey = (k) => "wi-" + String(k).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+
+// Build a brand-new, callable No-BI record for a written-in person (no Better Impact id).
+function makeWriteinRecord(a, didars) {
+  const dec = decisionFor({ areas: a.areas, leader: false });
+  const region = regionFromJk(a.ceremonyJk);
+  const cands = (a.candidates || []);
+  const base = {
+    user_id: safeKey(a.key), first: a.first || "", last: a.last || "", email: a.email || "",
+    username: "", cell_phone: a.phone || "", home_phone: "", work_phone: "",
+    ceremony_jk: a.ceremonyJk || "", region,
+    computed_area: dec.final_area || (dec.conflict_claims[0] || null),
+    final_area: dec.final_area, conflict_claims: dec.conflict_claims,
+    held_aside: false, affinity_flag: false, leader_flag: false,
+    never_reviewed: false, new_since_sync: false,
+    no_bi_account: true, source: "writein",
+    potential_duplicate: cands.length
+      ? { candidates: cands.slice(0, 3).map(c => ({ user_id: c.user_id, region: c.region, email: c.email || "", name: c.name || "" })) }
+      : null,
+    assigned_caller: null, ivol_entered: false, ivol_ready: false,
+    call_outcome: null, call_done: false, referred_from: null,
+    activity_log: [{ ts: new Date().toISOString(), actor: "transfer", action: "writein_import", areas: [...a.areas] }],
+  };
+  base.callable_status = computeCallableStatus(base);
+  base.event_assignments = base.final_area ? seedEventAssignments(base, didars) : [];
+  return base;
 }
 
 module.exports = async function (context, req) {
@@ -97,18 +133,19 @@ module.exports = async function (context, req) {
         const em = normEmail(v.email);
         if (em && !emailIndex.has(em)) emailIndex.set(em, { region, user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() });
         const nm = normName(v.first, v.last);
-        if (nm) { if (!nameIndex.has(nm)) nameIndex.set(nm, []); nameIndex.get(nm).push({ region, user_id: v.user_id, email: v.email || "" }); }
+        if (nm) { if (!nameIndex.has(nm)) nameIndex.set(nm, []); nameIndex.get(nm).push({ region, user_id: v.user_id, email: v.email || "", name: ((v.first || "") + " " + (v.last || "")).trim() }); }
       }
     }
 
-    // Resolve the write-ins three ways.
-    const nameSuggestions = [];
-    let addedByEmail = 0, addedUnmatched = 0;
+    // Resolve the write-ins:
+    //  - email match  -> fold their area(s) into the existing record (no duplicate created)
+    //  - everyone else -> import as a brand-new callable No-BI record, flagged "potential duplicate"
+    //                     when their name matches an existing person (caller confirms on the call)
+    const writeins = [];
+    let addedByEmail = 0, addedImported = 0, addedDuplicateFlagged = 0, addedNoRegion = 0;
     for (const a of added) {
       const em = normEmail(a.email);
       if (em && emailIndex.has(em)) {
-        // Reliable match — fold their area(s) into the matched person's aggregate so they're
-        // applied exactly like a reviewed person (single -> Stable, two+ -> In reconciliation).
         const w = emailIndex.get(em);
         let e = byId.get(String(w.user_id));
         if (!e) { e = { areas: new Set(), leader: false }; byId.set(String(w.user_id), e); }
@@ -116,26 +153,24 @@ module.exports = async function (context, req) {
         addedByEmail++;
         continue;
       }
+      const region = regionFromJk(a.ceremonyJk);
+      if (!region) { addedNoRegion++; continue; }     // can't place without a region — reported, not imported
       const nm = normName(a.first, a.last);
-      const cands = nm ? (nameIndex.get(nm) || []) : [];
-      if (cands.length >= 1) {
-        nameSuggestions.push({
-          name: (a.first + " " + a.last).trim(), email: a.email || "", jk: a.ceremonyJk || "",
-          areas: [...a.areas], ambiguous: cands.length > 1,
-          candidates: cands.slice(0, 5).map(c => ({ user_id: c.user_id, region: c.region, email: c.email || "" })),
-        });
-        continue;
-      }
-      addedUnmatched++;
+      a.candidates = nm ? (nameIndex.get(nm) || []) : [];   // consumed by makeWriteinRecord for the dup flag
+      writeins.push({ region, record: makeWriteinRecord(a, didars) });
+      addedImported++;
+      if (a.candidates.length) addedDuplicateFlagged++;
     }
+    const writeinsByRegion = {};
+    for (const w of writeins) (writeinsByRegion[w.region] = writeinsByRegion[w.region] || []).push(w.record);
 
     const report = {
       mode: commit ? "commit" : "preview",
       reviewerBlobs: reviewerCount, reviewActiveIds: byId.size,
       matched: 0, toStable: 0, toReconciliation: 0, leaders: 0, noArea: 0,
       reviewIdsNotInWorkspace: 0, unknownAreas: [], byRegion: {},
-      writtenIn: { total: added.length, rawEntries: addedRaw, matchedByEmail: addedByEmail, nameSuggestions: nameSuggestions.length, unmatched: addedUnmatched },
-      nameSuggestions,
+      writtenIn: { total: added.length, rawEntries: addedRaw, matchedByEmail: addedByEmail,
+        imported: addedImported, duplicateFlagged: addedDuplicateFlagged, noRegion: addedNoRegion },
     };
     const unknown = new Set();
     for (const [, e] of byId) for (const a of e.areas) if (!AREAS.has(a)) unknown.add(a);
@@ -167,18 +202,26 @@ module.exports = async function (context, req) {
     }
 
     for (const region of REGIONS) {
+      const newOnes = writeinsByRegion[region] || [];
       if (commit) {
-        const out = await mergeRegion(container, region, (existing) => existing.map(applyTo));
+        const out = await mergeRegion(container, region, (existing) => {
+          const mapped = existing.map(applyTo);
+          const have = new Set(mapped.map(v => String(v.user_id)));
+          for (const w of newOnes) if (!have.has(String(w.user_id))) mapped.push(w);   // idempotent upsert
+          return mapped;
+        });
         report.byRegion[region] = out.length;
       } else {
         (recordsByRegion[region] || []).forEach(applyTo);
-        report.byRegion[region] = (recordsByRegion[region] || []).length;
+        const have = new Set((recordsByRegion[region] || []).map(v => String(v.user_id)));
+        const fresh = newOnes.filter(w => !have.has(String(w.user_id))).length;
+        report.byRegion[region] = (recordsByRegion[region] || []).length + fresh;
       }
     }
     report.reviewIdsNotInWorkspace = [...byId.keys()].filter(id => !seenIds.has(id)).length;
     report.note = commit
-      ? "Applied review decisions and email-matched write-ins. Single-area people are Stable with a Didar row; contested are In reconciliation; leaders flagged. Name-match suggestions and no-BI write-ins were NOT applied."
-      : "Preview only — nothing written. Email-matched write-ins are folded into the counts; name suggestions and no-BI write-ins are listed but never auto-applied.";
+      ? "Applied. Email-matched write-ins folded into existing records. Everyone else written in was imported as a callable No-BI record; name matches carry a 'potential duplicate' flag for the caller to resolve on the call."
+      : "Preview only — nothing written. Shows what would be folded by email vs imported as No-BI (with potential-duplicate flags) vs un-placeable by region.";
     context.res = { body: report };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };

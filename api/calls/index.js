@@ -6,7 +6,7 @@ const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
 
-const TERMINAL = ["Accepted", "Declined-referred", "Withdrew"]; // leave the active queue
+const TERMINAL = ["Accepted", "Declined-referred", "Withdrew", "Duplicate"]; // leave the active queue
 const ALL_OUTCOMES = TERMINAL.concat(["No answer", "Thinking", "Emailed"]); // non-terminal: No answer / Thinking / Emailed
 
 function getPrincipal(req) {
@@ -51,6 +51,7 @@ function full(v) {
     referred_from: v.referred_from || null,
     outcome: v.call_outcome || null, done: !!v.call_done,
     duty: v.assigned_duty || null,
+    potential_duplicate: v.potential_duplicate || null,
     confirm_sent: !!v.confirm_sent_at, confirmed: !!v.confirmed_at,
     event_assignments: Array.isArray(v.event_assignments) ? v.event_assignments : [],
     log: (v.activity_log || []).filter(e => e.action === "outcome")
@@ -227,6 +228,9 @@ module.exports = async function (context, req) {
           v.call_done = true;
           v.ivol_ready = true;               // flows to the iVol-input report
         } else if (outcome === "Withdrew") {
+          v.call_done = true;
+        } else if (outcome === "Duplicate") {
+          // Caller confirmed this written-in person is already registered — drop them out.
           v.call_done = true;
         } else {
           // No answer / Thinking / Emailed — stays in the active queue

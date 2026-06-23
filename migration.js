@@ -67,26 +67,15 @@
     renderCounts(TRES, d, ORDER);
     var w = d.writtenIn || {};
     var html = '';
-    // Written-in breakdown
     html += '<table style="margin-top:10px"><tr><th colspan="2">Written-in people (' + (w.total || 0) + ')</th></tr>'
-      + '<tr><th>Matched by email → applied</th><td class="n">' + (w.matchedByEmail || 0) + '</td></tr>'
-      + '<tr><th>Possible name matches → your review</th><td class="n">' + (w.nameSuggestions || 0) + '</td></tr>'
-      + '<tr><th>No BI account → caller sets up iVol</th><td class="n">' + (w.unmatched || 0) + '</td></tr></table>';
-    // Name-match suggestions detail
-    var sugg = d.nameSuggestions || [];
-    if (sugg.length) {
-      html += '<div style="margin-top:12px;font-weight:600;color:var(--ink)">Name-match suggestions (not applied — confirm by email/phone first)</div>';
-      html += '<table style="margin-top:6px"><tr><th>Written-in</th><th>Wanted area(s)</th><th>Likely workspace match</th></tr>';
-      sugg.slice(0, 50).forEach(function (s) {
-        var cand = (s.candidates || []).map(function (c) { return '#' + c.user_id + ' (' + esc(c.region) + (c.email ? ', ' + esc(c.email) : '') + ')'; }).join('<br>');
-        html += '<tr><td>' + esc(s.name) + (s.email ? '<br><span style="color:var(--mute)">' + esc(s.email) + '</span>' : '') + '</td>'
-          + '<td>' + esc((s.areas || []).join(', ') || '—') + '</td>'
-          + '<td>' + (s.ambiguous ? '<span style="color:#8a4a16">several — ' : '') + cand + (s.ambiguous ? '</span>' : '') + '</td></tr>';
-      });
-      html += '</table>';
-    }
+      + '<tr><th>Matched by email → folded into existing record</th><td class="n">' + (w.matchedByEmail || 0) + '</td></tr>'
+      + '<tr><th>Imported as callable No-BI records</th><td class="n">' + (w.imported || 0) + '</td></tr>'
+      + '<tr><th>↳ of those, flagged as possible duplicate</th><td class="n">' + (w.duplicateFlagged || 0) + '</td></tr>'
+      + '<tr><th>Couldn\'t place (no region from Jamatkhana)</th><td class="n">' + (w.noRegion || 0) + '</td></tr></table>';
     TRES.insertAdjacentHTML('beforeend', html);
     var notes = '';
+    notes += '<div class="warn" style="background:#FFF6E5;border-color:#F0D58A;color:#7A5A12">Imported write-ins become callable No-BI records. Possible-duplicate ones carry a flag so the caller confirms with the volunteer and can mark “Duplicate / already registered” to drop them out. Email matches just update the existing person.</div>';
+    if (w.noRegion) notes += '<div class="warn">' + w.noRegion + ' written-in people had no region in their Jamatkhana field, so they weren\'t imported. They need a JK like “BC - …” to be placed.</div>';
     if (d.reviewIdsNotInWorkspace) notes += '<div class="warn">' + d.reviewIdsNotInWorkspace + ' reviewed people aren\'t in the workspace yet. If this is most of them, run the BI import first (or the IDs don\'t line up — tell me before committing).</div>';
     if (d.unknownAreas && d.unknownAreas.length) notes += '<div class="warn">Unrecognized area name(s): ' + esc(d.unknownAreas.join(', ')) + '. These will still apply, but check the spelling matches the tool\'s areas.</div>';
     if (d.mode === 'commit') notes += '<div class="ok">' + esc(d.note || 'Transfer applied.') + '</div>';

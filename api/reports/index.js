@@ -56,6 +56,8 @@ module.exports = async function (context, req) {
 
         // A withdrawal is the only true decline — count it in their current area, not as a duty.
         if (lo === "Withdrew") { b.declined++; totals.declined++; continue; }
+        // A confirmed duplicate is a data-cleanup drop-out — don't count it anywhere.
+        if (lo === "Duplicate") continue;
 
         // Declined-referred: they've moved to their new area (final_area) and hold a duty there.
         // Count them as assigned in that area — never as a decline.

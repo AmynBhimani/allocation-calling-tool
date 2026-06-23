@@ -9,7 +9,8 @@ let selectedOutcome = null;
 let EVENTS = [];        // active top-level Didars, from /api/events
 let DUTY_NAMES = {};    // area -> sorted [duty name], from /api/duties
 const OUTCOME_LABEL = { "Accepted":"Accepted","Thinking":"Thinking about it",
-  "No answer":"No answer","Declined-referred":"Decline → refer","Withdrew":"Withdrew","Emailed":"Emailed" };
+  "No answer":"No answer","Declined-referred":"Decline → refer","Withdrew":"Withdrew","Emailed":"Emailed",
+  "Duplicate":"Duplicate / already registered" };
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
@@ -67,6 +68,14 @@ function eventBlockHtml(v){
       <div class="eventcap-sub">Tick the Didar(s) they'll serve and any duties they could do in <b>${escapeHtml(area||'their area')}</b>. More than one duty is fine — the single committed duty is assigned later.</div>
       ${rows}
     </div>`;
+}
+
+// Short hint about who this written-in person might already be (from the name match).
+function dupCandidateText(pd){
+  const c=(pd&&pd.candidates&&pd.candidates[0])||null;
+  if(!c) return '';
+  const who=c.name||('record #'+c.user_id);
+  return ' as '+escapeHtml(who)+(c.email?` (${escapeHtml(c.email)})`:'');
 }
 
 // The quarterback's pre-assigned duty, shown read-only. The caller doesn't change it here —
@@ -165,6 +174,8 @@ function renderPanel(v){
 
   const nobiAlert = v.no_bi_account
     ? `<div class="nobi-alert">⚑ <b>No Better Impact account.</b> As part of this call, walk them through setting up an iVolunteer account before marking Accepted.</div>` : '';
+  const dupAlert = v.potential_duplicate
+    ? `<div class="dup-alert">⚠ <b>Possible duplicate.</b> A reviewer wrote this person in by hand; they may already be registered${dupCandidateText(v.potential_duplicate)}. Please confirm with them on the call. If they're already registered, mark <b>Duplicate / already registered</b>; otherwise continue as a new volunteer.</div>` : '';
 
   const contact = readonly
     ? `<div class="contact"><label>Cell</label><div class="phone">${v.cell||'—'}</div><label>Email</label><div>${v.email||'—'}</div></div>`
@@ -211,6 +222,7 @@ function renderPanel(v){
   p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk} · #${v.id}</div>
     <div class="badge-row">${badges.join('')}</div>
     ${nobiAlert}
+    ${dupAlert}
     ${contact}
     ${dutyPickerHtml(v)}
     ${eventBlockHtml(v)}
@@ -223,6 +235,7 @@ function renderPanel(v){
       <button class="obtn email" data-o="Emailed" ${v.confirm_sent?'':'disabled'}>✉ Emailed<small>${v.confirm_sent?'Mark the accept-link email as sent':'Create the email above first'}</small></button>
       <button class="obtn decline" data-o="Declined-referred">Decline → refer<small>Send to another area</small></button>
       <button class="obtn withdraw" data-o="Withdrew">Withdrew<small>Out entirely</small></button>
+      ${v.potential_duplicate?`<button class="obtn dup" data-o="Duplicate">Duplicate / already registered<small>Same person already in the system</small></button>`:''}
     </div>
     <div id="extra"></div>`;
   p.querySelectorAll('.obtn').forEach(b=>b.addEventListener('click',()=>chooseOutcome(b.dataset.o)));

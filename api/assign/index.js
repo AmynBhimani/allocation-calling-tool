@@ -55,12 +55,13 @@ function slim(v) {
     final: v.final_area, status: v.callable_status,
     affinity: !!v.affinity_flag, leader: !!v.leader_flag, new: !!v.never_reviewed,
     no_bi: !!v.no_bi_account, referred_from: v.referred_from || null,
-    assigned: v.assigned_caller || null, outcome: v.call_outcome || null, duty: v.assigned_duty || null
+    assigned: v.assigned_caller || null, outcome: v.call_outcome || null, duty: v.assigned_duty || null,
+    dup: !!v.potential_duplicate
   };
 }
 // A volunteer is "resolved by a caller" once they Accepted or Withdrew. (Declined-referred clears
 // call_outcome so the receiving area can reassign them, so it is NOT treated as resolved here.)
-const RESOLVED_OUTCOMES = ["Accepted", "Withdrew"];
+const RESOLVED_OUTCOMES = ["Accepted", "Withdrew", "Duplicate"];
 const isResolved = (v) => RESOLVED_OUTCOMES.includes(v.call_outcome);
 
 function lastOutcomeEntry(v) {

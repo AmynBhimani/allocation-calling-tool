@@ -100,6 +100,7 @@
 
   /* No-BI-account badge */
   .badge.b-nobi{background:#FCEAE6;color:#B23A2B;border-color:#F3D2CC}
+  .badge.b-dup{background:#FFF6E5;color:#7A5A12;border-color:#F0D58A}
 
 /* --- additions: management dashboard, BI updates, caller edits --- */
 .grid th.num, .grid td.num { text-align: right; font-variant-numeric: tabular-nums; }

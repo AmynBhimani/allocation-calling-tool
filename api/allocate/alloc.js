@@ -17,7 +17,7 @@ const ALL_AREAS = [
   "Medical Services", "Finance & Procurement", "Environmental Sustainability",
   "Memorabilia & Design", "Jamati Preparation",
 ];
-const SPECIAL = ["Young Volunteers", "IFF", "Unassigned"];
+const SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file", "Unassigned"];
 
 // Distribution targets for the over-16 Unassigned pool. Percentages are of that pool.
 // min/max are hard age gates. SSP = Safety & Flow Management.
@@ -73,38 +73,70 @@ function eligible(age, t) {
   return true;
 }
 
+function sanitizeTargets(t) {
+  if (!Array.isArray(t) || !t.length) return null;
+  const out = [];
+  for (const x of t) {
+    if (!x || typeof x.area !== "string") return null;
+    const pct = Number(x.pct);
+    if (!Number.isFinite(pct) || pct < 0) return null;
+    out.push({ area: x.area, pct, min: Number.isFinite(x.min) ? x.min : null, max: Number.isFinite(x.max) ? x.max : null });
+  }
+  return out;
+}
+// Fill the most age-restrictive areas first so a narrow eligibility pool isn't consumed
+// by an open one. Narrower age window first, then higher minimum age first.
+function orderByRestrictiveness(targets) {
+  return targets.slice().sort((a, b) => {
+    const wa = (a.max == null ? 200 : a.max) - (a.min == null ? 0 : a.min);
+    const wb = (b.max == null ? 200 : b.max) - (b.min == null ? 0 : b.min);
+    if (wa !== wb) return wa - wb;
+    return (b.min == null ? 0 : b.min) - (a.min == null ? 0 : a.min);
+  }).map(t => t.area);
+}
+
 function allocate(records, cfg) {
   cfg = cfg || {};
   const asOf = cfg.asOf || "2026-07-23";
   const seed = (cfg.seed != null ? cfg.seed : 1234567) >>> 0;
   const strip = cfg.strip || DEFAULT_STRIP;
+  const targetsDef = sanitizeTargets(cfg.targets) || ASSIGN_TARGETS;
+  const fillOrder = orderByRestrictiveness(targetsDef);
   const rng = mulberry32(seed);
 
   // Annotate every record and assign an initial bucket.
   const recs = records.map(r => {
     const directAge = (r.age != null && Number.isFinite(Number(r.age))) ? Number(r.age) : null;
+    const claims = Array.isArray(r.conflict_claims) ? r.conflict_claims.length : 0;
+    // "From the review tool" = anyone the review load touched, INCLUDING contested people
+    // (2+ areas claimed, decision still pending). They are never pulled into the allocation.
+    const fromReview = (r.never_reviewed === false) || claims > 0;
     return {
       user_id: r.user_id, region: r.region,
       computed_area: r.computed_area || null, final_area: r.final_area || null,
-      leader: !!r.leader_flag,
+      leader: !!r.leader_flag, claims, fromReview,
       age: directAge != null ? directAge : ageAsOf(r.birthday, asOf),
       isIFF: (r.list === "IFF") || !!r.interfaith,
-      affinity: r.final_area != null,
       bucket: null, area: null,
     };
   });
 
   for (const r of recs) {
-    if (r.affinity) { r.bucket = "affinity"; r.area = r.final_area; continue; }
-    if (r.isIFF) { r.bucket = "iff"; r.area = null; continue; }            // IFF out of all process areas
+    if (r.fromReview) {
+      if (r.final_area != null) { r.bucket = "affinity"; r.area = r.final_area; }
+      else { r.bucket = "contested"; r.area = null; }     // claimed, decision pending — left alone
+      continue;
+    }
+    if (r.isIFF) { r.bucket = "iff"; r.area = null; continue; }   // IFF out of all process areas
+    if (r.age == null) { r.bucket = "noage"; r.area = null; continue; } // no age -> held & flagged
     const area = r.computed_area;
-    if (r.age != null && r.age < 16) {                                     // under-16 stripped...
+    if (r.age < 16) {                                              // under-16 stripped...
       if (area === "Reception & Hospitality") { r.bucket = "kept"; r.area = area; } // ...except R&H
       else { r.bucket = "young"; r.area = null; }
       continue;
     }
     if (area) { r.bucket = "kept"; r.area = area; }
-    else { r.bucket = "unassigned"; r.area = null; }                       // no computed area -> pool
+    else { r.bucket = "unassigned"; r.area = null; }              // 16+ with no computed area -> pool
   }
 
   // Random per-region removals from the kept Food / Reception pools into Unassigned.
@@ -134,12 +166,12 @@ function allocate(records, cfg) {
   for (const R of REGIONS) {
     const pool = recs.filter(x => x.region === R && x.bucket === "unassigned" && x.age != null && x.age >= 16 && !x.isIFF);
     const N = pool.length;
-    const targets = ASSIGN_TARGETS.map(t => ({ ...t, target: Math.round(t.pct * N), placed: 0 }));
+    const targets = targetsDef.map(t => ({ ...t, target: Math.round(t.pct * N), placed: 0 }));
     const tByArea = {}; targets.forEach(t => (tByArea[t.area] = t));
     let remaining = shuffle(pool, rng);
     const used = new Set();
-    for (const A of FILL_ORDER) {
-      const t = tByArea[A];
+    for (const A of fillOrder) {
+      const t = tByArea[A]; if (!t) continue;
       for (const p of remaining) {
         if (t.placed >= t.target) break;
         if (eligible(p.age, t)) { p.bucket = "assigned"; p.area = A; used.add(p.user_id); t.placed++; }
@@ -160,20 +192,23 @@ function allocate(records, cfg) {
     const R = r.region; if (!matrix[R]) matrix[R] = {};
     let key;
     if (r.bucket === "affinity" || r.bucket === "kept" || r.bucket === "assigned") key = r.area || "Unassigned";
+    else if (r.bucket === "contested") key = "In reconciliation";
     else if (r.bucket === "young") key = "Young Volunteers";
     else if (r.bucket === "iff") key = "IFF";
+    else if (r.bucket === "noage") key = "No age on file";
     else key = "Unassigned";
     matrix[R][key] = (matrix[R][key] || 0) + 1;
   }
 
   const affinityTotal = recs.filter(r => r.bucket === "affinity").length;
   const affinityLeaders = recs.filter(r => r.bucket === "affinity" && r.leader).length;
+  const contestedTotal = recs.filter(r => r.bucket === "contested").length;
   const nullAge = recs.filter(r => r.age == null).length;
 
   return {
-    asOf, seed, matrix, affinityTotal, affinityLeaders, nullAge,
+    asOf, seed, matrix, affinityTotal, affinityLeaders, contestedTotal, nullAge,
     stripReport, distReport,
-    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area })),
+    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age })),
   };
 }
 

@@ -5,11 +5,44 @@
     "Medical Services", "Finance & Procurement", "Environmental Sustainability",
     "Memorabilia & Design", "Jamati Preparation"
   ];
-  var SPECIAL = ["Young Volunteers", "IFF", "Unassigned"];
+  var SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file", "Unassigned"];
   var REGIONS = ["BC", "Prairies", "Edmonton"];
   var EL = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); };
   var lastPlan = null;
+
+  // Editable allocation targets (percent of the over-16 Unassigned pool) with their age gates.
+  var TARGET_DEFS = [
+    { area: "Safety & Flow Management", id: "t_ssp", pct: 55, min: 19, max: null, rule: "min age 19" },
+    { area: "Seniors & Mobility", id: "t_sen", pct: 14, min: 16, max: null, rule: "min age 16" },
+    { area: "Reception & Hospitality", id: "t_rec", pct: 14, min: null, max: null, rule: "any age" },
+    { area: "Environmental Sustainability", id: "t_env", pct: 2, min: 16, max: 20, rule: "age 16\u201320" },
+    { area: "Parking & Transportation", id: "t_par", pct: 7, min: 19, max: 65, rule: "age 19\u201365" },
+    { area: "Food Services", id: "t_food", pct: 4, min: 16, max: null, rule: "min age 16" },
+    { area: "Layout & Logistics", id: "t_lay", pct: 4, min: 19, max: 65, rule: "age 19\u201365" }
+  ];
+
+  function buildTargetInputs() {
+    var box = EL("targetCfg");
+    box.innerHTML = TARGET_DEFS.map(function (t) {
+      return '<div class="trow"><div><div class="nm">' + esc(t.area) + '</div><div class="ru">' + esc(t.rule) + '</div></div>'
+        + '<div><input id="' + t.id + '" type="number" min="0" max="100" step="1" value="' + t.pct + '"><span class="pct">%</span></div></div>';
+    }).join("");
+    TARGET_DEFS.forEach(function (t) { EL(t.id).addEventListener("input", function () { onSettingChanged(); updatePctSum(); }); });
+    updatePctSum();
+  }
+  function updatePctSum() {
+    var sum = 0; TARGET_DEFS.forEach(function (t) { sum += (parseFloat(EL(t.id).value) || 0); });
+    EL("pctSum").textContent = (Math.round(sum * 100) / 100);
+    EL("pctWarn").textContent = (Math.abs(sum - 100) > 0.01) ? "— doesn't add up to 100%; the rest stays Unassigned (or, if over 100%, the pool runs out)" : "";
+  }
+  function targetsFromInputs() {
+    return TARGET_DEFS.map(function (t) {
+      return { area: t.area, pct: (parseFloat(EL(t.id).value) || 0) / 100, min: t.min, max: t.max };
+    });
+  }
+
+  function onSettingChanged() { EL("commitBtn").disabled = true; }
 
   function banner(msg, kind) {
     var b = EL("banner"); if (!msg) { b.hidden = true; return; }
@@ -72,30 +105,64 @@
     return html + "</table>";
   }
 
+  function listSection(title, key, rows, hint) {
+    if (!rows || !rows.length) return "";
+    var head = '<tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th>Age</th></tr>';
+    var body = rows.slice(0, 250).map(function (r) {
+      return "<tr><td>" + esc(r.name || "—") + "</td><td>" + esc(r.region) + "</td><td>" + esc(r.jk || "—") + '</td><td class="n">' + (r.age == null ? "—" : r.age) + "</td></tr>";
+    }).join("");
+    var more = rows.length > 250 ? '<div class="small" style="margin-top:6px">Showing first 250 of ' + rows.length + ". Use Copy CSV for the full list.</div>" : "";
+    return '<details class="lst"><summary>' + esc(title) + " (" + rows.length + ")</summary>"
+      + (hint ? '<div class="small" style="margin:6px 0">' + esc(hint) + "</div>" : "")
+      + '<button class="btn ghost2 csvbtn" data-csv="' + key + '">Copy CSV</button>'
+      + '<table class="matrix">' + head + body + "</table>" + more + "</details>";
+  }
+
   function render(d) {
     EL("empty").style.display = "none";
     var res = EL("res"); res.style.display = "block";
     var ageWarn = (d.withAge < d.total)
-      ? '<div class="warn">Only ' + d.withAge + " of " + d.total + " records have an age on file, so " + d.nullAge + " people read as unknown age — they stay Unassigned and aren't placed into age-gated areas. Re-import with this build so the Age column is stored.</div>"
+      ? '<div class="warn">' + d.nullAge + " of " + d.total + " volunteers have no age on file. They are held out of the allocation (not placed in any area) and flagged below so you can fix their birthdate/age in Better Impact and re-run.</div>"
       : "";
     var html = ""
       + '<div class="kpis">'
       + '<div class="kpi"><div class="n">' + d.affinityTotal.toLocaleString() + '</div><div class="l">Affinity (final area kept) — expect ~1,068</div></div>'
       + '<div class="kpi"><div class="n">' + d.affinityLeaders.toLocaleString() + '</div><div class="l">of which leaders — expect ~267</div></div>'
-      + '<div class="kpi"><div class="n">' + d.total.toLocaleString() + '</div><div class="l">total volunteers in workspace</div></div>'
-      + (d.nullAge ? '<div class="kpi flag"><div class="n">' + d.nullAge.toLocaleString() + '</div><div class="l">unknown age (stay Unassigned)</div></div>' : "")
+      + '<div class="kpi"><div class="n">' + (d.contestedTotal || 0).toLocaleString() + '</div><div class="l">In reconciliation (claimed, left alone)</div></div>'
+      + (d.nullAge ? '<div class="kpi flag"><div class="n">' + d.nullAge.toLocaleString() + '</div><div class="l">no age on file (held &amp; flagged)</div></div>' : "")
       + "</div>"
       + ageWarn
       + '<div class="sub2">Allocated by region &amp; area</div>' + matrixTable(d)
       + '<div class="sub2">Random removals into Unassigned</div>' + stripTable(d)
       + '<div class="sub2">Distribution of the Unassigned over-16 pool</div>' + distTable(d);
+
+    var L = d.lists || {};
+    html += '<div class="sub2">Category lists</div>';
+    html += listSection("In reconciliation — claimed in review, decision pending", "contested", L.contested, "These were assigned/claimed in the review tool and are NOT touched by the allocation.");
+    html += listSection("IFF", "iff", L.iff, "Inter-faith family members — held in their own category, not assigned to a process area.");
+    html += listSection("Young Volunteers (under 16)", "young", L.young, "Under 16 — held out of process areas (except those left in Reception & Hospitality).");
+    html += listSection("No age on file", "noAge", L.noAge, "No age in the import — held out and flagged for follow-up.");
+    html += listSection("Unassigned (16+, no area / not placed)", "unassigned", L.unassigned, "");
+
     if (d.mode === "commit") html += '<div class="ok">' + esc(d.note || "Committed.") + "</div>";
     res.innerHTML = html;
+
+    res.querySelectorAll(".csvbtn").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var rows = (lastPlan.lists || {})[b.getAttribute("data-csv")] || [];
+        var csv = "Name,Region,Jamatkhana,Age\n" + rows.map(function (r) {
+          return [r.name, r.region, r.jk, (r.age == null ? "" : r.age)].map(function (x) {
+            x = String(x == null ? "" : x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x;
+          }).join(",");
+        }).join("\n");
+        navigator.clipboard.writeText(csv).then(function () { b.textContent = "Copied " + rows.length + " rows"; setTimeout(function () { b.textContent = "Copy CSV"; }, 1800); });
+      });
+    });
   }
 
   async function call(mode) {
     var seed = parseInt(EL("seed").value, 10) || 20260723;
-    var body = { mode: mode, seed: seed, strip: stripFromInputs() };
+    var body = { mode: mode, seed: seed, strip: stripFromInputs(), targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");
@@ -120,6 +187,7 @@
   });
   // Re-running a preview is required before commit if settings change.
   ["bc_food", "bc_rh", "pr_rh", "pr_food", "ed_rh", "ed_food", "seed"].forEach(function (id) {
-    EL(id).addEventListener("input", function () { EL("commitBtn").disabled = true; });
+    EL(id).addEventListener("input", onSettingChanged);
   });
+  buildTargetInputs();
 })();

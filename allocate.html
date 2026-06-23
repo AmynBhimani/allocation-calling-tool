@@ -17,6 +17,12 @@
   .btn.ghost2{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:8px 0 4px}
+  .tgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;margin:6px 0}
+  .tgrid .trow{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:9px;padding:7px 11px}
+  .tgrid .trow .nm{font-size:13px;color:var(--ink)}
+  .tgrid .trow .ru{font-size:11px;color:var(--mute);margin-top:1px}
+  .tgrid .trow input{width:64px;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums}
+  .tgrid .trow .pct{font-size:12px;color:var(--mute);margin-left:4px}
   .scfg{border:1px solid var(--line);border-radius:10px;padding:12px 14px}
   .scfg h4{margin:0 0 8px;font-size:13px;color:var(--ink)}
   .scfg label{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--mute);margin:6px 0}
@@ -42,6 +48,10 @@
   .banner{margin:0 0 16px;padding:11px 14px;border-radius:10px;font-size:14px}
   .banner.err{background:#FBEAE7;border:1px solid #F0C9C4;color:#9a2f1e}
   .small{font-size:12px;color:var(--mute)}
+  details.lst{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0}
+  details.lst summary{cursor:pointer;font-weight:600;font-size:13.5px;color:var(--ink)}
+  details.lst .csvbtn{margin:8px 0;padding:6px 12px;font-size:13px}
+  details.lst table.matrix{margin-top:4px}
 </style>
 </head>
 <body>
@@ -59,7 +69,7 @@
   <div id="banner" class="banner" hidden></div>
 
   <div class="card">
-    <div class="step">Step 1 · Settings</div>
+    <div class="step">Step 1 · Random removals &amp; seed</div>
     <h2>Random removals &amp; seed</h2>
     <div class="hint">Affinity volunteers (anyone already given a final area by the review load) keep their area. Everyone else is placed from their computed area, with the removals below pulled at random into Unassigned for redistribution. The seed makes the random draw reproducible — preview and commit with the same seed produce the identical plan.</div>
     <div class="grid">
@@ -85,7 +95,15 @@
   </div>
 
   <div class="card">
-    <div class="step">Step 2 · Preview</div>
+    <div class="step">Step 2 · Allocation percentages</div>
+    <h2>Where the Unassigned over-16 pool goes</h2>
+    <div class="hint">Same idea as the removals above — these are editable. Each percentage is of that region's Unassigned over-16 pool, applied within the age limits shown. They should add up to 100%.</div>
+    <div id="targetCfg" class="tgrid"></div>
+    <div class="row" style="margin-top:6px"><span class="small">Total: <b id="pctSum">100</b>%</span><span id="pctWarn" class="small" style="color:#a83729"></span></div>
+  </div>
+
+  <div class="card">
+    <div class="step">Step 3 · Preview</div>
     <h2>What this plan does</h2>
     <div class="hint">Review the affinity checkpoint and the region breakdown before committing. Nothing is written until you commit.</div>
     <div id="empty" class="small">Run a preview to see the breakdown.</div>

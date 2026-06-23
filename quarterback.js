@@ -201,6 +201,38 @@ function showResolvedDetail(id){
   document.getElementById('rdReopen').addEventListener('click',()=>reopenResolved(v.id, v.region));
 }
 
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function dutyCell(v){
+  const opts=DUTY_NAMES[v.final]||[];
+  if(!opts.length) return '<span class="sub">—</span>';
+  const cur=v.duty||'';
+  return `<select class="dutysel" data-id="${v.id}" data-region="${esc(v.region)}">
+    <option value="">— none —</option>
+    ${opts.map(d=>`<option value="${esc(d)}" ${d===cur?'selected':''}>${esc(d)}</option>`).join('')}
+  </select>`;
+}
+async function setDuty(id, region, duty){
+  const idVal = isNaN(Number(id)) ? id : Number(id);
+  try{
+    const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({op:'set_duty',region,user_id:idVal,duty})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    const v=DATA.find(x=>String(x.id)===String(id)); if(v) v.duty=duty||null;
+  }catch(e){ banner('Could not save duty: '+e.message, true); }
+}
+async function reopenResolved(id, region){
+  const idVal = isNaN(Number(id)) ? id : Number(id);
+  if(!confirm('Re-open this volunteer? They go back to the assignable pool, unassigned.')) return;
+  try{
+    const r=await fetch('/api/assign',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({op:'reopen',region,user_ids:[idVal]})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    banner('Re-opened — back in the pool.', false);
+    await load();
+  }catch(e){ banner('Could not re-open: '+e.message, true); }
+}
+
 function render(){
   const tot=DATA.length;
   const assigned=DATA.filter(v=>v.assigned).length;

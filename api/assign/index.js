@@ -63,6 +63,22 @@ function slim(v) {
 const RESOLVED_OUTCOMES = ["Accepted", "Withdrew"];
 const isResolved = (v) => RESOLVED_OUTCOMES.includes(v.call_outcome);
 
+function lastOutcomeEntry(v) {
+  let e = null;
+  for (const x of (v.activity_log || [])) if (x.action === "outcome") e = x;
+  return e;
+}
+// Resolved view carries the call record so the quarterback can see it on click.
+function resolvedSlim(v) {
+  const e = lastOutcomeEntry(v) || {};
+  return {
+    id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
+    final: v.final_area, outcome: v.call_outcome || null, assigned: v.assigned_caller || null,
+    duty: v.assigned_duty || null, note: e.note || null, when: e.ts || null,
+    confirmed: !!v.confirmed_at, ivol_ready: !!v.ivol_ready
+  };
+}
+
 module.exports = async function (context, req) {
   try {
     const principal = getPrincipal(req);
@@ -94,7 +110,7 @@ module.exports = async function (context, req) {
         const { records } = await readRegion(container, region);
         for (const v of records) {
           if (!inScope(scopes, v.final_area, v.region) || v.callable_status !== "Stable") continue;
-          if (isResolved(v)) resolved.push(slim(v));   // already settled by a caller — not assignable
+          if (isResolved(v)) resolved.push(resolvedSlim(v));   // already settled by a caller — not assignable
           else out.push(slim(v));
         }
       }

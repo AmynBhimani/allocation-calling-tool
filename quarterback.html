@@ -31,6 +31,23 @@
   .acscopes{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px;margin-top:8px;max-width:680px}
   .acscopes label{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
   .selectall{font-size:12.5px;color:var(--teal);cursor:pointer;font-weight:600;background:none;border:none}
+  .resolved-split{display:flex;gap:0;border-top:1px solid var(--line);min-height:200px}
+  .resolved-list{flex:0 0 300px;max-height:380px;overflow-y:auto;border-right:1px solid var(--line)}
+  .rqitem{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #EDF3F4;padding:11px 14px;cursor:pointer;font:inherit}
+  .rqitem:hover{background:#F4F9FA}
+  .rqitem.sel{background:#E8F2F3;box-shadow:inset 3px 0 0 var(--teal,#028090)}
+  .rq-name{display:block;font-weight:600;color:var(--ink);font-size:14px}
+  .rq-meta{display:block;font-size:12px;color:var(--mute);margin-top:2px}
+  .rq-out.ok{color:#1f6b4a;font-weight:600} .rq-out.wd{color:#9a5a16;font-weight:600}
+  .resolved-detail{flex:1;padding:16px 18px;min-width:0}
+  .rd-empty{color:var(--mute);font-size:14px;padding:24px 4px}
+  .rd-head{margin-bottom:12px}
+  .rd-name{font-size:17px;font-weight:700;color:var(--ink)}
+  .rd-row{display:flex;gap:12px;padding:7px 0;border-bottom:1px solid #F0F5F6;font-size:14px}
+  .rd-k{flex:0 0 78px;color:var(--mute);font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;padding-top:1px}
+  .rd-v{flex:1;color:var(--ink)}
+  #rdReopen{margin-top:16px}
+  @media(max-width:760px){ .resolved-split{flex-direction:column} .resolved-list{flex-basis:auto;border-right:none;border-bottom:1px solid var(--line)} }
 </style>
 </head>
 <body>
@@ -105,14 +122,14 @@
   </div>
 
   <div class="panel" id="resolvedCard" style="display:none;margin-top:20px">
-    <div style="padding:15px 16px 2px">
+    <div style="padding:15px 16px 8px">
       <h2 style="font-family:Cambria,Georgia,serif;font-size:17px;color:var(--ink);margin:0 0 2px">Resolved by a caller</h2>
-      <p class="sub" style="margin:0 0 10px">Already accepted or withdrawn — not assignable. If someone changes their mind, their caller can re-open them and they return to the pool above.</p>
+      <p class="sub" style="margin:0 0 4px">Already accepted or withdrawn — not assignable. Pick a name to see the call record, and re-open if they change their mind.</p>
     </div>
-    <table class="grid">
-      <thead><tr><th>Name</th><th>Area</th><th>Outcome</th><th>Caller</th><th></th></tr></thead>
-      <tbody id="resolvedRows"></tbody>
-    </table>
+    <div class="resolved-split">
+      <div class="resolved-list" id="resolvedList"></div>
+      <div class="resolved-detail" id="resolvedDetail"><div class="rd-empty">Select someone to see their call record.</div></div>
+    </div>
     <div class="count" id="resolvedCount"></div>
   </div>
 </div>

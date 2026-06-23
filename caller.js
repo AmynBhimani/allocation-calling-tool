@@ -69,18 +69,15 @@ function eventBlockHtml(v){
     </div>`;
 }
 
-// The single pre-assigned duty (set by the quarterback), shown to the caller and changeable here.
-// This is separate from the accept-link email, which only ever confirms the area of interest.
+// The quarterback's pre-assigned duty, shown read-only. The caller doesn't change it here —
+// ticking one or more "possible duties" below overrides it. The email confirms the area only.
 function dutyPickerHtml(v){
-  const opts=DUTY_NAMES[v.area]||[];
-  if(!opts.length) return '';
   const cur=v.duty||'';
+  if(!cur) return '';
   return `<div class="dutypick">
-    <label>Assigned duty <span class="sub">(optional — the email still confirms the area only)</span></label>
-    <select id="assignedDuty">
-      <option value="">— none —</option>
-      ${opts.map(d=>`<option value="${escapeAttr(d)}" ${d===cur?'selected':''}>${escapeHtml(d)}</option>`).join('')}
-    </select>
+    <span class="dutypick-label">Pre-assigned duty:</span>
+    <span class="dutypick-val">${escapeHtml(cur)}</span>
+    <span class="sub">— ticking duties below overrides this; the email confirms the area only</span>
   </div>`;
 }
 
@@ -275,7 +272,7 @@ async function save(outcome, extra){
   const cell=document.getElementById('cCell'), email=document.getElementById('cEmail');
   if(f) contact.first=f.value; if(l) contact.last=l.value;
   if(cell) contact.cell=cell.value; if(email) contact.email=email.value;
-  const body={ user_id:current.id, region:current.region, outcome, note, contact, event_assignments:collectAssignments(), assigned_duty:(document.getElementById('assignedDuty')||{}).value, ...extra };
+  const body={ user_id:current.id, region:current.region, outcome, note, contact, event_assignments:collectAssignments(), ...extra };
   try{
     const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));

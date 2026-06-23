@@ -126,23 +126,44 @@ function matches(v){
   return true;
 }
 
+let resolvedSel = null;
 function renderResolved(){
   const card=document.getElementById('resolvedCard');
-  const rows=document.getElementById('resolvedRows');
-  if(!RESOLVED.length){ card.style.display='none'; return; }
+  if(!RESOLVED.length){ card.style.display='none'; resolvedSel=null; return; }
   card.style.display='';
-  const pill=(o)=> o==='Accepted'
-    ? '<span class="assigned-tag">Accepted</span>'
-    : '<span class="badge b-nobi">Withdrew</span>';
-  rows.innerHTML=RESOLVED.map(v=>`<tr>
-      <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id} · ${v.jk}</div></td>
-      <td><span class="area-cell">${v.final||'—'}</span></td>
-      <td>${pill(v.outcome)}</td>
-      <td>${v.assigned?`<span class="sub">${v.assigned}</span>`:'<span class="sub">—</span>'}</td>
-      <td style="text-align:right"><button class="editbtn reopenbtn" data-id="${v.id}" data-region="${esc(v.region)}">Re-open</button></td>
-    </tr>`).join('');
-  rows.querySelectorAll('.reopenbtn').forEach(b=>b.addEventListener('click',()=>reopenResolved(b.dataset.id,b.dataset.region)));
+  if(resolvedSel && !RESOLVED.some(v=>String(v.id)===String(resolvedSel))) resolvedSel=null;
+  const list=document.getElementById('resolvedList');
+  list.innerHTML=RESOLVED.map(v=>{
+    const out=v.outcome==='Accepted'?'Accepted':'Withdrew';
+    const cls=v.outcome==='Accepted'?'ok':'wd';
+    const sel=String(resolvedSel)===String(v.id)?'sel':'';
+    return `<button class="rqitem ${sel}" data-id="${v.id}" data-region="${esc(v.region)}">
+      <span class="rq-name">${esc(v.first)} ${esc(v.last)}</span>
+      <span class="rq-meta">${esc(v.final||'—')} · <span class="rq-out ${cls}">${out}</span></span>
+    </button>`;
+  }).join('');
+  list.querySelectorAll('.rqitem').forEach(b=>b.addEventListener('click',()=>{ resolvedSel=b.dataset.id; renderResolved(); }));
   document.getElementById('resolvedCount').textContent=`${RESOLVED.length} resolved`;
+  const detail=document.getElementById('resolvedDetail');
+  if(resolvedSel) showResolvedDetail(resolvedSel);
+  else detail.innerHTML='<div class="rd-empty">Select someone to see their call record.</div>';
+}
+function showResolvedDetail(id){
+  const v=RESOLVED.find(x=>String(x.id)===String(id)); if(!v) return;
+  const out=v.outcome==='Accepted'?'Accepted':'Withdrew';
+  const when=v.when?new Date(v.when).toLocaleString():'';
+  const rows=[
+    ['Area', esc(v.final||'—')],
+    ['Outcome', out + (when?` <span class="sub">· ${esc(when)}</span>`:'') + (v.confirmed?' <span class="sub">· self-confirmed</span>':'')],
+    ['Caller', v.assigned?esc(v.assigned):'—'],
+  ];
+  if(v.duty) rows.push(['Duty', esc(v.duty)]);
+  if(v.note) rows.push(['Note', esc(v.note)]);
+  document.getElementById('resolvedDetail').innerHTML=`
+    <div class="rd-head"><div class="rd-name">${esc(v.first)} ${esc(v.last)}</div><div class="sub">#${v.id} · ${esc(v.jk)}</div></div>
+    ${rows.map(r=>`<div class="rd-row"><span class="rd-k">${r[0]}</span><span class="rd-v">${r[1]}</span></div>`).join('')}
+    <button class="btn commit" id="rdReopen" data-id="${v.id}" data-region="${esc(v.region)}">Re-open</button>`;
+  document.getElementById('rdReopen').addEventListener('click',()=>reopenResolved(v.id, v.region));
 }
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

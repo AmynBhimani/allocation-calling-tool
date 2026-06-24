@@ -75,12 +75,20 @@
     var html = "";
     REGIONS.forEach(function (R) {
       var dr = d.distReport[R]; if (!dr) return;
-      html += '<div class="sub2">' + R + " · goal denominator " + dr.D + " (" + dr.reviewFixed + " review + " + dr.assignable + " assignable)"
-        + (dr.unplaced ? " · " + dr.unplaced + " left Unassigned (no eligible picked area)" : "") + "</div>";
-      html += '<table class="matrix"><tr><th>Area</th><th>Target %</th><th>Goal</th><th>Review already</th><th>Newly placed</th><th>Final</th></tr>';
+      html += '<div class="sub2">' + R + " · goal denominator " + dr.D + " (" + dr.reviewFixed + " review + " + dr.assignable + " assignable) · "
+        + (dr.rounds || 4) + " rounds · " + (dr.flexTotal || 0) + " happy-anywhere"
+        + (dr.unplaced ? " · " + dr.unplaced + " left Unassigned (picked only full areas)" : "") + "</div>";
+      html += '<table class="matrix"><tr><th>Area</th><th>Goal</th><th>Filled</th><th>Ceiling</th><th>Short by</th></tr>';
       dr.targets.forEach(function (t) {
-        html += "<tr><td>" + esc(t.area) + '</td><td class="n">' + Math.round(t.pct * 100) + '%</td><td class="n">' + t.target
-          + '</td><td class="n">' + t.reviewAlready + '</td><td class="n">' + t.placed + '</td><td class="n tcol">' + t.final + "</td></tr>";
+        var ceil = (t.ceiling == null ? "" : t.ceiling);
+        var shortTxt = t.shortBy ? '<b style="color:#a83729">' + t.shortBy + "</b>" : "—";
+        // Ceiling note: when the honest max is below the goal, the goal simply can't be reached without
+        // more volunteers willing to do that area — flag it so the shortfall reads as recruiting signal.
+        var capFlag = (t.ceiling != null && t.ceiling < t.target) ? ' title="Not enough willing volunteers to reach goal" style="color:#a83729"' : "";
+        html += "<tr><td>" + esc(t.area) + '</td><td class="n">' + t.target
+          + '</td><td class="n tcol">' + t.final
+          + '</td><td class="n"' + capFlag + ">" + ceil
+          + '</td><td class="n">' + shortTxt + "</td></tr>";
       });
       html += "</table>";
     });
@@ -181,7 +189,8 @@
 
   async function call(mode) {
     var seed = parseInt(EL("seed").value, 10) || 20260723;
-    var body = { mode: mode, seed: seed, targets: targetsFromInputs() };
+    var rounds = Math.max(1, Math.min(20, parseInt(EL("rounds").value, 10) || 4));
+    var body = { mode: mode, seed: seed, rounds: rounds, targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");

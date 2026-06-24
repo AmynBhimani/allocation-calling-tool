@@ -138,36 +138,90 @@ function allocate(records, cfg) {
       need[t.area] = Math.max(0, target[t.area] - (reviewIn[t.area] || 0));  // review already there counts
       placed[t.area] = 0;
     }
-    const place = (p, A) => { p.bucket = "assigned"; p.area = A; placed[A]++; need[A]--; };
 
-    // Pass 1 — happy-to-serve-anywhere people, lowest-% area first, age-gated.
-    const happy = shuffle(assignable.filter(p => p.happyAnywhere), rng);
-    for (const t of order) {
-      const A = t.area; if (need[A] <= 0) continue;
-      for (const p of happy) { if (need[A] <= 0) break; if (!p.area && eligible(p.age, tByArea[A])) place(p, A); }
+    // ---- Round-based fill ---------------------------------------------------
+    // Preference is a HARD wall: nobody is ever placed in an area they didn't pick
+    // (the "happy anywhere" people are the only exception — they can go anywhere).
+    // We fill in rounds so the big area (Safety) can't soak up everyone before the
+    // small areas get their share. Each round raises every area's cap a notch and we
+    // top each area toward that cap from its own pickers. The flexible (happy-anywhere)
+    // people are saved for LAST, then poured into the areas that have the fewest other
+    // candidates first (Environmental has none; Safety is usually next), so they do the
+    // most good. Anyone still unplaced at the end stays Unassigned — by design.
+    const rounds = Math.max(1, Math.min(20, cfg.rounds != null ? (cfg.rounds | 0) : 4));
+    const fillArea = (p, A) => { p.bucket = "assigned"; p.area = A; placed[A]++; };
+
+    // Pre-bucket each area's own picker candidates (non-flex, age-eligible), shuffled.
+    const pickersByArea = {};
+    for (const t of targetsDef) {
+      pickersByArea[t.area] = shuffle(
+        assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(t.area) >= 0 && eligible(p.age, tByArea[t.area])),
+        rng
+      );
     }
-    // Pass 2 — everyone else into one of THEIR picked areas, lowest-% first.
-    for (const t of order) {
-      const A = t.area; if (need[A] <= 0) continue;
-      const pickers = shuffle(assignable.filter(p => !p.area && !p.happyAnywhere && p.prefAreas.indexOf(A) >= 0 && eligible(p.age, tByArea[A])), rng);
-      for (const p of pickers) { if (need[A] <= 0) break; place(p, A); }
+    // Rounds: cap each area at (k/rounds) of its need; advance all areas together.
+    for (let k = 1; k <= rounds; k++) {
+      for (const t of order) {                       // lowest-% first within a round keeps small areas moving
+        const A = t.area;
+        const cap = Math.round((need[A] * k) / rounds);
+        for (const p of pickersByArea[A]) {
+          if (placed[A] >= cap) break;
+          if (!p.area) fillArea(p, A);               // pickers only into their own area
+        }
+      }
     }
-    // Last resort — people who picked nothing (and aren't happy-anywhere) fill any remaining need.
-    for (const t of order) {
-      const A = t.area; if (need[A] <= 0) continue;
-      const fillers = shuffle(assignable.filter(p => !p.area && !p.happyAnywhere && p.prefAreas.length === 0 && eligible(p.age, tByArea[A])), rng);
-      for (const p of fillers) { if (need[A] <= 0) break; place(p, A); }
+
+    // Flex pool LAST. Repeatedly take the OPEN area with the fewest people who can still
+    // fill it (own leftover pickers + age-eligible flex) and give it one flex person —
+    // choosing the person who is LEAST useful to the other open areas, so dual-use people
+    // (e.g. 19-20s, who also qualify for Parking/Safety) are saved for the areas that still
+    // need them and the narrow 16-20s land in Environmental, which only they can staff.
+    // The broad area (Safety) has the largest candidate pool, so it fills last from the
+    // residual — which is exactly the "flex to the areas with no other source first" rule.
+    const remainingPickerSupply = (A) => pickersByArea[A].filter(p => !p.area).length;
+    const flex = shuffle(assignable.filter(p => p.happyAnywhere), rng);
+    const eligibleFlex = (A) => flex.filter(x => !x.area && eligible(x.age, tByArea[A]));
+    const fitCount = (p, areas) => areas.reduce((n, t) => n + (eligible(p.age, tByArea[t.area]) ? 1 : 0), 0);
+    while (true) {
+      const open = order.filter(t => placed[t.area] < need[t.area]);
+      if (!open.length) break;
+      let area = null, pool = null, bestN = Infinity, bestRatio = Infinity, bestPct = Infinity;
+      for (const t of open) {
+        const e = eligibleFlex(t.area);
+        if (!e.length) continue;                                  // no flex can serve this area
+        const n = e.length + remainingPickerSupply(t.area);
+        const ratio = placed[t.area] / need[t.area];
+        if (n < bestN || (n === bestN && (ratio < bestRatio || (ratio === bestRatio && t.pct < bestPct)))) {
+          bestN = n; bestRatio = ratio; bestPct = t.pct; area = t.area; pool = e;
+        }
+      }
+      if (!area) break;                                           // no open area has any eligible flex left
+      const others = open.filter(t => t.area !== area);
+      let person = pool[0], lowFit = fitCount(person, others);
+      for (const p of pool) { const f = fitCount(p, others); if (f < lowFit) { lowFit = f; person = p; } }
+      fillArea(person, area);
     }
-    // Leftover assignable (no eligible picked area / area full) -> Unassigned.
+
+    // Leftover assignable (picked only full areas / not flex) -> Unassigned, by design.
     for (const p of assignable) if (!p.area) p.bucket = "unassigned";
 
     distReport[R] = {
-      D, reviewFixed: reviewFixed.length, assignable: assignable.length,
-      targets: order.map(t => ({
-        area: t.area, pct: t.pct, target: target[t.area],
-        reviewAlready: reviewIn[t.area] || 0, placed: placed[t.area],
-        final: (reviewIn[t.area] || 0) + placed[t.area],
-      })),
+      D, reviewFixed: reviewFixed.length, assignable: assignable.length, rounds,
+      flexTotal: assignable.filter(p => p.happyAnywhere).length,
+      targets: order.map(t => {
+        const A = t.area;
+        // Ceiling = the most this area could EVER reach without violating preference:
+        // review already there + its own age-eligible pickers + all age-eligible flex people.
+        const pickerCount = assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(A) >= 0 && eligible(p.age, tByArea[A])).length;
+        const flexEligible = assignable.filter(p => p.happyAnywhere && eligible(p.age, tByArea[A])).length;
+        return {
+          area: A, pct: t.pct, target: target[A],
+          reviewAlready: reviewIn[A] || 0, placed: placed[A],
+          final: (reviewIn[A] || 0) + placed[A],
+          ceiling: (reviewIn[A] || 0) + pickerCount + flexEligible,   // pickers + flex, the honest max
+          shortBy: Math.max(0, target[A] - ((reviewIn[A] || 0) + placed[A])),
+        };
+      }),
       unplaced: assignable.filter(p => p.bucket === "unassigned").length,
     };
   }

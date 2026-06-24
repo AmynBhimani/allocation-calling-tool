@@ -71,10 +71,12 @@
   <div class="card">
     <div class="step">Step 1 · Run &amp; seed</div>
     <h2>Run the allocation</h2>
-    <div class="hint">Review-migration assignments stay put (including Medical &amp; Registration &amp; Access). IFF, under-16 (Young) and no-birthday volunteers are held aside. Everyone else is allocated toward the target percentages below: review + assignable people set the denominator, areas fill <b>lowest-percentage first</b>, and each person lands in one of their own Better Impact picks — or anywhere, if they chose "happy to serve anywhere." The seed makes the draw reproducible — preview and commit with the same seed produce the identical plan.</div>
+    <div class="hint">Review-migration assignments stay put (including Medical &amp; Registration &amp; Access). IFF, under-16 (Young) and no-birthday volunteers are held aside. <b>Nobody is ever placed in an area they didn't pick</b> — the only "anywhere" people are those who chose "happy to serve anywhere." Areas fill in <b>rounds</b>: each round raises every area's cap a notch and tops it up from its own pickers, so the big areas can't soak up everyone before the small ones get their share. The "happy anywhere" people are saved for <b>last</b> and poured into the areas with the fewest other candidates first (Environmental has none; Safety is usually next), so they do the most good. Whoever's left — picked only full areas — stays Unassigned, by design. More rounds = smoother balancing (4 rounds = 25% slices). The seed makes the draw reproducible.</div>
     <div class="row" style="margin-top:8px">
       <span class="small">Age as of <b>July 23, 2026</b> · Seed</span>
       <input id="seed" class="token" type="number" value="20260723" style="width:130px">
+      <span class="small">· Rounds</span>
+      <input id="rounds" class="token" type="number" value="4" min="1" max="20" style="width:70px">
       <button id="previewBtn" class="btn">Preview allocation</button>
       <button id="commitBtn" class="btn commit" disabled>Commit allocation</button>
     </div>

@@ -63,6 +63,8 @@ module.exports = async function (context, req) {
         ceremony_jk: r.jk, region,
         birthday: r.birthday || null, age: (r.age != null ? r.age : null), interfaith: !!r.interfaith,
         list: a.list || null,
+        pref_areas: r.areas ? Object.keys(r.areas).filter(function (k) { return r.areas[k]; }) : [],
+        happy_anywhere: !!r.happy_anywhere,
         computed_area: a.computed_area, final_area: null,
         held_aside: !!a.held_aside,
         affinity_flag: false, leader_flag: false, conflict_claims: [],
@@ -92,6 +94,7 @@ module.exports = async function (context, req) {
               ceremony_jk: nv.ceremony_jk, region: nv.region,
               birthday: nv.birthday || null, age: (nv.age != null ? nv.age : (old.age != null ? old.age : null)), interfaith: !!nv.interfaith,
               list: nv.list, computed_area: nv.computed_area, held_aside: nv.held_aside,
+              pref_areas: nv.pref_areas, happy_anywhere: nv.happy_anywhere,
               new_since_sync: false
             };
           }

@@ -11,7 +11,7 @@
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); };
   var lastPlan = null;
 
-  // Editable allocation targets (percent of the over-16 Unassigned pool) with their age gates.
+  // Editable target percentages — the goal share of the final mix per area, with age gates.
   var TARGET_DEFS = [
     { area: "Safety & Flow Management", id: "t_ssp", pct: 55, min: 19, max: null, rule: "min age 19" },
     { area: "Seniors & Mobility", id: "t_sen", pct: 14, min: 16, max: null, rule: "min age 16" },
@@ -48,14 +48,6 @@
     var b = EL("banner"); if (!msg) { b.hidden = true; return; }
     b.hidden = false; b.className = "banner " + (kind || ""); b.textContent = msg;
   }
-  function stripFromInputs() {
-    var n = function (id) { return Math.max(0, parseInt(EL(id).value, 10) || 0); };
-    return {
-      BC: { "Food Services": n("bc_food"), "Reception & Hospitality": n("bc_rh") },
-      Prairies: { "Reception & Hospitality": n("pr_rh"), "Food Services": n("pr_food") },
-      Edmonton: { "Reception & Hospitality": n("ed_rh"), "Food Services": n("ed_food") }
-    };
-  }
 
   function matrixTable(d) {
     var present = AREAS.filter(function (a) {
@@ -83,30 +75,21 @@
     var html = "";
     REGIONS.forEach(function (R) {
       var dr = d.distReport[R]; if (!dr) return;
-      html += '<div class="sub2">' + R + " · distributing " + dr.poolOver16 + " unassigned over-16" + (dr.unplaced ? " · " + dr.unplaced + " couldn't be placed (age limits)" : "") + "</div>";
-      html += '<table class="matrix"><tr><th>Area</th><th>Target %</th><th>Target</th><th>Placed</th></tr>';
+      html += '<div class="sub2">' + R + " · goal denominator " + dr.D + " (" + dr.reviewFixed + " review + " + dr.assignable + " assignable)"
+        + (dr.unplaced ? " · " + dr.unplaced + " left Unassigned (no eligible picked area)" : "") + "</div>";
+      html += '<table class="matrix"><tr><th>Area</th><th>Target %</th><th>Goal</th><th>Review already</th><th>Newly placed</th><th>Final</th></tr>';
       dr.targets.forEach(function (t) {
-        html += "<tr><td>" + esc(t.area) + '</td><td class="n">' + Math.round(t.pct * 100) + '%</td><td class="n">' + t.target + '</td><td class="n tcol">' + t.placed + "</td></tr>";
+        html += "<tr><td>" + esc(t.area) + '</td><td class="n">' + Math.round(t.pct * 100) + '%</td><td class="n">' + t.target
+          + '</td><td class="n">' + t.reviewAlready + '</td><td class="n">' + t.placed + '</td><td class="n tcol">' + t.final + "</td></tr>";
       });
       html += "</table>";
     });
     return html;
   }
 
-  function stripTable(d) {
-    var html = '<table class="matrix"><tr><th>Region · Area</th><th>Requested</th><th>Available</th><th>Removed</th></tr>';
-    REGIONS.forEach(function (R) {
-      var sr = d.stripReport[R] || {};
-      Object.keys(sr).forEach(function (A) {
-        var s = sr[A];
-        html += "<tr><td>" + R + " · " + esc(A) + '</td><td class="n">' + s.requested + '</td><td class="n">' + s.available + '</td><td class="n tcol">' + s.removed + (s.removed < s.requested ? " ⚠" : "") + "</td></tr>";
-      });
-    });
-    return html + "</table>";
-  }
 
   function placeLabel(r) {
-    if (r.bucket === "affinity" || r.bucket === "kept" || r.bucket === "assigned") return r.area || "—";
+    if (r.bucket === "affinity" || r.bucket === "assigned") return r.area || "—";
     if (r.bucket === "contested") return "In reconciliation";
     if (r.bucket === "iff") return "IFF";
     if (r.bucket === "noage") return "No age — held out";
@@ -138,7 +121,7 @@
       : "";
     var html = ""
       + '<div class="kpis">'
-      + '<div class="kpi"><div class="n">' + d.affinityTotal.toLocaleString() + '</div><div class="l">Affinity (final area kept) — expect ~1,068</div></div>'
+      + '<div class="kpi"><div class="n">' + d.affinityTotal.toLocaleString() + '</div><div class="l">Affinity — review-assigned, kept as-is</div></div>'
       + '<div class="kpi"><div class="n">' + d.affinityLeaders.toLocaleString() + '</div><div class="l">of which leaders — expect ~267</div></div>'
       + '<div class="kpi"><div class="n">' + (d.contestedTotal || 0).toLocaleString() + '</div><div class="l">In reconciliation (claimed, left alone)</div></div>'
       + (d.nullAge ? '<div class="kpi flag"><div class="n">' + d.nullAge.toLocaleString() + '</div><div class="l">missing an age (' + (d.noAgeHeld || 0).toLocaleString() + ' held · rest already placed)</div></div>' : "")
@@ -164,14 +147,13 @@
 
     html += ageWarn
       + '<div class="sub2">Allocated by region &amp; area</div>' + matrixTable(d)
-      + '<div class="sub2">Random removals into Unassigned</div>' + stripTable(d)
-      + '<div class="sub2">Distribution of the Unassigned over-16 pool</div>' + distTable(d);
+      + '<div class="sub2">Distribution toward the target percentages</div>' + distTable(d);
 
     var L = d.lists || {};
     html += '<div class="sub2">Category lists</div>';
     html += listSection("In reconciliation — claimed in review, decision pending", "contested", L.contested, "These were assigned/claimed in the review tool and are NOT touched by the allocation.");
     html += listSection("IFF", "iff", L.iff, "Inter-faith family members — held in their own category, not assigned to a process area.");
-    html += listSection("Young Volunteers (under 16)", "young", L.young, "Under 16 — held out of process areas (except those left in Reception & Hospitality).");
+    html += listSection("Young Volunteers (under 16)", "young", L.young, "Under 16 — held aside, not allocated.");
     html += listSection("No age on file (all) — everyone missing an age, and where each landed", "noAge", L.noAge, "The held subset (no area) plus people already assigned/claimed in review who also lack an age.", true);
     html += listSection("Unassigned (16+, no area / not placed)", "unassigned", L.unassigned, "");
 
@@ -199,7 +181,7 @@
 
   async function call(mode) {
     var seed = parseInt(EL("seed").value, 10) || 20260723;
-    var body = { mode: mode, seed: seed, strip: stripFromInputs(), targets: targetsFromInputs() };
+    var body = { mode: mode, seed: seed, targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");
@@ -223,8 +205,6 @@
     call("commit");
   });
   // Re-running a preview is required before commit if settings change.
-  ["bc_food", "bc_rh", "pr_rh", "pr_food", "ed_rh", "ed_food", "seed"].forEach(function (id) {
-    EL(id).addEventListener("input", onSettingChanged);
-  });
+  EL("seed").addEventListener("input", onSettingChanged);
   buildTargetInputs();
 })();

@@ -1,16 +1,20 @@
 // Bulk allocation engine — pure function over stored volunteer records.
-// Deterministic given the same records + seed, so a preview and a later commit
-// with the same seed produce the identical plan.
+// Deterministic given the same records + seed (preview and commit match).
 //
-// Input record (from a tool-data shard):
-//   { user_id, region, computed_area, final_area, never_reviewed, leader_flag,
-//     list, interfaith, birthday }
-// "Affinity" = anyone already assigned an area through the review-tool load
-// (final_area != null). They keep their area untouched.
+// Model (per region):
+//   1. Review-migration assignments stay fixed (final_area kept) — including Medical
+//      Services & Registration & Access. ("affinity")
+//   2. Held aside, never allocated: IFF, under-16 (Young), no birthday/age.
+//   3. Targets are a goal for the FINAL mix. For each of the 7 percentage areas,
+//        goal = round(pct * D),  where D = (review-fixed + assignable) in the region.
+//      Areas are filled LOWEST-% first (one head matters more in a small area).
+//   4. Pass 1 — "happy to serve anywhere" people fill those needs (any area, age-gated).
+//      Pass 2 — everyone else goes into one of THEIR OWN picked areas (multi-pick = the
+//      flexible lever), lowest-% first. People who picked nothing act as last-resort filler.
+//   5. Anyone left over (no eligible picked area / age-ineligible) stays Unassigned.
 
 const REGIONS = ["BC", "Prairies", "Edmonton"];
 
-// The 12 canonical service areas, for stable display ordering.
 const ALL_AREAS = [
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
   "Seniors & Mobility", "Food Services", "Layout & Logistics", "Registration & Access",
@@ -19,8 +23,7 @@ const ALL_AREAS = [
 ];
 const SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file", "Unassigned"];
 
-// Distribution targets for the over-16 Unassigned pool. Percentages are of that pool.
-// min/max are hard age gates. SSP = Safety & Flow Management.
+// Goal split for the FINAL distribution. pct of D; min/max are hard age gates.
 const ASSIGN_TARGETS = [
   { area: "Safety & Flow Management",      pct: 0.55, min: 19, max: null },
   { area: "Seniors & Mobility",           pct: 0.14, min: 16, max: null },
@@ -30,19 +33,6 @@ const ASSIGN_TARGETS = [
   { area: "Food Services",                pct: 0.04, min: 16, max: null },
   { area: "Layout & Logistics",           pct: 0.04, min: 19, max: 65 },
 ];
-// Fill most age-restrictive areas first so a narrow eligibility pool isn't consumed
-// by an unrestricted area.
-const FILL_ORDER = [
-  "Environmental Sustainability", "Parking & Transportation", "Layout & Logistics",
-  "Safety & Flow Management", "Seniors & Mobility", "Food Services", "Reception & Hospitality",
-];
-
-// Per-region random removals into Unassigned (editable in the UI; these are the defaults).
-const DEFAULT_STRIP = {
-  BC:       { "Food Services": 150, "Reception & Hospitality": 400 },
-  Edmonton: { "Reception & Hospitality": 400, "Food Services": 300 },
-  Prairies: { "Reception & Hospitality": 400, "Food Services": 300 },
-};
 
 function mulberry32(a) {
   return function () {
@@ -57,7 +47,6 @@ function shuffle(arr, rng) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
-
 function ageAsOf(birthday, asOf) {
   if (!birthday) return null;
   const d = new Date(birthday); if (isNaN(d)) return null;
@@ -68,11 +57,11 @@ function ageAsOf(birthday, asOf) {
   return a;
 }
 function eligible(age, t) {
+  if (!t) return false;
   if (t.min != null) { if (age == null || age < t.min) return false; }
   if (t.max != null) { if (age == null || age > t.max) return false; }
   return true;
 }
-
 function sanitizeTargets(t) {
   if (!Array.isArray(t) || !t.length) return null;
   const out = [];
@@ -84,114 +73,111 @@ function sanitizeTargets(t) {
   }
   return out;
 }
-// Fill the most age-restrictive areas first so a narrow eligibility pool isn't consumed
-// by an open one. Narrower age window first, then higher minimum age first.
-function orderByRestrictiveness(targets) {
+// Fill order: LOWEST percentage first (a head matters more in a small area); ties broken by
+// the narrower age window first (so a constrained-eligibility area isn't starved), then name.
+function fillOrderByPct(targets) {
   return targets.slice().sort((a, b) => {
+    if (a.pct !== b.pct) return a.pct - b.pct;
     const wa = (a.max == null ? 200 : a.max) - (a.min == null ? 0 : a.min);
     const wb = (b.max == null ? 200 : b.max) - (b.min == null ? 0 : b.min);
     if (wa !== wb) return wa - wb;
-    return (b.min == null ? 0 : b.min) - (a.min == null ? 0 : a.min);
-  }).map(t => t.area);
+    return a.area.localeCompare(b.area);
+  });
 }
 
 function allocate(records, cfg) {
   cfg = cfg || {};
   const asOf = cfg.asOf || "2026-07-23";
   const seed = (cfg.seed != null ? cfg.seed : 1234567) >>> 0;
-  const strip = cfg.strip || DEFAULT_STRIP;
   const targetsDef = sanitizeTargets(cfg.targets) || ASSIGN_TARGETS;
-  const fillOrder = orderByRestrictiveness(targetsDef);
+  const order = fillOrderByPct(targetsDef);
+  const tByArea = {}; targetsDef.forEach(t => (tByArea[t.area] = t));
   const rng = mulberry32(seed);
 
-  // Annotate every record and assign an initial bucket.
+  // Annotate + initial bucket.
   const recs = records.map(r => {
     const directAge = (r.age != null && Number.isFinite(Number(r.age))) ? Number(r.age) : null;
     const claims = Array.isArray(r.conflict_claims) ? r.conflict_claims.length : 0;
-    // "From the review tool" = anyone the review load touched, INCLUDING contested people
-    // (2+ areas claimed, decision still pending). They are never pulled into the allocation.
-    const fromReview = (r.never_reviewed === false) || claims > 0;
+    const fromReview = (r.never_reviewed === false) || claims > 0;   // review touched (incl. contested)
+    const prefAreas = Array.isArray(r.pref_areas) ? r.pref_areas.filter(a => typeof a === "string") : [];
     return {
       user_id: r.user_id, region: r.region,
-      computed_area: r.computed_area || null, final_area: r.final_area || null,
-      leader: !!r.leader_flag, claims, fromReview,
+      final_area: r.final_area || null, leader: !!r.leader_flag, claims, fromReview,
       age: directAge != null ? directAge : ageAsOf(r.birthday, asOf),
       isIFF: (r.list === "IFF") || !!r.interfaith,
+      prefAreas, happyAnywhere: !!r.happy_anywhere,
       bucket: null, area: null,
     };
   });
 
   for (const r of recs) {
     if (r.fromReview) {
-      if (r.final_area != null) { r.bucket = "affinity"; r.area = r.final_area; }
-      else { r.bucket = "contested"; r.area = null; }     // claimed, decision pending — left alone
+      if (r.final_area != null) { r.bucket = "affinity"; r.area = r.final_area; }  // stays put
+      else { r.bucket = "contested"; r.area = null; }                              // pending, left alone
       continue;
     }
-    if (r.isIFF) { r.bucket = "iff"; r.area = null; continue; }   // IFF out of all process areas
-    if (r.age == null) { r.bucket = "noage"; r.area = null; continue; } // no age -> held & flagged
-    const area = r.computed_area;
-    if (r.age < 16) {                                              // under-16 stripped...
-      if (area === "Reception & Hospitality") { r.bucket = "kept"; r.area = area; } // ...except R&H
-      else { r.bucket = "young"; r.area = null; }
-      continue;
-    }
-    if (area) { r.bucket = "kept"; r.area = area; }
-    else { r.bucket = "unassigned"; r.area = null; }              // 16+ with no computed area -> pool
-  }
-
-  // Random per-region removals from the kept Food / Reception pools into Unassigned.
-  const stripReport = {};
-  for (const R of REGIONS) {
-    stripReport[R] = {};
-    const cfgR = strip[R] || {};
-    for (const A of Object.keys(cfgR)) {
-      const want = cfgR[A] | 0;
-      const pool = recs.filter(x => x.region === R && x.bucket === "kept" && x.area === A && !(x.age != null && x.age < 16));
-      const sh = shuffle(pool, rng);
-      const take = Math.max(0, Math.min(want, sh.length));
-      for (let i = 0; i < take; i++) { sh[i].bucket = "unassigned"; sh[i].area = null; }
-      stripReport[R][A] = { requested: want, removed: take, available: pool.length };
-    }
-  }
-
-  // Phase B: re-bucket the Unassigned pool, then distribute the over-16 non-IFF remainder.
-  for (const r of recs) {
-    if (r.bucket !== "unassigned") continue;
-    if (r.isIFF) { r.bucket = "iff"; continue; }
-    if (r.age != null && r.age < 16) { r.bucket = "young"; continue; }     // leave under-16 as Young
-    // null age or 16+ stays "unassigned" for now; only 16+ get distributed
+    if (r.isIFF) { r.bucket = "iff"; continue; }          // held aside
+    if (r.age == null) { r.bucket = "noage"; continue; }  // held aside (no birthday)
+    if (r.age < 16) { r.bucket = "young"; continue; }     // held aside (all under-16)
+    r.bucket = "pool";                                    // assignable
   }
 
   const distReport = {};
   for (const R of REGIONS) {
-    const pool = recs.filter(x => x.region === R && x.bucket === "unassigned" && x.age != null && x.age >= 16 && !x.isIFF);
-    const N = pool.length;
-    const targets = targetsDef.map(t => ({ ...t, target: Math.round(t.pct * N), placed: 0 }));
-    const tByArea = {}; targets.forEach(t => (tByArea[t.area] = t));
-    let remaining = shuffle(pool, rng);
-    const used = new Set();
-    for (const A of fillOrder) {
-      const t = tByArea[A]; if (!t) continue;
-      for (const p of remaining) {
-        if (t.placed >= t.target) break;
-        if (eligible(p.age, t)) { p.bucket = "assigned"; p.area = A; used.add(p.user_id); t.placed++; }
-      }
-      remaining = remaining.filter(p => !used.has(p.user_id));
+    const regionRecs = recs.filter(x => x.region === R);
+    const reviewFixed = regionRecs.filter(x => x.bucket === "affinity");
+    const assignable = regionRecs.filter(x => x.bucket === "pool");
+    const D = reviewFixed.length + assignable.length;     // denominator for the goal counts
+
+    const reviewIn = {};
+    for (const x of reviewFixed) if (x.area) reviewIn[x.area] = (reviewIn[x.area] || 0) + 1;
+
+    const target = {}, need = {}, placed = {};
+    for (const t of targetsDef) {
+      target[t.area] = Math.round(t.pct * D);
+      need[t.area] = Math.max(0, target[t.area] - (reviewIn[t.area] || 0));  // review already there counts
+      placed[t.area] = 0;
     }
+    const place = (p, A) => { p.bucket = "assigned"; p.area = A; placed[A]++; need[A]--; };
+
+    // Pass 1 — happy-to-serve-anywhere people, lowest-% area first, age-gated.
+    const happy = shuffle(assignable.filter(p => p.happyAnywhere), rng);
+    for (const t of order) {
+      const A = t.area; if (need[A] <= 0) continue;
+      for (const p of happy) { if (need[A] <= 0) break; if (!p.area && eligible(p.age, tByArea[A])) place(p, A); }
+    }
+    // Pass 2 — everyone else into one of THEIR picked areas, lowest-% first.
+    for (const t of order) {
+      const A = t.area; if (need[A] <= 0) continue;
+      const pickers = shuffle(assignable.filter(p => !p.area && !p.happyAnywhere && p.prefAreas.indexOf(A) >= 0 && eligible(p.age, tByArea[A])), rng);
+      for (const p of pickers) { if (need[A] <= 0) break; place(p, A); }
+    }
+    // Last resort — people who picked nothing (and aren't happy-anywhere) fill any remaining need.
+    for (const t of order) {
+      const A = t.area; if (need[A] <= 0) continue;
+      const fillers = shuffle(assignable.filter(p => !p.area && !p.happyAnywhere && p.prefAreas.length === 0 && eligible(p.age, tByArea[A])), rng);
+      for (const p of fillers) { if (need[A] <= 0) break; place(p, A); }
+    }
+    // Leftover assignable (no eligible picked area / area full) -> Unassigned.
+    for (const p of assignable) if (!p.area) p.bucket = "unassigned";
+
     distReport[R] = {
-      poolOver16: N,
-      targets: targets.map(t => ({ area: t.area, pct: t.pct, target: t.target, placed: t.placed })),
-      unplaced: remaining.length,
+      D, reviewFixed: reviewFixed.length, assignable: assignable.length,
+      targets: order.map(t => ({
+        area: t.area, pct: t.pct, target: target[t.area],
+        reviewAlready: reviewIn[t.area] || 0, placed: placed[t.area],
+        final: (reviewIn[t.area] || 0) + placed[t.area],
+      })),
+      unplaced: assignable.filter(p => p.bucket === "unassigned").length,
     };
   }
 
-  // Region x area matrix (final placement counts).
   const matrix = {};
   for (const R of REGIONS) matrix[R] = {};
   for (const r of recs) {
     const R = r.region; if (!matrix[R]) matrix[R] = {};
     let key;
-    if (r.bucket === "affinity" || r.bucket === "kept" || r.bucket === "assigned") key = r.area || "Unassigned";
+    if (r.bucket === "affinity" || r.bucket === "assigned") key = r.area || "Unassigned";
     else if (r.bucket === "contested") key = "In reconciliation";
     else if (r.bucket === "young") key = "Young Volunteers";
     else if (r.bucket === "iff") key = "IFF";
@@ -206,10 +192,9 @@ function allocate(records, cfg) {
   const nullAge = recs.filter(r => r.age == null).length;
 
   return {
-    asOf, seed, matrix, affinityTotal, affinityLeaders, contestedTotal, nullAge,
-    stripReport, distReport,
+    asOf, seed, matrix, affinityTotal, affinityLeaders, contestedTotal, nullAge, distReport,
     decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age })),
   };
 }
 
-module.exports = { allocate, ageAsOf, REGIONS, ALL_AREAS, SPECIAL, ASSIGN_TARGETS, DEFAULT_STRIP };
+module.exports = { allocate, ageAsOf, REGIONS, ALL_AREAS, SPECIAL, ASSIGN_TARGETS };

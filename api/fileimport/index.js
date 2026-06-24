@@ -46,6 +46,10 @@ module.exports = async function (context, req) {
         ceremony_jk: r.jk, region,
         age: (r.age != null && r.age !== "" ? Number(r.age) : null), interfaith: !!r.interfaith,
         list: a.list || null,
+        // Full Better Impact preference set + the "happy anywhere" flag, retained for the
+        // multi-pick bulk allocation (computed_area above is just the single top-priority pick).
+        pref_areas: r.areas ? Object.keys(r.areas).filter(function (k) { return r.areas[k]; }) : [],
+        happy_anywhere: !!r.happy_anywhere,
         // computed_area is the engine's suggestion; final_area stays empty until a reconcile
         // decision confirms it. That is what keeps never-reviewed people out of the callable pool.
         computed_area: a.computed_area, final_area: null,
@@ -78,6 +82,7 @@ module.exports = async function (context, req) {
               ceremony_jk: nv.ceremony_jk, region: nv.region,
               age: nv.age != null ? nv.age : (old.age != null ? old.age : null), interfaith: !!nv.interfaith,
               list: nv.list, computed_area: nv.computed_area, held_aside: nv.held_aside,
+              pref_areas: nv.pref_areas, happy_anywhere: nv.happy_anywhere,
               new_since_sync: false };
           }
           if (old) {

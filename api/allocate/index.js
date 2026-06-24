@@ -1,6 +1,6 @@
 const { getContainer, readRegion, mergeRegion, REGIONS, readDidars } = require("../shared/store");
 const { computeCallableStatus, seedEventAssignments } = require("../shared/status");
-const { allocate, DEFAULT_STRIP } = require("./alloc");
+const { allocate } = require("./alloc");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const AS_OF = "2026-07-23";
@@ -22,7 +22,6 @@ module.exports = async function (context, req) {
     const body = req.body || {};
     const commit = req.method === "POST" && body.mode === "commit";
     const seed = Number.isFinite(body.seed) ? body.seed : DEFAULT_SEED;
-    const strip = (body.strip && typeof body.strip === "object") ? body.strip : DEFAULT_STRIP;
     const targets = Array.isArray(body.targets) ? body.targets : null;
 
     // Read all shards and assemble the engine's input records — counting each person ONCE.
@@ -54,6 +53,7 @@ module.exports = async function (context, req) {
           conflict_claims: Array.isArray(v.conflict_claims) ? v.conflict_claims : [],
           list: v.list || null, interfaith: !!v.interfaith,
           age: (v.age != null ? v.age : null), birthday: v.birthday || null,
+          pref_areas: Array.isArray(v.pref_areas) ? v.pref_areas : [], happy_anywhere: !!v.happy_anywhere,
         });
       }
     }
@@ -61,7 +61,7 @@ module.exports = async function (context, req) {
     const audit = { rawRecords, unique: records.length, duplicateIds: duplicates.length,
       duplicateRows: rawRecords - records.length, writeIns, duplicates: duplicates.slice(0, 300) };
 
-    const plan = allocate(records, { asOf: AS_OF, seed, strip, targets });
+    const plan = allocate(records, { asOf: AS_OF, seed, targets });
 
     // Region totals + a flat per-region row list for the matrix.
     const totalsByArea = {};
@@ -93,19 +93,17 @@ module.exports = async function (context, req) {
     };
 
     const report = {
-      mode: commit ? "commit" : "preview", asOf: plan.asOf, seed: plan.seed, strip,
+      mode: commit ? "commit" : "preview", asOf: plan.asOf, seed: plan.seed,
       total: records.length, affinityTotal: plan.affinityTotal, affinityLeaders: plan.affinityLeaders,
       contestedTotal: plan.contestedTotal, nullAge: plan.nullAge,
       noAgeHeld: plan.decisions.filter(d => d.bucket === "noage").length,
-      matrix: plan.matrix, totalsByArea,
-      stripReport: plan.stripReport, distReport: plan.distReport,
+      matrix: plan.matrix, totalsByArea, distReport: plan.distReport,
       withAge: records.filter(r => (r.age != null && Number.isFinite(Number(r.age))) || r.birthday).length,
-      targets: (plan.distReport[REGIONS[0]] && plan.distReport[REGIONS[0]].targets) || [],
       audit, lists, listCap: CAP,
     };
 
     if (!commit) {
-      report.note = "Preview only — nothing written. Affinity = anyone already assigned a final area by the review load (kept as-is). Re-run with the same seed to commit the identical plan.";
+      report.note = "Preview only — nothing written. Affinity = anyone already given a final area by the review migration (kept as-is, including Medical & Registration). Targets are a goal for the final mix; areas are filled lowest-% first. Re-run with the same seed to commit the identical plan.";
       context.res = { body: report };
       return;
     }
@@ -119,7 +117,7 @@ module.exports = async function (context, req) {
         if (!d || d.bucket === "affinity" || d.bucket === "contested") return v;   // review-touched: leave alone
         if (String(d.region) !== region) return v;   // a stale duplicate copy in another shard — don't re-allocate it
         const nv = { ...v };
-        if (d.bucket === "assigned" || d.bucket === "kept") {
+        if (d.bucket === "assigned") {
           nv.final_area = d.area; nv.conflict_claims = []; nv.alloc_category = null;
           nv.callable_status = computeCallableStatus(nv);
           nv.event_assignments = seedEventAssignments(nv, didars);
@@ -136,7 +134,7 @@ module.exports = async function (context, req) {
         return nv;
       }));
     }
-    report.note = "Allocation committed. Assigned people are Stable with a Didar row; Young Volunteers and IFF are held in their own categories; affinity assignments were left untouched.";
+    report.note = "Allocation committed. Assigned people are Stable with a Didar row; Young Volunteers, IFF and no-age people are held aside; review (affinity) assignments were left untouched.";
     context.res = { body: report };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };

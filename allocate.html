@@ -69,23 +69,9 @@
   <div id="banner" class="banner" hidden></div>
 
   <div class="card">
-    <div class="step">Step 1 · Random removals &amp; seed</div>
-    <h2>Random removals &amp; seed</h2>
-    <div class="hint">Affinity volunteers (anyone already given a final area by the review load) keep their area. Everyone else is placed from their computed area, with the removals below pulled at random into Unassigned for redistribution. The seed makes the random draw reproducible — preview and commit with the same seed produce the identical plan.</div>
-    <div class="grid">
-      <div class="scfg"><h4>BC</h4>
-        <label>Food Services <input id="bc_food" type="number" min="0" value="150"></label>
-        <label>Reception &amp; Hospitality <input id="bc_rh" type="number" min="0" value="400"></label>
-      </div>
-      <div class="scfg"><h4>Prairies</h4>
-        <label>Reception &amp; Hospitality <input id="pr_rh" type="number" min="0" value="400"></label>
-        <label>Food Services <input id="pr_food" type="number" min="0" value="300"></label>
-      </div>
-      <div class="scfg"><h4>Edmonton</h4>
-        <label>Reception &amp; Hospitality <input id="ed_rh" type="number" min="0" value="400"></label>
-        <label>Food Services <input id="ed_food" type="number" min="0" value="300"></label>
-      </div>
-    </div>
+    <div class="step">Step 1 · Run &amp; seed</div>
+    <h2>Run the allocation</h2>
+    <div class="hint">Review-migration assignments stay put (including Medical &amp; Registration &amp; Access). IFF, under-16 (Young) and no-birthday volunteers are held aside. Everyone else is allocated toward the target percentages below: review + assignable people set the denominator, areas fill <b>lowest-percentage first</b>, and each person lands in one of their own Better Impact picks — or anywhere, if they chose "happy to serve anywhere." The seed makes the draw reproducible — preview and commit with the same seed produce the identical plan.</div>
     <div class="row" style="margin-top:8px">
       <span class="small">Age as of <b>July 23, 2026</b> · Seed</span>
       <input id="seed" class="token" type="number" value="20260723" style="width:130px">
@@ -95,9 +81,9 @@
   </div>
 
   <div class="card">
-    <div class="step">Step 2 · Allocation percentages</div>
-    <h2>Where the Unassigned over-16 pool goes</h2>
-    <div class="hint">Same idea as the removals above — these are editable. Each percentage is of that region's Unassigned over-16 pool, applied within the age limits shown. They should add up to 100%.</div>
+    <div class="step">Step 2 · Target percentages</div>
+    <h2>Goal for the final mix</h2>
+    <div class="hint">Each percentage is the share you want in that area <b>after</b> allocation, per region. An area's goal count = percentage × (review-assigned + assignable people in that region), filled within the age limits shown. They should add up to 100%.</div>
     <div id="targetCfg" class="tgrid"></div>
     <div class="row" style="margin-top:6px"><span class="small">Total: <b id="pctSum">100</b>%</span><span id="pctWarn" class="small" style="color:#a83729"></span></div>
   </div>

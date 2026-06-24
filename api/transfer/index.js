@@ -148,6 +148,7 @@ module.exports = async function (context, req) {
     //  - everyone else -> import as a brand-new callable No-BI record, flagged "potential duplicate"
     //                     when their name matches an existing person (caller confirms on the call)
     const writeins = [];
+    const writeinContested = [];   // imported write-ins claimed in 2+ areas (also land "In reconciliation")
     const reviewActiveRaw = byId.size;   // people marked active in review cells, BEFORE folding write-ins
     let addedByEmail = 0, addedImported = 0, addedDuplicateFlagged = 0, addedNoRegion = 0, emailFoldedNew = 0;
     for (const a of added) {
@@ -164,28 +165,38 @@ module.exports = async function (context, req) {
       if (!region) { addedNoRegion++; continue; }     // can't place without a region — reported, not imported
       const nm = normName(a.first, a.last);
       a.candidates = nm ? (nameIndex.get(nm) || []) : [];   // consumed by makeWriteinRecord for the dup flag
-      writeins.push({ region, record: makeWriteinRecord(a, didars) });
+      const rec = makeWriteinRecord(a, didars);
+      writeins.push({ region, record: rec });
       addedImported++;
       if (a.candidates.length) addedDuplicateFlagged++;
+      if ((rec.conflict_claims || []).length >= 2) {
+        writeinContested.push({ user_id: rec.user_id, name: ((rec.first || "") + " " + (rec.last || "")).trim(), region, areas: [...rec.conflict_claims].sort(), source: "writein" });
+      }
     }
     const writeinsByRegion = {};
     for (const w of writeins) (writeinsByRegion[w.region] = writeinsByRegion[w.region] || []).push(w.record);
 
     // The people who will land "In reconciliation": claimed in 2+ distinct areas, no single winner.
+    // This includes reviewed/matched people (from byId) AND imported write-ins claimed in 2+ areas,
+    // so the total matches what shows on the Reconcile page.
     const contestedList = [];
     for (const [id, e] of byId) {
       if (e.areas && e.areas.size >= 2) {
         const info = idInfo.get(String(id)) || {};
-        contestedList.push({ user_id: id, name: info.name || "", region: info.region || "", areas: [...e.areas].sort() });
+        contestedList.push({ user_id: id, name: info.name || "", region: info.region || "", areas: [...e.areas].sort(), source: "review" });
       }
     }
+    const reviewContested = contestedList.length;
+    for (const w of writeinContested) contestedList.push(w);
     contestedList.sort((a, b) => (a.region + a.name).localeCompare(b.region + b.name));
 
     const report = {
       mode: commit ? "commit" : "preview",
       reviewerBlobs: reviewerCount, reviewActiveIds: byId.size,
       reviewActiveRaw, emailFoldedNew, contestedList: contestedList.slice(0, 300),
+      writtenInContested: writeinContested.length, reconcileTotal: reviewContested + writeinContested.length,
       matched: 0, toStable: 0, toReconciliation: 0, leaders: 0, noArea: 0,
+      reviewedReferrals: 0, reviewedReferralList: [],
       reviewIdsNotInWorkspace: 0, unknownAreas: [], byRegion: {},
       writtenIn: { total: added.length, rawEntries: addedRaw, matchedByEmail: addedByEmail,
         imported: addedImported, duplicateFlagged: addedDuplicateFlagged, noRegion: addedNoRegion },
@@ -205,15 +216,48 @@ module.exports = async function (context, req) {
       else if (d.conflict_claims.length >= 2) report.toReconciliation++;
       else report.noArea++;
       if (d.leader) report.leaders++;
+
+      // A volunteer who has ALREADY been through calling, whose fresh review now lands them in a
+      // DIFFERENT area, is reopened into that new area — same shape as a caller's decline-referral,
+      // but triggered by the review migration. Their stale call state is cleared so the receiving
+      // area re-calls them, and a note records why.
+      const wasCalled = !!v.assigned_caller || !!v.call_done || !!v.call_outcome || !!v.ivol_ready || !!v.ivol_entered;
+      const reviewedReferral = wasCalled && !!d.final_area && !!v.final_area && d.final_area !== v.final_area;
+      if (reviewedReferral) {
+        report.reviewedReferrals++;
+        if (report.reviewedReferralList.length < 300) {
+          const info = idInfo.get(String(v.user_id)) || {};
+          report.reviewedReferralList.push({ user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || info.name || "", region: v.region || info.region || "", from: v.final_area, to: d.final_area });
+        }
+      }
+
       if (!commit) return v;
       const nv = { ...v };
-      nv.final_area = d.final_area;
       nv.conflict_claims = d.conflict_claims;
       nv.leader_flag = d.leader || !!nv.leader_flag;
       nv.never_reviewed = false;
+      nv.activity_log = nv.activity_log || [];
+
+      if (reviewedReferral) {
+        nv.referred_from = v.final_area;
+        nv.final_area = d.final_area;
+        nv.assigned_caller = null;            // receiving area's quarterback reassigns
+        nv.call_done = false;                 // back in the active calling queue
+        nv.call_outcome = null;
+        nv.ivol_ready = false;
+        nv.confirm_token = null; nv.confirm_sent_at = null; nv.confirmed_at = null;
+        if (v.ivol_entered) nv.bi_correction_needed = true;   // was entered in BI under the old area
+        nv.referral_reason = "Reopened after a new affinity review.";
+        nv.event_assignments = seedEventAssignments({ ...nv, event_assignments: [] }, didars); // fresh rows for the new area; old-area captures dropped
+        nv.callable_status = computeCallableStatus(nv);
+        nv.activity_log.push({ ts: new Date().toISOString(), actor: email || "transfer",
+          action: "reviewed_referral", from: nv.referred_from, to: nv.final_area, note: nv.referral_reason });
+        return nv;
+      }
+
+      nv.final_area = d.final_area;
       nv.callable_status = computeCallableStatus(nv);
       if (nv.final_area) nv.event_assignments = seedEventAssignments(nv, didars);
-      nv.activity_log = nv.activity_log || [];
       nv.activity_log.push({ ts: new Date().toISOString(), actor: email || "transfer",
         action: "transfer_reconcile", to: nv.final_area || null, claims: d.conflict_claims.length });
       return nv;

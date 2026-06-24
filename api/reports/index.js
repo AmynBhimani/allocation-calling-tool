@@ -18,8 +18,14 @@ function emailOf(p) {
   return e ? String(e).toLowerCase() : null;
 }
 function lastOutcome(v) {
+  // Walk the log in order: an "outcome" sets the current outcome; a later "reopen"
+  // clears it (they changed their mind and are back in the active queue). Without this,
+  // a reopened Withdrew/Accepted volunteer would stay counted as declined/accepted.
   let o = null;
-  for (const e of (v.activity_log || [])) if (e.action === "outcome") o = e.outcome;
+  for (const e of (v.activity_log || [])) {
+    if (e.action === "outcome") o = e.outcome;
+    else if (e.action === "reopen") o = null;
+  }
   return o;
 }
 

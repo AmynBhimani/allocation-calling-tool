@@ -59,6 +59,7 @@
     { key: 'reviewActiveIds', label: '= People getting a review area' },
     { key: 'toStable', label: '→ Stable (single area)' },
     { key: 'toReconciliation', label: '→ In reconciliation (contested)' },
+    { key: 'reviewedReferrals', label: '↺ Reopened into a new area (already-called)' },
     { key: 'leaders', label: 'Leaders flagged' },
     { key: 'noArea', label: 'Active but no area' },
     { key: 'reviewIdsNotInWorkspace', label: 'Reviewed but not in workspace' },
@@ -70,10 +71,19 @@
     var html = '';
     var cl = d.contestedList || [];
     if (cl.length) {
+      var rev = (d.reconcileTotal || cl.length) - (d.writtenInContested || 0);
       html += '<details class="lst" style="margin-top:10px"><summary>In reconciliation — claimed in 2+ areas (' + cl.length + ')</summary>'
-        + '<div class="small" style="margin:6px 0">Each of these was marked active in more than one area, so the tool can\'t auto-assign — resolve them on the Reconcile screen.</div>'
-        + '<table style="margin-top:4px"><tr><th>Name</th><th>Region</th><th>Areas claimed</th></tr>'
-        + cl.map(function (p) { return '<tr><td>' + esc(p.name || ('#' + p.user_id)) + '</td><td>' + esc(p.region || '—') + '</td><td>' + esc((p.areas || []).join(', ')) + '</td></tr>'; }).join('')
+        + '<div class="small" style="margin:6px 0">Each was claimed in more than one area, so the tool can\'t auto-assign — resolve them on the Reconcile screen. This matches the Reconcile page total: ' + rev + ' reviewed + ' + (d.writtenInContested || 0) + ' written-in.</div>'
+        + '<table style="margin-top:4px"><tr><th>Name</th><th>Region</th><th>Areas claimed</th><th>Source</th></tr>'
+        + cl.map(function (p) { return '<tr><td>' + esc(p.name || ('#' + p.user_id)) + '</td><td>' + esc(p.region || '—') + '</td><td>' + esc((p.areas || []).join(', ')) + '</td><td>' + (p.source === 'writein' ? 'Written-in (No BI)' : 'Reviewed') + '</td></tr>'; }).join('')
+        + '</table></details>';
+    }
+    var rr = d.reviewedReferralList || [];
+    if (d.reviewedReferrals) {
+      html += '<details class="lst" style="margin-top:10px"><summary>Reopened by review — already-called people moved to a new area (' + d.reviewedReferrals + ')</summary>'
+        + '<div class="small" style="margin:6px 0">These people had already been through calling, but this review places them in a different area. They\'re reopened into the new area (caller cleared, ready for a fresh call) with the note “Reopened after a new affinity review.” If they were already entered in Better Impact, they\'re flagged for an iVol correction.</div>'
+        + '<table style="margin-top:4px"><tr><th>Name</th><th>Region</th><th>From</th><th>→ To</th></tr>'
+        + rr.map(function (p) { return '<tr><td>' + esc(p.name || ('#' + p.user_id)) + '</td><td>' + esc(p.region || '—') + '</td><td>' + esc(p.from || '—') + '</td><td>' + esc(p.to || '—') + '</td></tr>'; }).join('')
         + '</table></details>';
     }
     html += '<table style="margin-top:10px"><tr><th colspan="2">Written-in entries</th></tr>'
@@ -82,6 +92,7 @@
       + '<tr><th>Matched by email → folded into existing record</th><td class="n">' + (w.matchedByEmail || 0) + '</td></tr>'
       + '<tr><th>Imported as callable No-BI records</th><td class="n">' + (w.imported || 0) + '</td></tr>'
       + '<tr><th>↳ of those, flagged as possible duplicate</th><td class="n">' + (w.duplicateFlagged || 0) + '</td></tr>'
+      + '<tr><th>↳ of those, claimed in 2+ areas → In reconciliation</th><td class="n">' + (d.writtenInContested || 0) + '</td></tr>'
       + '<tr><th>Couldn\'t place (no region from Jamatkhana)</th><td class="n">' + (w.noRegion || 0) + '</td></tr></table>';
     TRES.insertAdjacentHTML('beforeend', html);
     var notes = '';

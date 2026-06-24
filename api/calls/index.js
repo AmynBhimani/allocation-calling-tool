@@ -48,7 +48,7 @@ function full(v) {
     area: v.final_area, cell: v.cell_phone || "", email: v.email || "",
     home: v.home_phone || "", work: v.work_phone || "",
     leader: !!v.leader_flag, affinity: !!v.affinity_flag, no_bi_account: !!v.no_bi_account,
-    referred_from: v.referred_from || null,
+    referred_from: v.referred_from || null, referral_reason: v.referral_reason || null,
     outcome: v.call_outcome || null, done: !!v.call_done,
     duty: v.assigned_duty || null,
     potential_duplicate: v.potential_duplicate || null,

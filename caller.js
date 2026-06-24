@@ -172,6 +172,8 @@ function renderPanel(v){
   if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
   if(v.referred_from) badges.push(`<span class="badge b-aff">Referred from ${v.referred_from}</span>`);
 
+  const referralNote = v.referral_reason
+    ? `<div class="dup-alert">↺ <b>Reopened by review.</b> ${escapeHtml(v.referral_reason)} They were previously in <b>${escapeHtml(v.referred_from || "another area")}</b> and have been moved here for a fresh call.</div>` : '';
   const nobiAlert = v.no_bi_account
     ? `<div class="nobi-alert">⚑ <b>No Better Impact account.</b> As part of this call, walk them through setting up an iVolunteer account before marking Accepted.</div>` : '';
   const dupAlert = v.potential_duplicate
@@ -221,6 +223,7 @@ function renderPanel(v){
     : `<div class="contact-note">No email on file — an accept link can't be sent. Keep trying by phone.</div>`;
   p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk} · #${v.id}</div>
     <div class="badge-row">${badges.join('')}</div>
+    ${referralNote}
     ${nobiAlert}
     ${dupAlert}
     ${contact}

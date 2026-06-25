@@ -1,5 +1,5 @@
 const { getContainer, readRegion, mergeRegion, REGIONS, readDidars } = require("../shared/store");
-const { computeCallableStatus, seedEventAssignments } = require("../shared/status");
+const { computeCallableStatus, seedEventAssignments, callerLocked } = require("../shared/status");
 const { allocate } = require("./alloc");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -36,7 +36,7 @@ module.exports = async function (context, req) {
     const records = [];
     const seenRegion = new Map();     // user_id -> first region it was counted in
     const dupMap = new Map();         // user_id -> [regions...]
-    let rawRecords = 0, writeIns = 0;
+    let rawRecords = 0, writeIns = 0, lockedInPipeline = 0;
     for (const region of REGIONS) {
       const { records: rs } = await readRegion(container, region);
       recordsByRegion[region] = rs;
@@ -50,10 +50,14 @@ module.exports = async function (context, req) {
           continue;
         }
         seenRegion.set(id, region);
+        const locked = callerLocked(v);          // already in the calling pipeline -> never re-allocate
+        if (locked) lockedInPipeline++;
         records.push({
           user_id: v.user_id, region,
           computed_area: v.computed_area || null, final_area: v.final_area || null,
-          never_reviewed: !!v.never_reviewed, leader_flag: !!v.leader_flag,
+          // A locked person is pinned to their current area: treat as "reviewed" so the engine keeps
+          // them put (affinity) and counts them toward their area, both in preview and at commit.
+          never_reviewed: locked ? false : !!v.never_reviewed, leader_flag: !!v.leader_flag,
           conflict_claims: Array.isArray(v.conflict_claims) ? v.conflict_claims : [],
           list: v.list || null, interfaith: !!v.interfaith,
           age: (v.age != null ? v.age : null), birthday: v.birthday || null,
@@ -63,7 +67,7 @@ module.exports = async function (context, req) {
     }
     const duplicates = [...dupMap.entries()].map(([user_id, regions]) => ({ user_id, regions }));
     const audit = { rawRecords, unique: records.length, duplicateIds: duplicates.length,
-      duplicateRows: rawRecords - records.length, writeIns, duplicates: duplicates.slice(0, 300) };
+      duplicateRows: rawRecords - records.length, writeIns, lockedInPipeline, duplicates: duplicates.slice(0, 300) };
 
     const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder });
 
@@ -117,6 +121,7 @@ module.exports = async function (context, req) {
     const decById = new Map(plan.decisions.map(d => [String(d.user_id), d]));
     for (const region of REGIONS) {
       await mergeRegion(container, region, (existing) => existing.map(v => {
+        if (callerLocked(v)) return v;   // LIVE guard: never touch anyone already being called/resolved
         const d = decById.get(String(v.user_id));
         if (!d || d.bucket === "affinity" || d.bucket === "contested") return v;   // review-touched: leave alone
         if (String(d.region) !== region) return v;   // a stale duplicate copy in another shard — don't re-allocate it
@@ -138,7 +143,7 @@ module.exports = async function (context, req) {
         return nv;
       }));
     }
-    report.note = "Allocation committed. Assigned people are Stable with a Didar row; Young Volunteers, IFF and no-age people are held aside; review (affinity) assignments were left untouched.";
+    report.note = `Allocation committed. Assigned people are Stable with a Didar row; Young Volunteers, IFF and no-age people are held aside; review (affinity) assignments were left untouched. ${lockedInPipeline} volunteer(s) already in the calling pipeline (assigned/called/confirmed) were left exactly as-is.`;
     context.res = { body: report };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };

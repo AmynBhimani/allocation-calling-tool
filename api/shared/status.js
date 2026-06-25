@@ -36,4 +36,13 @@ function seedEventAssignments(v, didars) {
   return existing;
 }
 
-module.exports = { computeCallableStatus, seedEventAssignments, LEADERSHIP };
+// True once a volunteer has entered the calling pipeline — assigned to a caller, called,
+// resolved, confirmed, or entered into iVol. Re-running an allocation MUST NOT disturb these
+// people: their area, duties, and call outcome are locked in. (Deliberately does NOT key off
+// activity_log, because an allocation commit itself writes an activity_log entry.)
+function callerLocked(v) {
+  return !!(v && (v.assigned_caller || v.call_outcome || v.call_done || v.confirmed_at
+    || v.confirm_sent_at || v.ivol_ready || v.ivol_entered));
+}
+
+module.exports = { computeCallableStatus, seedEventAssignments, callerLocked, LEADERSHIP };

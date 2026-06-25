@@ -52,11 +52,12 @@ function ageOf(v) {
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--;
   return a >= 0 && a < 130 ? a : null;
 }
+const iffOf = (v) => !!v.interfaith || v.list === "IFF";
 function full(v) {
   return {
     id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
     area: v.final_area, cell: v.cell_phone || "", email: v.email || "",
-    home: v.home_phone || "", work: v.work_phone || "", age: ageOf(v),
+    home: v.home_phone || "", work: v.work_phone || "", age: ageOf(v), iff: iffOf(v),
     leader: !!v.leader_flag, affinity: !!v.affinity_flag, no_bi_account: !!v.no_bi_account,
     referred_from: v.referred_from || null, referral_reason: v.referral_reason || null,
     outcome: v.call_outcome || null, done: !!v.call_done,

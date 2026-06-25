@@ -169,6 +169,7 @@ function renderPanel(v){
   const readonly = tab==="done";
   const badges=[];
   if(v.leader) badges.push('<span class="badge b-lead">Team Lead</span>');
+  if(v.iff) badges.push('<span class="badge b-iff">IFF</span>');
   if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
   if(v.referred_from) badges.push(`<span class="badge b-aff">Referred from ${v.referred_from}</span>`);
 

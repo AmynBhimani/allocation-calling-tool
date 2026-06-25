@@ -247,18 +247,27 @@ function allocate(records, cfg) {
     // ratio) so the overflow tops up under-target areas first and only piles on as overage when all
     // their picks are already full. The resulting over-goal counts show which areas are
     // oversubscribed, so their percentages can be trimmed to feed the under-subscribed ones.
-    // Preference is still a hard wall: we never place anyone outside their own picks.
+    //
+    // Cross-eligibility (overflow ONLY): Seniors & Mobility runs chronically short, so in this final
+    // sweep a Reception & Hospitality picker aged 16-25 is treated as ALSO selecting Seniors &
+    // Mobility. That diverts young hospitality folks into Seniors (instead of re-piling onto an
+    // oversubscribed Reception) and frees others to land in Safety. It only widens the "selected"
+    // set — Seniors' own age gate still applies via eligible(), and the main passes are unchanged.
     if (cfg.overflow) {
+      const SENIORS = "Seniors & Mobility", HOSPITALITY = "Reception & Hospitality";
+      const seniorsCross = (p) => p.age != null && p.age >= 16 && p.age <= 25 && p.prefAreas.indexOf(HOSPITALITY) >= 0;
       const leftover = shuffle(assignable.filter(p => !p.area), rng);
       for (const p of leftover) {
         let area = null, bestRatio = Infinity, bestPct = Infinity;
         for (const t of order) {
           if (!eligible(p.age, tByArea[t.area])) continue;
-          if (!(p.happyAnywhere || p.prefAreas.indexOf(t.area) >= 0)) continue;
+          const selected = p.happyAnywhere || p.prefAreas.indexOf(t.area) >= 0
+            || (t.area === SENIORS && seniorsCross(p));
+          if (!selected) continue;
           const ratio = placed[t.area] / Math.max(1, target[t.area]);
           if (ratio < bestRatio || (ratio === bestRatio && t.pct < bestPct)) { bestRatio = ratio; bestPct = t.pct; area = t.area; }
         }
-        if (area) fillArea(p, area);     // over the cap allowed; still only into a selected area
+        if (area) fillArea(p, area);     // over the cap allowed; still only into a selected (or cross-eligible) area
       }
     }
 

@@ -25,13 +25,14 @@ const SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file
 
 // Goal split for the FINAL distribution. pct of D; min/max are hard age gates.
 const ASSIGN_TARGETS = [
-  { area: "Safety & Flow Management",      pct: 0.55, min: 19, max: null },
+  { area: "Safety & Flow Management",      pct: 0.53, min: 19, max: null },
   { area: "Seniors & Mobility",           pct: 0.14, min: 16, max: null },
   { area: "Reception & Hospitality",      pct: 0.14, min: null, max: null },
   { area: "Environmental Sustainability", pct: 0.02, min: 16, max: 20 },
   { area: "Parking & Transportation",     pct: 0.07, min: 19, max: 65 },
   { area: "Food Services",                pct: 0.04, min: 16, max: null },
   { area: "Layout & Logistics",           pct: 0.04, min: 19, max: 65 },
+  { area: "Memorabilia & Design",         pct: 0.02, min: 16, max: null },
 ];
 
 function mulberry32(a) {

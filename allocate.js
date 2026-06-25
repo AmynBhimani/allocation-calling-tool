@@ -13,13 +13,14 @@
 
   // Editable target percentages — the goal share of the final mix per area, with age gates.
   var TARGET_DEFS = [
-    { area: "Safety & Flow Management", id: "t_ssp", pct: 55, min: 19, max: null, rule: "min age 19" },
+    { area: "Safety & Flow Management", id: "t_ssp", pct: 53, min: 19, max: null, rule: "min age 19" },
     { area: "Seniors & Mobility", id: "t_sen", pct: 14, min: 16, max: null, rule: "min age 16" },
     { area: "Reception & Hospitality", id: "t_rec", pct: 14, min: null, max: null, rule: "any age" },
-    { area: "Environmental Sustainability", id: "t_env", pct: 2, min: 16, max: 20, rule: "age 16\u201320" },
+    { area: "Environmental Sustainability", id: "t_env", pct: 2, min: 16, max: 20, rule: "age 16\u201320 \u00b7 flex-only" },
     { area: "Parking & Transportation", id: "t_par", pct: 7, min: 19, max: 65, rule: "age 19\u201365" },
     { area: "Food Services", id: "t_food", pct: 4, min: 16, max: null, rule: "min age 16" },
-    { area: "Layout & Logistics", id: "t_lay", pct: 4, min: 19, max: 65, rule: "age 19\u201365" }
+    { area: "Layout & Logistics", id: "t_lay", pct: 4, min: 19, max: 65, rule: "age 19\u201365" },
+    { area: "Memorabilia & Design", id: "t_mem", pct: 2, min: 16, max: null, rule: "min age 16 \u00b7 flex-only" }
   ];
 
   function buildTargetInputs() {

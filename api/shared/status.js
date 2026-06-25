@@ -36,12 +36,14 @@ function seedEventAssignments(v, didars) {
   return existing;
 }
 
-// True once a volunteer has entered the calling pipeline — assigned to a caller, called,
-// resolved, confirmed, or entered into iVol. Re-running an allocation MUST NOT disturb these
-// people: their area, duties, and call outcome are locked in. (Deliberately does NOT key off
-// activity_log, because an allocation commit itself writes an activity_log entry.)
+// True once a volunteer has actually been CALLED — called, resolved, confirmed, or entered into
+// iVol. A re-run allocation MUST NOT disturb these people: their area, duties, and call outcome are
+// locked in. Note: being merely ASSIGNED to a caller (assigned_caller set) does NOT lock — an
+// uncalled person can still be re-allocated. Allocations are run early-morning when no one is
+// calling, so the only people locked are those a caller has genuinely actioned.
+// (Deliberately does NOT key off activity_log, because an allocation commit itself writes one.)
 function callerLocked(v) {
-  return !!(v && (v.assigned_caller || v.call_outcome || v.call_done || v.confirmed_at
+  return !!(v && (v.call_outcome || v.call_done || v.confirmed_at
     || v.confirm_sent_at || v.ivol_ready || v.ivol_entered));
 }
 

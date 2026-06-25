@@ -248,21 +248,29 @@ function allocate(records, cfg) {
     // their picks are already full. The resulting over-goal counts show which areas are
     // oversubscribed, so their percentages can be trimmed to feed the under-subscribed ones.
     //
-    // Cross-eligibility (overflow ONLY): Seniors & Mobility runs chronically short, so in this final
-    // sweep a Reception & Hospitality picker aged 16-25 is treated as ALSO selecting Seniors &
-    // Mobility. That diverts young hospitality folks into Seniors (instead of re-piling onto an
-    // oversubscribed Reception) and frees others to land in Safety. It only widens the "selected"
-    // set — Seniors' own age gate still applies via eligible(), and the main passes are unchanged.
+    // Cross-eligibility (overflow ONLY): two chronically short areas borrow from the oversubscribed
+    // Reception & Hospitality pool during this final sweep, so leftover hospitality folks divert into
+    // them instead of re-piling onto Reception:
+    //   - Seniors & Mobility: a Hospitality picker aged 16-25 is treated as also selecting Seniors.
+    //   - Safety & Flow Management: a Hospitality picker is treated as also selecting Safety, gated by
+    //     Safety's own 19+ rule (no upper cap — Safety needs a broad adult pool). Edit Safety's max
+    //     age in the UI if you want to bound it.
+    // Each only WIDENS the "selected" set; the area's own age gate still applies via eligible(), and
+    // the main passes are unchanged. A 19-25 Hospitality leftover qualifies for both, and the
+    // least-subscribed-ratio rule sends them to whichever (Safety or Seniors) is more behind its goal.
     if (cfg.overflow) {
-      const SENIORS = "Seniors & Mobility", HOSPITALITY = "Reception & Hospitality";
-      const seniorsCross = (p) => p.age != null && p.age >= 16 && p.age <= 25 && p.prefAreas.indexOf(HOSPITALITY) >= 0;
+      const SENIORS = "Seniors & Mobility", HOSPITALITY = "Reception & Hospitality", SAFETY = "Safety & Flow Management";
+      const hospitality = (p) => p.prefAreas.indexOf(HOSPITALITY) >= 0;
+      const seniorsCross = (p) => p.age != null && p.age >= 16 && p.age <= 25 && hospitality(p);
+      const safetyCross = (p) => hospitality(p);   // age handled by Safety's 19+ gate in eligible()
       const leftover = shuffle(assignable.filter(p => !p.area), rng);
       for (const p of leftover) {
         let area = null, bestRatio = Infinity, bestPct = Infinity;
         for (const t of order) {
           if (!eligible(p.age, tByArea[t.area])) continue;
           const selected = p.happyAnywhere || p.prefAreas.indexOf(t.area) >= 0
-            || (t.area === SENIORS && seniorsCross(p));
+            || (t.area === SENIORS && seniorsCross(p))
+            || (t.area === SAFETY && safetyCross(p));
           if (!selected) continue;
           const ratio = placed[t.area] / Math.max(1, target[t.area]);
           if (ratio < bestRatio || (ratio === bestRatio && t.pct < bestPct)) { bestRatio = ratio; bestPct = t.pct; area = t.area; }

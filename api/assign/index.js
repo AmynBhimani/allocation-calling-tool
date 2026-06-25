@@ -49,10 +49,21 @@ function scopesFor(store, email, role) {
 const inScope = (scopes, area, region) => scopes.some(s => s.area === area && s.region === region);
 
 // Assignment view: names + status + assigned caller. No contact info (that's the caller's screen).
+function ageOf(v) {
+  if (v.age != null && Number.isFinite(Number(v.age))) return Number(v.age);
+  if (!v.birthday) return null;
+  const d = new Date(v.birthday); if (isNaN(d)) return null;
+  const now = new Date();
+  let a = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--;
+  return a >= 0 && a < 130 ? a : null;
+}
+const iffOf = (v) => !!v.interfaith || v.list === "IFF";
 function slim(v) {
   return {
     id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
-    final: v.final_area, status: v.callable_status,
+    final: v.final_area, status: v.callable_status, age: ageOf(v), iff: iffOf(v),
     affinity: !!v.affinity_flag, leader: !!v.leader_flag, new: !!v.never_reviewed,
     no_bi: !!v.no_bi_account, referred_from: v.referred_from || null, referral_reason: v.referral_reason || null,
     assigned: v.assigned_caller || null, outcome: v.call_outcome || null, duty: v.assigned_duty || null,

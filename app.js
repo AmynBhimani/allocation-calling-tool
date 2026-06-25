@@ -163,6 +163,7 @@ function render(){
     const badges=[];
     if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
     if(v.leader) badges.push('<span class="badge b-lead">Leader</span>');
+    if(v.iff) badges.push('<span class="badge b-iff">IFF</span>');
     if(v.new) badges.push('<span class="badge b-new">New</span>');
     if(v.no_bi) badges.push('<span class="badge b-nobi">No BI acct</span>');
     const computed = v.computed ? `<span class="area-cell">${v.computed}</span>` : '<span class="area-none">no area selected</span>';
@@ -175,7 +176,7 @@ function render(){
       .concat(AREAS.map(a=>`<option value="${a}" ${preselect===a?'selected':''}>${a}</option>`))
       .concat([`<option value="__leadership__" ${isLead?'selected':''}>⚑ Leadership – Do Not Allocate</option>`]).join('');
     return `<tr data-id="${v.id}" class="${v.status==='In reconciliation'?'recon-row':''}${isLead?' lead-row':''}">
-      <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}</div>${conflict}</td>
+      <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}${v.age!=null?' · age '+v.age:''}</div>${conflict}</td>
       <td class="hide-sm"><span class="sub">${v.jk}</span></td>
       <td>${computed}</td>
       <td><div class="badges">${badges.join('')||'<span class="sub">—</span>'}</div></td>

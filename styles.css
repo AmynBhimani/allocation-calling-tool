@@ -61,6 +61,7 @@
   .b-aff{background:#E9F1FB;color:#2B5C9B;border-color:#D4E4F7}
   .b-lead{background:#F3ECFB;color:#6B3FA0;border-color:#E6D9F6}
   .b-new{background:#FDF4E3;color:#9A6B12;border-color:#F6E7C6}
+  .b-iff{background:#E4F5F1;color:#1E7A6B;border-color:#C9EBE3}
 
   .pill{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
   .pill::before{content:"";width:7px;height:7px;border-radius:50%}

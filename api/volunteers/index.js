@@ -21,12 +21,23 @@ function emailOf(p) {
 }
 
 // Reconciliation view never exposes contact info (scoped-access principle).
+function ageOf(v) {
+  if (v.age != null && Number.isFinite(Number(v.age))) return Number(v.age);
+  if (!v.birthday) return null;
+  const d = new Date(v.birthday); if (isNaN(d)) return null;
+  const now = new Date();
+  let a = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--;
+  return a >= 0 && a < 130 ? a : null;
+}
+const iffOf = (v) => !!v.interfaith || v.list === "IFF";
 function slim(v) {
   return {
     id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
     computed: v.computed_area, final: v.final_area, status: v.callable_status,
     affinity: !!v.affinity_flag, leader: !!v.leader_flag, new: !!v.never_reviewed,
-    no_bi: !!v.no_bi_account,
+    no_bi: !!v.no_bi_account, age: ageOf(v), iff: iffOf(v),
     claims: v.conflict_claims || []
   };
 }

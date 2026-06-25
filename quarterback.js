@@ -172,6 +172,7 @@ function showResolvedDetail(id){
   const when=v.when?new Date(v.when).toLocaleString():'';
   const badges=[];
   if(v.leader) badges.push('<span class="badge b-lead">Team Lead</span>');
+  if(v.iff) badges.push('<span class="badge b-iff">IFF</span>');
   if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
   if(v.referred_from) badges.push(`<span class="badge b-aff">Referred from ${esc(v.referred_from)}</span>`);
   const rows=[
@@ -192,7 +193,7 @@ function showResolvedDetail(id){
     ? `<div class="rd-section"><h4>Call history</h4>${v.log.map(e=>`<div class="rd-e"><span class="sub">${new Date(e.ts).toLocaleString()}</span> \u2014 ${esc(e.outcome)}${e.note?': '+esc(e.note):''}</div>`).join('')}</div>`
     : '';
   document.getElementById('resolvedDetail').innerHTML=`
-    <div class="rd-head"><div class="rd-name">${esc(v.first)} ${esc(v.last)}</div><div class="sub">#${v.id} \u00b7 ${esc(v.jk)}</div></div>
+    <div class="rd-head"><div class="rd-name">${esc(v.first)} ${esc(v.last)}</div><div class="sub">#${v.id} \u00b7 ${esc(v.jk)}${v.age!=null?' \u00b7 age '+v.age:''}</div></div>
     ${badges.length?`<div class="badge-row" style="margin-bottom:8px">${badges.join(' ')}</div>`:''}
     ${rows.map(r=>`<div class="rd-row"><span class="rd-k">${r[0]}</span><span class="rd-v">${r[1]}</span></div>`).join('')}
     ${dutiesHtml}
@@ -253,6 +254,7 @@ function render(){
   rows.innerHTML=list.map(v=>{
     const badges=[];
     if(v.leader) badges.push('<span class="badge b-lead">Team Lead</span>');
+    if(v.iff) badges.push('<span class="badge b-iff">IFF</span>');
     if(v.affinity) badges.push('<span class="badge b-aff">Affinity</span>');
     if(v.new) badges.push('<span class="badge b-new">New</span>');
     if(v.no_bi) badges.push('<span class="badge b-nobi">No BI acct</span>');
@@ -262,7 +264,7 @@ function render(){
     const assignedCell = v.assigned ? `<span class="assigned-tag">${v.assigned}</span>` : '<span class="unassigned-tag">— unassigned —</span>';
     return `<tr data-id="${v.id}">
       <td class="cbcol"><input type="checkbox" class="rowcb" data-id="${v.id}" data-region="${v.region}" ${checked}></td>
-      <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id} · ${v.jk}</div></td>
+      <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id} · ${v.jk}${v.age!=null?' · age '+v.age:''}</div></td>
       <td><span class="area-cell">${v.final||'—'}</span></td>
       <td>${dutyCell(v)}</td>
       <td><div class="badges">${badges.join('')||'<span class="sub">—</span>'}</div></td>

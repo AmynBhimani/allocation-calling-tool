@@ -151,7 +151,7 @@ function renderAll(){
               : '<span class="unassigned-tag">not yet called</span>'));
     const nobi = v.no_bi_account ? ' <span class="badge b-nobi">No BI acct</span>' : '';
     return `<div class="qitem ${current&&current.id===v.id?'active':''}" data-id="${v.id}">
-      <div><div class="nm">${v.first} ${v.last}${nobi}</div><div class="meta">${v.area||'—'} · ${v.jk}</div></div>
+      <div><div class="nm">${v.first} ${v.last}${nobi}</div><div class="meta">${v.area||'—'} · ${v.jk}${v.age!=null?' · '+v.age+'y':''}</div></div>
       <div class="right">${tag}</div></div>`;
   }).join('');
   ql.querySelectorAll('.qitem').forEach(el=>el.addEventListener('click',()=>{
@@ -205,7 +205,7 @@ function renderPanel(v){
            return `<div class="e"><b>${escapeHtml(eventName(a.event))}</b> — ${escapeHtml(ds)}</div>`;
          }).join('')}</div>`
       : '';
-    p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk} · #${v.id}</div>
+    p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk}${v.age!=null?' · age '+v.age:''} · #${v.id}</div>
       <div class="badge-row">${badges.join('')}</div>${contact}${asgRO}${logHtml}${reopenHtml}`;
     const rb=document.getElementById('reopenBtn'); if(rb) rb.addEventListener('click',()=>reopen(v));
     return;
@@ -221,7 +221,7 @@ function renderPanel(v){
          <div id="emailCompose"></div>
        </div>`
     : `<div class="contact-note">No email on file — an accept link can't be sent. Keep trying by phone.</div>`;
-  p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk} · #${v.id}</div>
+  p.innerHTML=`<h2>${v.first} ${v.last}</h2><div class="sub2">${v.area||'—'} · ${v.jk}${v.age!=null?' · age '+v.age:''} · #${v.id}</div>
     <div class="badge-row">${badges.join('')}</div>
     ${referralNote}
     ${nobiAlert}

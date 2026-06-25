@@ -216,7 +216,9 @@
     var seed = parseInt(EL("seed").value, 10) || 20260723;
     var rounds = Math.max(1, Math.min(20, parseInt(EL("rounds").value, 10) || 4));
     var overflow = EL("overflow") ? !!EL("overflow").checked : true;
-    var body = { mode: mode, seed: seed, rounds: rounds, overflow: overflow, targets: targetsFromInputs() };
+    var happyFirst = EL("phaseOrder") ? (EL("phaseOrder").value === "happy") : false;
+    var flexOrder = EL("flexOrder") ? EL("flexOrder").value : "below";
+    var body = { mode: mode, seed: seed, rounds: rounds, overflow: overflow, happyFirst: happyFirst, flexOrder: flexOrder, targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");
@@ -241,5 +243,8 @@
   });
   // Re-running a preview is required before commit if settings change.
   EL("seed").addEventListener("input", onSettingChanged);
+  ["rounds", "phaseOrder", "flexOrder", "overflow"].forEach(function (id) {
+    var el = EL(id); if (el) el.addEventListener("change", onSettingChanged);
+  });
   buildTargetInputs();
 })();

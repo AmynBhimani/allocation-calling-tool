@@ -25,6 +25,8 @@ module.exports = async function (context, req) {
     const targets = Array.isArray(body.targets) ? body.targets : null;
     const rounds = Number.isFinite(body.rounds) ? body.rounds : 4;
     const overflow = body.overflow !== false;   // default ON: no Unassigned, allow overage
+    const happyFirst = body.happyFirst === true;            // default OFF: pickers first
+    const flexOrder = (body.flexOrder === "scarce") ? "scarce" : "below";  // default: furthest-below-target
 
     // Read all shards and assemble the engine's input records — counting each person ONCE.
     // A user_id can wrongly appear in two shards if their region changed between imports
@@ -63,7 +65,7 @@ module.exports = async function (context, req) {
     const audit = { rawRecords, unique: records.length, duplicateIds: duplicates.length,
       duplicateRows: rawRecords - records.length, writeIns, duplicates: duplicates.slice(0, 300) };
 
-    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow });
+    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder });
 
     // Region totals + a flat per-region row list for the matrix.
     const totalsByArea = {};

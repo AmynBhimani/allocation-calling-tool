@@ -151,19 +151,21 @@ function allocate(records, cfg) {
       placed[t.area] = 0;
     }
 
-    // ---- Round-based fill ---------------------------------------------------
-    // Preference is a HARD wall: nobody is ever placed in an area they didn't pick
-    // (the "happy anywhere" people are the only exception — they can go anywhere).
-    // We fill in rounds so the big area (Safety) can't soak up everyone before the
-    // small areas get their share. Each round raises every area's cap a notch and we
-    // top each area toward that cap from its own pickers. The flexible (happy-anywhere)
-    // people are saved for LAST, then poured into the areas that have the fewest other
-    // candidates first (Environmental has none; Safety is usually next), so they do the
-    // most good. Anyone still unplaced at the end stays Unassigned — by design.
+    // ---- Distribution -------------------------------------------------------
+    // Preference is a HARD wall: nobody is ever placed in an area they didn't pick; only the
+    // "happy anywhere" people can go anywhere. Two phases run in an order set by cfg.happyFirst:
+    //   - PICKERS: each area is topped up from its own pickers over X capped rounds (need*k/X).
+    //   - HAPPY:   seed the no-picker areas (Environmental, Memorabilia) to target first, then fill
+    //              everyone else over X capped passes, ordering open areas by cfg.flexOrder:
+    //                "below"  = furthest below target first (== highest-% first while areas are empty),
+    //                "scarce" = fewest remaining candidates first (protects narrowly-staffable areas).
+    // Overflow (below) then mops up whoever is left so no one is Unassigned. The X knob is cfg.rounds.
     const rounds = Math.max(1, Math.min(20, cfg.rounds != null ? (cfg.rounds | 0) : 4));
+    const happyFirst = !!cfg.happyFirst;
+    const flexBelow = (cfg.flexOrder !== "scarce");   // default: furthest-below-target
     const fillArea = (p, A) => { p.bucket = "assigned"; p.area = A; placed[A]++; };
 
-    // Pre-bucket each area's own picker candidates (non-flex, age-eligible), shuffled.
+    // Each area's own picker candidates (non-flex, age-eligible), shuffled.
     const pickersByArea = {};
     for (const t of targetsDef) {
       pickersByArea[t.area] = shuffle(
@@ -171,48 +173,72 @@ function allocate(records, cfg) {
         rng
       );
     }
-    // Rounds: cap each area at (k/rounds) of its need; advance all areas together.
-    for (let k = 1; k <= rounds; k++) {
-      for (const t of order) {                       // lowest-% first within a round keeps small areas moving
-        const A = t.area;
-        const cap = Math.round((need[A] * k) / rounds);
-        for (const p of pickersByArea[A]) {
-          if (placed[A] >= cap) break;
-          if (!p.area) fillArea(p, A);               // pickers only into their own area
+    const flex = shuffle(assignable.filter(p => p.happyAnywhere), rng);
+    const remainingPickerSupply = (A) => pickersByArea[A].filter(p => !p.area).length;
+    const eligibleFlexOpen = (A) => flex.filter(x => !x.area && eligible(x.age, tByArea[A]));
+    const fitCount = (p, areas) => areas.reduce((n, t) => n + (eligible(p.age, tByArea[t.area]) ? 1 : 0), 0);
+    // Place ONE flex person into A, choosing the one LEAST useful to the other open areas, so
+    // dual-use people are saved for the areas that still need them and narrow people land where
+    // only they can serve.
+    function placeFlexInto(A, otherAreas) {
+      const pool = eligibleFlexOpen(A);
+      if (!pool.length) return false;
+      let person = pool[0], lowFit = fitCount(person, otherAreas);
+      for (const p of pool) { const f = fitCount(p, otherAreas); if (f < lowFit) { lowFit = f; person = p; } }
+      fillArea(person, A);
+      return true;
+    }
+
+    // PICKERS: cap each area at (k/X) of its need; advance all areas together, lowest-% first.
+    function phasePickers() {
+      for (let k = 1; k <= rounds; k++) {
+        for (const t of order) {
+          const A = t.area;
+          const cap = Math.round((need[A] * k) / rounds);
+          for (const p of pickersByArea[A]) {
+            if (placed[A] >= cap) break;
+            if (!p.area) fillArea(p, A);               // pickers only into their own area
+          }
         }
       }
     }
 
-    // Flex pool LAST. Repeatedly take the OPEN area with the fewest people who can still
-    // fill it (own leftover pickers + age-eligible flex) and give it one flex person —
-    // choosing the person who is LEAST useful to the other open areas, so dual-use people
-    // (e.g. 19-20s, who also qualify for Parking/Safety) are saved for the areas that still
-    // need them and the narrow 16-20s land in Environmental, which only they can staff.
-    // The broad area (Safety) has the largest candidate pool, so it fills last from the
-    // residual — which is exactly the "flex to the areas with no other source first" rule.
-    const remainingPickerSupply = (A) => pickersByArea[A].filter(p => !p.area).length;
-    const flex = shuffle(assignable.filter(p => p.happyAnywhere), rng);
-    const eligibleFlex = (A) => flex.filter(x => !x.area && eligible(x.age, tByArea[A]));
-    const fitCount = (p, areas) => areas.reduce((n, t) => n + (eligible(p.age, tByArea[t.area]) ? 1 : 0), 0);
-    while (true) {
-      const open = order.filter(t => placed[t.area] < need[t.area]);
-      if (!open.length) break;
-      let area = null, pool = null, bestN = Infinity, bestRatio = Infinity, bestPct = Infinity;
-      for (const t of open) {
-        const e = eligibleFlex(t.area);
-        if (!e.length) continue;                                  // no flex can serve this area
-        const n = e.length + remainingPickerSupply(t.area);
-        const ratio = placed[t.area] / need[t.area];
-        if (n < bestN || (n === bestN && (ratio < bestRatio || (ratio === bestRatio && t.pct < bestPct)))) {
-          bestN = n; bestRatio = ratio; bestPct = t.pct; area = t.area; pool = e;
+    // HAPPY: seed the no-picker areas to target, then X capped passes ordered by cfg.flexOrder.
+    function phaseHappy() {
+      const noPicker = order.filter(t => pickersByArea[t.area].length === 0 && need[t.area] > 0);
+      for (const t of noPicker) {
+        const A = t.area;
+        while (placed[A] < need[A]) {
+          if (!placeFlexInto(A, order.filter(o => o.area !== A))) break;   // no eligible flex left
         }
       }
-      if (!area) break;                                           // no open area has any eligible flex left
-      const others = open.filter(t => t.area !== area);
-      let person = pool[0], lowFit = fitCount(person, others);
-      for (const p of pool) { const f = fitCount(p, others); if (f < lowFit) { lowFit = f; person = p; } }
-      fillArea(person, area);
+      for (let k = 1; k <= rounds; k++) {
+        const cap = (A) => Math.round((need[A] * k) / rounds);
+        while (true) {
+          const open = order.filter(t => placed[t.area] < cap(t.area) && eligibleFlexOpen(t.area).length);
+          if (!open.length) break;
+          let pick = null;
+          if (flexBelow) {                              // furthest below target first (highest-% while empty)
+            let best = -Infinity, bestPct = -Infinity;
+            for (const t of open) {
+              const shortfall = need[t.area] - placed[t.area];
+              if (shortfall > best || (shortfall === best && t.pct > bestPct)) { best = shortfall; bestPct = t.pct; pick = t; }
+            }
+          } else {                                      // scarcest first (fewest people who can still fill it)
+            let bestN = Infinity, bestPct = Infinity;
+            for (const t of open) {
+              const n = eligibleFlexOpen(t.area).length + remainingPickerSupply(t.area);
+              if (n < bestN || (n === bestN && t.pct < bestPct)) { bestN = n; bestPct = t.pct; pick = t; }
+            }
+          }
+          if (!pick) break;
+          placeFlexInto(pick.area, open.filter(t => t.area !== pick.area));
+        }
+      }
     }
+
+    if (happyFirst) { phaseHappy(); phasePickers(); }
+    else { phasePickers(); phaseHappy(); }
 
     // ---- Overflow (optional) ------------------------------------------------
     // With overflow ON, nobody is left Unassigned just because their picked areas hit their caps.
@@ -282,6 +308,9 @@ function allocate(records, cfg) {
 
   return {
     asOf, seed, matrix, affinityTotal, affinityLeaders, contestedTotal, nullAge, distReport,
+    mode: { rounds: Math.max(1, Math.min(20, cfg.rounds != null ? (cfg.rounds | 0) : 4)),
+            happyFirst: !!cfg.happyFirst, flexOrder: (cfg.flexOrder !== "scarce" ? "below" : "scarce"),
+            overflow: !!cfg.overflow },
     decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age })),
   };
 }

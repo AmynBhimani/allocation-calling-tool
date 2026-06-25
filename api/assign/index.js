@@ -141,7 +141,10 @@ module.exports = async function (context, req) {
       // callers available within these scopes (for the assign dropdown)
       const callers = store.filter(a => clean(a.role) === "caller" && inScope(scopes, clean(a.area), clean(a.region)))
         .map(a => ({ email: clean(a.email), area: clean(a.area), region: clean(a.region) }));
-      context.res = { body: { volunteers: out, resolved, scopes, callers, count: out.length, resolvedCount: resolved.length } };
+      // Events (Didars) this QB can tag a caller to — those covering any of their regions.
+      const events = didars.filter(d => Array.isArray(d.regions) && d.regions.some(r => scopeRegions.includes(r)))
+        .map(d => ({ id: d.id, name: d.name, regions: d.regions }));
+      context.res = { body: { volunteers: out, resolved, scopes, callers, events, count: out.length, resolvedCount: resolved.length } };
       return;
     }
 

@@ -125,9 +125,10 @@ module.exports = async function (context, req) {
         if (role !== "caller") { context.res = { status: 403, body: { error: "Quarterbacks can only manage callers." } }; return; }
         if (!eventId || !areas.length) { context.res = { status: 400, body: { error: "Pick an event and at least one area." } }; return; }
         if (!evRegions.length) { context.res = { status: 400, body: { error: "That event has no regions set yet." } }; return; }
-        const out = [];
-        for (const r of evRegions) for (const a of areas) if (!scopeHas(myScopes, a, r)) out.push(`${a} · ${r}`);
-        if (out.length) { context.res = { status: 403, body: { error: `Outside your scope: ${out.join(", ")}` } }; return; }
+        // The event may cover regions this QB doesn't manage (other QBs own those). Require that at
+        // least ONE area×region combo is in scope; the expansion below only creates the in-scope ones.
+        const anyInScope = evRegions.some(r => areas.some(a => scopeHas(myScopes, a, r)));
+        if (!anyInScope) { context.res = { status: 403, body: { error: "None of those areas are in your scope for that event." } }; return; }
       }
 
       let assignments = store;
@@ -147,9 +148,12 @@ module.exports = async function (context, req) {
         }
         // Expand the event tag into one role entry per region it covers (× area for qb/caller),
         // stamping the event so the screen can group by it. The region on each row drives the data wall.
+        // A quarterback only creates the area×region combos within their own scope; out-of-scope
+        // regions of the same event belong to other quarterbacks.
         const toAdd = [];
+        const allow = (a, r) => isSuper || scopeHas(myScopes, a, r);
         if (role === "quarterback" || role === "caller") {
-          for (const r of evRegions) for (const a of areas) toAdd.push({ email: reqEmail, role, area: a, region: r, event: eventId });
+          for (const r of evRegions) for (const a of areas) if (allow(a, r)) toAdd.push({ email: reqEmail, role, area: a, region: r, event: eventId });
         } else {
           for (const r of evRegions) toAdd.push({ email: reqEmail, role, region: r, event: eventId });
         }

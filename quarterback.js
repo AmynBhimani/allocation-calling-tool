@@ -3,6 +3,7 @@ let RESOLVED = [];    // settled by a caller (accepted / withdrew)
 let DUTY_NAMES = {};  // area -> [duty names], from /api/duties
 let SCOPES = [];      // [{area, region}]
 let CALLERS = [];     // [{email, area, region}]
+let EVENTS = [];      // [{id, name, regions}] — Didars this QB can tag a caller to
 let ROLES = [];
 const selected = new Set();
 const filters = { q:"", jk:"", scope:"", area:"", caller:"", unassignedOnly:false, assignedOnly:false, leader:false, nobi:false, referred:false };
@@ -64,7 +65,7 @@ async function load(){
     const r = await fetch('/api/assign');
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("HTTP "+r.status));
     const d = await r.json();
-    DATA = d.volunteers||[]; RESOLVED = d.resolved||[]; SCOPES = d.scopes||[]; CALLERS = d.callers||[];
+    DATA = d.volunteers||[]; RESOLVED = d.resolved||[]; SCOPES = d.scopes||[]; CALLERS = d.callers||[]; EVENTS = d.events||[];
     try{
       const dr = await fetch('/api/duties');
       if(dr.ok){ const dd=await dr.json(); DUTY_NAMES={};
@@ -95,6 +96,14 @@ function buildCallerScopes(){
   const box=document.getElementById('callerScopes');
   box.innerHTML = SCOPES.map((s,i)=>`<label><input type="checkbox" class="acscope" data-area="${s.area}" data-region="${s.region}"> ${scopeKey(s)}</label>`).join('')
     || '<span class="sub">You have no areas assigned yet.</span>';
+  // event dropdown (Didar to tag the caller to) — auto-select if there's only one
+  const ev=document.getElementById('callerEvent');
+  if(ev){
+    ev.innerHTML = (EVENTS.length?'':'<option value="">No events available</option>')
+      + (EVENTS.length===1?'':'<option value="">Choose an event…</option>')
+      + EVENTS.map(e=>`<option value="${e.id}">${e.name||e.id}</option>`).join('');
+    if(EVENTS.length===1) ev.value=EVENTS[0].id;
+  }
 }
 function buildCallerFilter(){
   const sel=document.getElementById('callerFilter');
@@ -346,22 +355,20 @@ async function doAction(op, caller){
 
 async function saveCaller(){
   const email=document.getElementById('callerEmail').value.trim();
-  const areas=[...document.querySelectorAll('.acscope')].filter(c=>c.checked);
+  const ev=document.getElementById('callerEvent');
+  const event=ev?ev.value:'';
+  const areas=[...new Set([...document.querySelectorAll('.acscope')].filter(c=>c.checked).map(c=>c.dataset.area))];
   if(!email){ banner('Enter the caller\u2019s email.', true); return; }
+  if(!event){ banner('Choose the event to tag this caller to.', true); return; }
   if(!areas.length){ banner('Pick at least one of your areas for this caller.', true); return; }
-  // group chosen scopes by region (roleadmin add takes one region + areas[])
-  const byRegion={};
-  areas.forEach(c=>{ (byRegion[c.dataset.region]=byRegion[c.dataset.region]||[]).push(c.dataset.area); });
   const btn=document.getElementById('saveCaller'); btn.disabled=true;
   try{
-    let added=0;
-    for(const region of Object.keys(byRegion)){
-      const r=await fetch('/api/roleadmin',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({op:'add',entry:{email,role:'caller',region,areas:byRegion[region]}})});
-      const d=await r.json(); if(!r.ok && r.status!==409) throw new Error(d.error||("HTTP "+r.status));
-      added+=(d.added||0);
-    }
-    banner(`Added <b>${email}</b> as a caller${added?` for ${added} area(s)`:''}.`, false);
+    // The endpoint derives the regions from the event and creates one caller entry per
+    // in-scope area×region — so the QB only needs to pick the event and their areas.
+    const r=await fetch('/api/roleadmin',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({op:'add',entry:{email,role:'caller',event,areas}})});
+    const d=await r.json(); if(!r.ok && r.status!==409) throw new Error(d.error||("HTTP "+r.status));
+    banner(`Added <b>${email}</b> as a caller${d.added?` for ${d.added} area(s)`:(r.status===409?' (already existed)':'')}.`, false);
     document.getElementById('callerEmail').value='';
     document.querySelectorAll('.acscope').forEach(c=>c.checked=false);
     document.getElementById('addCaller').hidden=true;

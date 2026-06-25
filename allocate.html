@@ -18,11 +18,15 @@
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:8px 0 4px}
   .tgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;margin:6px 0}
-  .tgrid .trow{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:9px;padding:7px 11px}
-  .tgrid .trow .nm{font-size:13px;color:var(--ink)}
+  .tgrid .trow{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:7px 11px}
+  .tgrid .trow .nm{font-size:13px;color:var(--ink);flex:1;min-width:88px}
   .tgrid .trow .ru{font-size:11px;color:var(--mute);margin-top:1px}
-  .tgrid .trow input{width:64px;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums}
-  .tgrid .trow .pct{font-size:12px;color:var(--mute);margin-left:4px}
+  .tgrid .trow .tctl{display:flex;align-items:center;gap:3px;white-space:nowrap}
+  .tgrid .trow input{width:50px;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:8px;padding:6px 6px;text-align:right;font-variant-numeric:tabular-nums}
+  .tgrid .trow input.agein{width:44px}
+  .tgrid .trow .pct{font-size:12px;color:var(--mute);margin:0 6px 0 2px}
+  .tgrid .trow .agelbl{font-size:11px;color:var(--mute);margin-left:2px}
+  .tgrid .trow .agedash{color:var(--mute);font-size:12px}
   .scfg{border:1px solid var(--line);border-radius:10px;padding:12px 14px}
   .scfg h4{margin:0 0 8px;font-size:13px;color:var(--ink)}
   .scfg label{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--mute);margin:6px 0}
@@ -71,12 +75,13 @@
   <div class="card">
     <div class="step">Step 1 · Run &amp; seed</div>
     <h2>Run the allocation</h2>
-    <div class="hint">Review-migration assignments stay put (including Medical &amp; Registration &amp; Access). IFF, under-16 (Young) and no-birthday volunteers are held aside. <b>Nobody is ever placed in an area they didn't pick</b> — the only "anywhere" people are those who chose "happy to serve anywhere." Areas fill in <b>rounds</b>: each round raises every area's cap a notch and tops it up from its own pickers, so the big areas can't soak up everyone before the small ones get their share. The "happy anywhere" people are saved for <b>last</b> and poured into the areas with the fewest other candidates first (Environmental has none; Safety is usually next), so they do the most good. Whoever's left — picked only full areas — stays Unassigned, by design. More rounds = smoother balancing (4 rounds = 25% slices). The seed makes the draw reproducible.</div>
+    <div class="hint">Review-migration assignments stay put (including Medical &amp; Registration &amp; Access). IFF, no-birthday, and under-16 volunteers are held aside — except under-16s eligible for an area that explicitly admits them (Environmental, 13+). <b>Nobody is ever placed in an area they didn't pick</b> — the only "anywhere" people are those who chose "happy to serve anywhere." Areas fill in <b>rounds</b>: each round raises every area's cap a notch and tops it up from its own pickers, so the big areas can't soak up everyone before the small ones get their share. The "happy anywhere" people are saved for <b>last</b> and poured into the areas with the fewest other candidates first. With <b>Fill all</b> on, anyone still unplaced is then pushed into the least-subscribed area they actually selected — <b>allowing overage</b> — so no one is left Unassigned and you can see which areas are oversubscribed (the +over column) and trim their percentages to feed the short ones. With it off, people whose picked areas are all full stay Unassigned. More rounds = smoother balancing (4 rounds = 25% slices). The seed makes the draw reproducible.</div>
     <div class="row" style="margin-top:8px">
       <span class="small">Age as of <b>July 23, 2026</b> · Seed</span>
       <input id="seed" class="token" type="number" value="20260723" style="width:130px">
       <span class="small">· Rounds</span>
       <input id="rounds" class="token" type="number" value="4" min="1" max="20" style="width:70px">
+      <label class="small" style="display:inline-flex;align-items:center;gap:5px;margin-left:4px"><input id="overflow" type="checkbox" checked> Fill all (allow overage)</label>
       <button id="previewBtn" class="btn">Preview allocation</button>
       <button id="commitBtn" class="btn commit" disabled>Commit allocation</button>
     </div>
@@ -85,7 +90,7 @@
   <div class="card">
     <div class="step">Step 2 · Target percentages</div>
     <h2>Goal for the final mix</h2>
-    <div class="hint">Each percentage is the share you want in that area <b>after</b> allocation, per region. An area's goal count = percentage × (review-assigned + assignable people in that region), filled within the age limits shown. They should add up to 100%.</div>
+    <div class="hint">Each percentage is the share you want in that area <b>after</b> allocation, per region. An area's goal count = percentage × (review-assigned + assignable people in that region). The <b>age</b> boxes set who's eligible for each area and are fully editable: leave <b>min</b> blank for the default 16 floor (or set it below 16 — e.g. 13 — to admit younger volunteers, which releases those under-16s from the Young hold for that area only), and leave <b>max</b> blank for no upper limit. Percentages should add up to 100%.</div>
     <div id="targetCfg" class="tgrid"></div>
     <div class="row" style="margin-top:6px"><span class="small">Total: <b id="pctSum">100</b>%</span><span id="pctWarn" class="small" style="color:#a83729"></span></div>
   </div>

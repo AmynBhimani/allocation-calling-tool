@@ -26,9 +26,9 @@ const SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file
 // Goal split for the FINAL distribution. pct of D; min/max are hard age gates.
 const ASSIGN_TARGETS = [
   { area: "Safety & Flow Management",      pct: 0.53, min: 19, max: null },
-  { area: "Seniors & Mobility",           pct: 0.14, min: 16, max: null },
+  { area: "Seniors & Mobility",           pct: 0.14, min: 16, max: 55 },
   { area: "Reception & Hospitality",      pct: 0.14, min: null, max: null },
-  { area: "Environmental Sustainability", pct: 0.02, min: 16, max: 20 },
+  { area: "Environmental Sustainability", pct: 0.02, min: 13, max: 30 },
   { area: "Parking & Transportation",     pct: 0.07, min: 19, max: 65 },
   { area: "Food Services",                pct: 0.04, min: 16, max: null },
   { area: "Layout & Logistics",           pct: 0.04, min: 19, max: 65 },
@@ -59,7 +59,10 @@ function ageAsOf(birthday, asOf) {
 }
 function eligible(age, t) {
   if (!t) return false;
-  if (t.min != null) { if (age == null || age < t.min) return false; }
+  // 16 is the floor for everyone UNLESS an area explicitly sets a lower min (e.g. Environmental at 13).
+  // This keeps "any age" areas at 16+ and confines the under-16 carve-out to the areas that opt into it.
+  const min = (t.min != null) ? t.min : 16;
+  if (age == null || age < min) return false;
   if (t.max != null) { if (age == null || age > t.max) return false; }
   return true;
 }
@@ -111,6 +114,14 @@ function allocate(records, cfg) {
     };
   });
 
+  // Areas that explicitly admit volunteers under 16 (e.g. Environmental at 13+). An under-16
+  // person is only released from the "Young" hold if they can actually serve one of these —
+  // i.e. they're happy-anywhere (or picked it) and fall in its age window. Everyone else under 16
+  // stays held aside as before.
+  const subSixteen = targetsDef.filter(t => t.min != null && t.min < 16);
+  const youngCanServe = (r) => subSixteen.some(t =>
+    eligible(r.age, t) && (r.happyAnywhere || r.prefAreas.indexOf(t.area) >= 0));
+
   for (const r of recs) {
     if (r.fromReview) {
       if (r.final_area != null) { r.bucket = "affinity"; r.area = r.final_area; }  // stays put
@@ -119,7 +130,7 @@ function allocate(records, cfg) {
     }
     if (r.isIFF) { r.bucket = "iff"; continue; }          // held aside
     if (r.age == null) { r.bucket = "noage"; continue; }  // held aside (no birthday)
-    if (r.age < 16) { r.bucket = "young"; continue; }     // held aside (all under-16)
+    if (r.age < 16 && !youngCanServe(r)) { r.bucket = "young"; continue; }  // under-16 held aside unless an area admits them
     r.bucket = "pool";                                    // assignable
   }
 
@@ -203,6 +214,28 @@ function allocate(records, cfg) {
       fillArea(person, area);
     }
 
+    // ---- Overflow (optional) ------------------------------------------------
+    // With overflow ON, nobody is left Unassigned just because their picked areas hit their caps.
+    // Each remaining person is pushed into one of the areas THEY SELECTED (happy-anywhere -> any),
+    // age-eligible, choosing the one that is currently least subscribed (lowest filled-vs-goal
+    // ratio) so the overflow tops up under-target areas first and only piles on as overage when all
+    // their picks are already full. The resulting over-goal counts show which areas are
+    // oversubscribed, so their percentages can be trimmed to feed the under-subscribed ones.
+    // Preference is still a hard wall: we never place anyone outside their own picks.
+    if (cfg.overflow) {
+      const leftover = shuffle(assignable.filter(p => !p.area), rng);
+      for (const p of leftover) {
+        let area = null, bestRatio = Infinity, bestPct = Infinity;
+        for (const t of order) {
+          if (!eligible(p.age, tByArea[t.area])) continue;
+          if (!(p.happyAnywhere || p.prefAreas.indexOf(t.area) >= 0)) continue;
+          const ratio = placed[t.area] / Math.max(1, target[t.area]);
+          if (ratio < bestRatio || (ratio === bestRatio && t.pct < bestPct)) { bestRatio = ratio; bestPct = t.pct; area = t.area; }
+        }
+        if (area) fillArea(p, area);     // over the cap allowed; still only into a selected area
+      }
+    }
+
     // Leftover assignable (picked only full areas / not flex) -> Unassigned, by design.
     for (const p of assignable) if (!p.area) p.bucket = "unassigned";
 
@@ -221,6 +254,7 @@ function allocate(records, cfg) {
           final: (reviewIn[A] || 0) + placed[A],
           ceiling: (reviewIn[A] || 0) + pickerCount + flexEligible,   // pickers + flex, the honest max
           shortBy: Math.max(0, target[A] - ((reviewIn[A] || 0) + placed[A])),
+          over: Math.max(0, ((reviewIn[A] || 0) + placed[A]) - target[A]),  // overage when overflow is on
         };
       }),
       unplaced: assignable.filter(p => p.bucket === "unassigned").length,

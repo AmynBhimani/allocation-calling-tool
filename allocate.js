@@ -14,9 +14,9 @@
   // Editable target percentages — the goal share of the final mix per area, with age gates.
   var TARGET_DEFS = [
     { area: "Safety & Flow Management", id: "t_ssp", pct: 53, min: 19, max: null, rule: "min age 19" },
-    { area: "Seniors & Mobility", id: "t_sen", pct: 14, min: 16, max: null, rule: "min age 16" },
-    { area: "Reception & Hospitality", id: "t_rec", pct: 14, min: null, max: null, rule: "any age" },
-    { area: "Environmental Sustainability", id: "t_env", pct: 2, min: 16, max: 20, rule: "age 16\u201320 \u00b7 flex-only" },
+    { area: "Seniors & Mobility", id: "t_sen", pct: 14, min: 16, max: 55, rule: "age 16\u201355" },
+    { area: "Reception & Hospitality", id: "t_rec", pct: 14, min: null, max: null, rule: "16+ (any list)" },
+    { area: "Environmental Sustainability", id: "t_env", pct: 2, min: 13, max: 30, rule: "age 13\u201330 \u00b7 flex-only" },
     { area: "Parking & Transportation", id: "t_par", pct: 7, min: 19, max: 65, rule: "age 19\u201365" },
     { area: "Food Services", id: "t_food", pct: 4, min: 16, max: null, rule: "min age 16" },
     { area: "Layout & Logistics", id: "t_lay", pct: 4, min: 19, max: 65, rule: "age 19\u201365" },
@@ -26,10 +26,23 @@
   function buildTargetInputs() {
     var box = EL("targetCfg");
     box.innerHTML = TARGET_DEFS.map(function (t) {
-      return '<div class="trow"><div><div class="nm">' + esc(t.area) + '</div><div class="ru">' + esc(t.rule) + '</div></div>'
-        + '<div><input id="' + t.id + '" type="number" min="0" max="100" step="1" value="' + t.pct + '"><span class="pct">%</span></div></div>';
+      return '<div class="trow">'
+        + '<div class="nm">' + esc(t.area) + '</div>'
+        + '<div class="tctl">'
+          + '<input id="' + t.id + '" type="number" min="0" max="100" step="1" value="' + t.pct + '"><span class="pct">%</span>'
+          + '<span class="agelbl">age</span>'
+          + '<input id="' + t.id + '_min" class="agein" type="number" min="0" max="120" step="1" placeholder="16" value="' + (t.min == null ? "" : t.min) + '" title="Minimum age. Blank = 16. Set below 16 to admit younger volunteers (e.g. 13).">'
+          + '<span class="agedash">\u2013</span>'
+          + '<input id="' + t.id + '_max" class="agein" type="number" min="0" max="120" step="1" placeholder="none" value="' + (t.max == null ? "" : t.max) + '" title="Maximum age. Blank = no upper limit.">'
+        + '</div>'
+      + '</div>';
     }).join("");
-    TARGET_DEFS.forEach(function (t) { EL(t.id).addEventListener("input", function () { onSettingChanged(); updatePctSum(); }); });
+    TARGET_DEFS.forEach(function (t) {
+      ["", "_min", "_max"].forEach(function (suf) {
+        var el = EL(t.id + suf);
+        if (el) el.addEventListener("input", function () { onSettingChanged(); updatePctSum(); });
+      });
+    });
     updatePctSum();
   }
   function updatePctSum() {
@@ -39,7 +52,16 @@
   }
   function targetsFromInputs() {
     return TARGET_DEFS.map(function (t) {
-      return { area: t.area, pct: (parseFloat(EL(t.id).value) || 0) / 100, min: t.min, max: t.max };
+      var minEl = EL(t.id + "_min"), maxEl = EL(t.id + "_max");
+      var minV = minEl ? String(minEl.value).trim() : "";
+      var maxV = maxEl ? String(maxEl.value).trim() : "";
+      var minN = parseInt(minV, 10), maxN = parseInt(maxV, 10);
+      return {
+        area: t.area,
+        pct: (parseFloat(EL(t.id).value) || 0) / 100,
+        min: (minV === "" || isNaN(minN)) ? null : minN,
+        max: (maxV === "" || isNaN(maxN)) ? null : maxN
+      };
     });
   }
 
@@ -79,15 +101,17 @@
       html += '<div class="sub2">' + R + " · goal denominator " + dr.D + " (" + dr.reviewFixed + " review + " + dr.assignable + " assignable) · "
         + (dr.rounds || 4) + " rounds · " + (dr.flexTotal || 0) + " happy-anywhere"
         + (dr.unplaced ? " · " + dr.unplaced + " left Unassigned (picked only full areas)" : "") + "</div>";
-      html += '<table class="matrix"><tr><th>Area</th><th>Goal</th><th>Filled</th><th>Ceiling</th><th>Short by</th></tr>';
+      html += '<table class="matrix"><tr><th>Area</th><th>Goal</th><th>Filled</th><th>Over</th><th>Ceiling</th><th>Short by</th></tr>';
       dr.targets.forEach(function (t) {
         var ceil = (t.ceiling == null ? "" : t.ceiling);
         var shortTxt = t.shortBy ? '<b style="color:#a83729">' + t.shortBy + "</b>" : "—";
+        var overTxt = t.over ? '<b style="color:#b26a00">+' + t.over + "</b>" : "—";
         // Ceiling note: when the honest max is below the goal, the goal simply can't be reached without
         // more volunteers willing to do that area — flag it so the shortfall reads as recruiting signal.
         var capFlag = (t.ceiling != null && t.ceiling < t.target) ? ' title="Not enough willing volunteers to reach goal" style="color:#a83729"' : "";
         html += "<tr><td>" + esc(t.area) + '</td><td class="n">' + t.target
           + '</td><td class="n tcol">' + t.final
+          + '</td><td class="n">' + overTxt
           + '</td><td class="n"' + capFlag + ">" + ceil
           + '</td><td class="n">' + shortTxt + "</td></tr>";
       });
@@ -191,7 +215,8 @@
   async function call(mode) {
     var seed = parseInt(EL("seed").value, 10) || 20260723;
     var rounds = Math.max(1, Math.min(20, parseInt(EL("rounds").value, 10) || 4));
-    var body = { mode: mode, seed: seed, rounds: rounds, targets: targetsFromInputs() };
+    var overflow = EL("overflow") ? !!EL("overflow").checked : true;
+    var body = { mode: mode, seed: seed, rounds: rounds, overflow: overflow, targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");

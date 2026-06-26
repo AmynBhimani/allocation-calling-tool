@@ -1,0 +1,24 @@
+name: Daily dashboard digest
+
+# Pings the secured digest endpoint each morning so it emails the per-region rollup.
+# Static Web App managed Functions can't run timer triggers, so the schedule lives here.
+on:
+  schedule:
+    # 13:00 UTC = 6:00 AM Pacific during DST (PDT, summer). GitHub cron is fixed UTC, so in
+    # winter (PST) this fires at 5:00 AM Pacific — change to "0 14 * * *" if you want 6:00 AM then.
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}   # lets you run it on demand from the Actions tab
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily digest
+        run: |
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-digest-key: ${{ secrets.DIGEST_TRIGGER_KEY }}" \
+            "${{ vars.DIGEST_URL }}/api/dailyDigest")
+          echo "HTTP $code"
+          cat /tmp/resp.json || true
+          echo
+          test "$code" = "200"

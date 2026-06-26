@@ -1,4 +1,5 @@
 const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
+const { rollupRecords, rowsFromByArea } = require("../shared/rollup");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -16,17 +17,6 @@ function emailOf(p) {
     if (c) e = c.val || c.value;
   }
   return e ? String(e).toLowerCase() : null;
-}
-function lastOutcome(v) {
-  // Walk the log in order: an "outcome" sets the current outcome; a later "reopen"
-  // clears it (they changed their mind and are back in the active queue). Without this,
-  // a reopened Withdrew/Accepted volunteer would stay counted as declined/accepted.
-  let o = null;
-  for (const e of (v.activity_log || [])) {
-    if (e.action === "outcome") o = e.outcome;
-    else if (e.action === "reopen") o = null;
-  }
-  return o;
 }
 
 module.exports = async function (context, req) {
@@ -47,37 +37,13 @@ module.exports = async function (context, req) {
     const regions = scopeRegions.includes(qRegion) ? [qRegion] : scopeRegions;
     const container = await getContainer(DATA_CONTAINER);
 
-    const byArea = {};
-    const blank = () => ({ assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 });
-    const totals = blank();
-
+    const acc = { byArea: {}, totals: { assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 } };
     for (const region of regions) {
       const { records } = await readRegion(container, region);
-      for (const v of records) {
-        // only the callable pipeline (excludes Leadership-do-not-allocate)
-        if (v.callable_status === "Leadership - Do Not Allocate") continue;
-        const area = v.final_area || "(no area)";
-        const b = byArea[area] || (byArea[area] = blank());
-        const lo = lastOutcome(v);
-
-        // A withdrawal is the only true decline — count it in their current area, not as a duty.
-        if (lo === "Withdrew") { b.declined++; totals.declined++; continue; }
-        // A confirmed duplicate is a data-cleanup drop-out — don't count it anywhere.
-        if (lo === "Duplicate") continue;
-
-        // Declined-referred: they've moved to their new area (final_area) and hold a duty there.
-        // Count them as assigned in that area — never as a decline.
-        if (v.callable_status === "Stable") { b.assignedDuty++; totals.assignedDuty++; }
-
-        const isAccepted = !!v.ivol_ready || lo === "Accepted";
-        const isCallPending = !!v.assigned_caller && !v.call_done;  // with a caller, call not completed
-
-        if (isAccepted) { b.accepted++; totals.accepted++; }
-        if (isCallPending) { b.callPending++; totals.callPending++; }
-      }
+      rollupRecords(records, acc);
     }
-
-    const rows = Object.keys(byArea).sort().map(area => ({ area, ...byArea[area] }));
+    const rows = rowsFromByArea(acc.byArea);
+    const totals = acc.totals;
     context.res = { body: { region: scopeRegions.includes(qRegion) ? qRegion : "All", regions: scopeRegions, rows, totals } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };

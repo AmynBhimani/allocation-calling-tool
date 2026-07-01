@@ -68,6 +68,22 @@ module.exports = async function (context, req) {
     const presented = req.headers["x-release-key"] || (req.query && req.query.key) || "";
     const viaSecret = !!key && presented === key;
 
+    // Safe diagnostic: /api/release?diag=1 (optionally &key=...) reports whether the calltool has a
+    // key configured and how the presented value compares — lengths only, never the secret itself.
+    if (req.query && req.query.diag === "1") {
+      const norm = (s) => (s || "").trim();
+      context.res = { body: {
+        keyConfigured: !!key,
+        configuredLen: key ? key.length : 0,
+        presentedLen: presented.length,
+        equal: !!key && presented === key,
+        equalIfTrimmed: !!key && norm(presented) === norm(key),
+        sawHeader: !!req.headers["x-release-key"],
+        sawQueryKey: !!(req.query && req.query.key),
+      } };
+      return;
+    }
+
     const principal = getPrincipal(req);
     const email = emailOf(principal);
     const roles = (principal && principal.userRoles) || [];

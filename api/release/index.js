@@ -84,6 +84,41 @@ module.exports = async function (context, req) {
       return;
     }
 
+    // Data diagnostics (require the secret, since they reveal volunteer status):
+    //   ?diag=counts&key=...          -> how many people are held aside, by area, per region
+    //   ?diag=who&name=Smith&key=...  -> inspect specific people: is each actually held aside, and why not
+    if (req.query && (req.query.diag === "counts" || req.query.diag === "who")) {
+      if (!viaSecret) { context.res = { status: 403, body: { error: "Add &key=<your key> to use this diagnostic." } }; return; }
+      const container = await getContainer(DATA_CONTAINER);
+      if (req.query.diag === "counts") {
+        const out = {};
+        for (const region of REGIONS) {
+          const { records } = await readRegion(container, region);
+          const byArea = {};
+          for (const v of records) if (isHeldAside(v)) byArea[v.final_area] = (byArea[v.final_area] || 0) + 1;
+          out[region] = byArea;
+        }
+        context.res = { body: { heldAsideByArea: out } };
+        return;
+      }
+      const name = String((req.query && req.query.name) || "").toLowerCase().trim();
+      const hits = [];
+      for (const region of REGIONS) {
+        const { records } = await readRegion(container, region);
+        for (const v of records) {
+          const nm = ((v.first || "") + " " + (v.last || "")).toLowerCase().trim();
+          if (name && nm.includes(name)) hits.push({
+            id: v.user_id, region, name: nm,
+            final_area: v.final_area || null, never_reviewed: v.never_reviewed,
+            released_to_pool: !!v.released_to_pool, callable_status: v.callable_status,
+            callerLocked: callerLocked(v), isHeldAside: isHeldAside(v),
+          });
+        }
+      }
+      context.res = { body: { count: hits.length, people: hits.slice(0, 25) } };
+      return;
+    }
+
     const principal = getPrincipal(req);
     const email = emailOf(principal);
     const roles = (principal && principal.userRoles) || [];

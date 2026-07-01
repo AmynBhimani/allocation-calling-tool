@@ -218,7 +218,8 @@
     var overflow = EL("overflow") ? !!EL("overflow").checked : true;
     var happyFirst = EL("phaseOrder") ? (EL("phaseOrder").value === "happy") : false;
     var flexOrder = EL("flexOrder") ? EL("flexOrder").value : "below";
-    var body = { mode: mode, seed: seed, rounds: rounds, overflow: overflow, happyFirst: happyFirst, flexOrder: flexOrder, targets: targetsFromInputs() };
+    var allocMode = EL("allocMode") ? EL("allocMode").value : "full";
+    var body = { mode: mode, allocMode: allocMode, seed: seed, rounds: rounds, overflow: overflow, happyFirst: happyFirst, flexOrder: flexOrder, targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");
@@ -238,12 +239,16 @@
   EL("previewBtn").addEventListener("click", function () { call("preview"); });
   EL("commitBtn").addEventListener("click", function () {
     if (!lastPlan) return;
-    if (!confirm("Commit this allocation? Assigned people become Stable and callable; affinity assignments are left untouched. Run with the same seed so it matches your preview.")) return;
+    var m = EL("allocMode") ? EL("allocMode").value : "full";
+    var msg = (m === "incremental")
+      ? "Commit this INCREMENTAL allocation? Everyone who already has an area stays put; only the unassigned pool is placed. Run with the same seed so it matches your preview."
+      : "Commit this FULL allocation? Assigned people become Stable and callable. Left untouched: review (affinity) assignments, anyone called/accepted, and anyone on a caller's list. Run with the same seed so it matches your preview.";
+    if (!confirm(msg)) return;
     call("commit");
   });
   // Re-running a preview is required before commit if settings change.
   EL("seed").addEventListener("input", onSettingChanged);
-  ["rounds", "phaseOrder", "flexOrder", "overflow"].forEach(function (id) {
+  ["allocMode", "rounds", "phaseOrder", "flexOrder", "overflow"].forEach(function (id) {
     var el = EL(id); if (el) el.addEventListener("change", onSettingChanged);
   });
   buildTargetInputs();

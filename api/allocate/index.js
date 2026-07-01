@@ -27,6 +27,11 @@ module.exports = async function (context, req) {
     const overflow = body.overflow !== false;   // default ON: no Unassigned, allow overage
     const happyFirst = body.happyFirst === true;            // default OFF: pickers first
     const flexOrder = (body.flexOrder === "scarce") ? "scarce" : "below";  // default: furthest-below-target
+    // Incremental: keep everyone who already has an area (review, a prior allocation, or a caller list)
+    // and only distribute the currently-unassigned pool. Full (default): re-allocate the whole pool.
+    const incremental = body.allocMode === "incremental" || body.keepPlaced === true;
+    // For allocation, "locked" means do-not-touch: real call activity OR simply being on a caller's list.
+    const allocLocked = (v) => callerLocked(v) || !!v.assigned_caller;
 
     // Read all shards and assemble the engine's input records — counting each person ONCE.
     // A user_id can wrongly appear in two shards if their region changed between imports
@@ -50,14 +55,17 @@ module.exports = async function (context, req) {
           continue;
         }
         seenRegion.set(id, region);
-        const locked = callerLocked(v);          // already in the calling pipeline -> never re-allocate
+        const locked = allocLocked(v);          // call activity OR on a caller's list -> never re-allocate
         if (locked) lockedInPipeline++;
+        // Fixed = pinned to their current area and counted toward it (never re-allocated). Always true for
+        // locked people; in incremental mode, also true for anyone who already holds an area.
+        const fixed = locked || (incremental && !!v.final_area);
         records.push({
           user_id: v.user_id, region,
           computed_area: v.computed_area || null, final_area: v.final_area || null,
-          // A locked person is pinned to their current area: treat as "reviewed" so the engine keeps
-          // them put (affinity) and counts them toward their area, both in preview and at commit.
-          never_reviewed: locked ? false : !!v.never_reviewed, leader_flag: !!v.leader_flag,
+          // A fixed person is treated as "reviewed" so the engine keeps them put (affinity) and counts
+          // them toward their area's target, both in preview and at commit.
+          never_reviewed: fixed ? false : !!v.never_reviewed, leader_flag: !!v.leader_flag,
           conflict_claims: Array.isArray(v.conflict_claims) ? v.conflict_claims : [],
           list: v.list || null, interfaith: !!v.interfaith,
           age: (v.age != null ? v.age : null), birthday: v.birthday || null,
@@ -101,7 +109,7 @@ module.exports = async function (context, req) {
     };
 
     const report = {
-      mode: commit ? "commit" : "preview", asOf: plan.asOf, seed: plan.seed,
+      mode: commit ? "commit" : "preview", allocMode: incremental ? "incremental" : "full", asOf: plan.asOf, seed: plan.seed,
       total: records.length, affinityTotal: plan.affinityTotal, affinityLeaders: plan.affinityLeaders,
       contestedTotal: plan.contestedTotal, nullAge: plan.nullAge,
       noAgeHeld: plan.decisions.filter(d => d.bucket === "noage").length,
@@ -111,7 +119,9 @@ module.exports = async function (context, req) {
     };
 
     if (!commit) {
-      report.note = "Preview only — nothing written. Affinity = anyone already given a final area by the review migration (kept as-is, including Medical & Registration). Targets are a goal for the final mix; areas are filled lowest-% first. Re-run with the same seed to commit the identical plan.";
+      report.note = incremental
+        ? "Preview only — INCREMENTAL: everyone who already has an area (review, prior allocation, or a caller list) is kept as-is and counted toward the area targets; only the currently-unassigned pool is distributed by the percentages. Overflow toggle still applies."
+        : "Preview only — FULL re-allocation of the whole pool. Kept as-is: review (affinity) assignments, anyone called/accepted/confirmed, and anyone on a caller's list. Targets are a goal for the final mix; areas are filled lowest-% first. Re-run with the same seed to commit the identical plan.";
       context.res = { body: report };
       return;
     }
@@ -121,7 +131,7 @@ module.exports = async function (context, req) {
     const decById = new Map(plan.decisions.map(d => [String(d.user_id), d]));
     for (const region of REGIONS) {
       await mergeRegion(container, region, (existing) => existing.map(v => {
-        if (callerLocked(v)) return v;   // LIVE guard: never touch anyone already being called/resolved
+        if (allocLocked(v)) return v;   // LIVE guard: never touch anyone called/resolved OR on a caller's list
         const d = decById.get(String(v.user_id));
         if (!d || d.bucket === "affinity" || d.bucket === "contested") return v;   // review-touched: leave alone
         if (String(d.region) !== region) return v;   // a stale duplicate copy in another shard — don't re-allocate it
@@ -143,7 +153,9 @@ module.exports = async function (context, req) {
         return nv;
       }));
     }
-    report.note = `Allocation committed. Assigned people are Stable with a Didar row; Young Volunteers, IFF and no-age people are held aside; review (affinity) assignments were left untouched. ${lockedInPipeline} volunteer(s) already in the calling pipeline (assigned/called/confirmed) were left exactly as-is.`;
+    report.note = incremental
+      ? `Incremental allocation committed. Only the unassigned pool was distributed; everyone already holding an area (review, prior allocation, or a caller list) was left untouched. ${lockedInPipeline} volunteer(s) called/accepted or on a caller's list were preserved.`
+      : `Allocation committed. Assigned people are Stable with a Didar row; Young Volunteers, IFF and no-age people are held aside; review (affinity) assignments were left untouched. ${lockedInPipeline} volunteer(s) already called/accepted or on a caller's list were left exactly as-is.`;
     context.res = { body: report };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };

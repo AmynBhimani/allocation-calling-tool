@@ -129,12 +129,13 @@
     if (r.bucket === "young") return "Young Volunteers";
     return "Unassigned";
   }
-  function listSection(title, key, rows, hint, showPlace) {
+  function listSection(title, key, rows, hint, showPlace, showReason) {
     if (!rows || !rows.length) return "";
-    var head = '<tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th>Age</th>' + (showPlace ? "<th>Where they landed</th>" : "") + "</tr>";
+    var head = '<tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th>Age</th>' + (showPlace ? "<th>Where they landed</th>" : "") + (showReason ? "<th>Why unassigned</th>" : "") + "</tr>";
     var body = rows.slice(0, 250).map(function (r) {
       return "<tr><td>" + esc(r.name || "—") + "</td><td>" + esc(r.region) + "</td><td>" + esc(r.jk || "—") + '</td><td class="n">' + (r.age == null ? "—" : r.age) + "</td>"
-        + (showPlace ? "<td>" + esc(placeLabel(r)) + "</td>" : "") + "</tr>";
+        + (showPlace ? "<td>" + esc(placeLabel(r)) + "</td>" : "")
+        + (showReason ? "<td>" + esc(r.reason || "—") + "</td>" : "") + "</tr>";
     }).join("");
     var more = rows.length > 250 ? '<div class="small" style="margin-top:6px">Showing first 250 of ' + rows.length + ". Use Copy CSV for the full list.</div>" : "";
     return '<details class="lst"><summary>' + esc(title) + " (" + rows.length + ")</summary>"
@@ -188,7 +189,7 @@
     html += listSection("IFF", "iff", L.iff, "Inter-faith family members — held in their own category, not assigned to a process area.");
     html += listSection("Young Volunteers (under 16)", "young", L.young, "Under 16 — held aside, not allocated.");
     html += listSection("No age on file (all) — everyone missing an age, and where each landed", "noAge", L.noAge, "The held subset (no area) plus people already assigned/claimed in review who also lack an age.", true);
-    html += listSection("Unassigned (16+, no area / not placed)", "unassigned", L.unassigned, "");
+    html += listSection("Unassigned (16+, no area / not placed)", "unassigned", L.unassigned, "Each person's reason shows why they weren't placed — e.g. they picked no area, or their age is outside the range of every area they picked (removing another area's age cap won't help unless they picked it or chose 'happy anywhere').", false, true);
 
     if (d.mode === "commit") html += '<div class="ok">' + esc(d.note || "Committed.") + "</div>";
     res.innerHTML = html;
@@ -196,8 +197,8 @@
     res.querySelectorAll(".csvbtn").forEach(function (b) {
       b.addEventListener("click", function () {
         var rows = (lastPlan.lists || {})[b.getAttribute("data-csv")] || [];
-        var csv = "Name,Region,Jamatkhana,Age,Where they landed\n" + rows.map(function (r) {
-          return [r.name, r.region, r.jk, (r.age == null ? "" : r.age), placeLabel(r)].map(function (x) {
+        var csv = "Name,Region,Jamatkhana,Age,Where they landed,Why unassigned\n" + rows.map(function (r) {
+          return [r.name, r.region, r.jk, (r.age == null ? "" : r.age), placeLabel(r), r.reason || ""].map(function (x) {
             x = String(x == null ? "" : x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x;
           }).join(",");
         }).join("\n");

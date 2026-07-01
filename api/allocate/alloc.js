@@ -251,18 +251,20 @@ function allocate(records, cfg) {
     // Cross-eligibility (overflow ONLY): two chronically short areas borrow from the oversubscribed
     // Reception & Hospitality pool during this final sweep, so leftover hospitality folks divert into
     // them instead of re-piling onto Reception:
-    //   - Seniors & Mobility: a Hospitality picker aged 16-25 is treated as also selecting Seniors.
+    //   - Seniors & Mobility: a Hospitality picker is treated as also selecting Seniors, gated by
+    //     Seniors' own age range (set in the UI). Widen Seniors' max age there to pull older
+    //     Hospitality leftovers in; narrow it to exclude them.
     //   - Safety & Flow Management: a Hospitality picker is treated as also selecting Safety, gated by
     //     Safety's own 19+ rule (no upper cap — Safety needs a broad adult pool). Edit Safety's max
     //     age in the UI if you want to bound it.
     // Each only WIDENS the "selected" set; the area's own age gate still applies via eligible(), and
-    // the main passes are unchanged. A 19-25 Hospitality leftover qualifies for both, and the
-    // least-subscribed-ratio rule sends them to whichever (Safety or Seniors) is more behind its goal.
+    // the main passes are unchanged. A Hospitality leftover eligible for both Safety and Seniors goes
+    // to whichever is more behind its goal (least-subscribed-ratio rule).
     if (cfg.overflow) {
       const SENIORS = "Seniors & Mobility", HOSPITALITY = "Reception & Hospitality", SAFETY = "Safety & Flow Management";
       const hospitality = (p) => p.prefAreas.indexOf(HOSPITALITY) >= 0;
-      const seniorsCross = (p) => p.age != null && p.age >= 16 && p.age <= 25 && hospitality(p);
-      const safetyCross = (p) => hospitality(p);   // age handled by Safety's 19+ gate in eligible()
+      const seniorsCross = (p) => hospitality(p);   // age handled by Seniors' own range in eligible()
+      const safetyCross = (p) => hospitality(p);    // age handled by Safety's 19+ gate in eligible()
       const leftover = shuffle(assignable.filter(p => !p.area), rng);
       for (const p of leftover) {
         let area = null, bestRatio = Infinity, bestPct = Infinity;
@@ -279,8 +281,19 @@ function allocate(records, cfg) {
       }
     }
 
-    // Leftover assignable (picked only full areas / not flex) -> Unassigned, by design.
-    for (const p of assignable) if (!p.area) p.bucket = "unassigned";
+    // Leftover assignable (picked only full areas / not flex) -> Unassigned, with the reason why.
+    for (const p of assignable) {
+      if (p.area) continue;
+      p.bucket = "unassigned";
+      const picks = Array.isArray(p.prefAreas) ? p.prefAreas : [];
+      const validPicks = picks.filter(a => tByArea[a]);            // picks that are real allocation targets
+      if (!p.happyAnywhere && picks.length === 0) { p.reason = "No area selected"; continue; }
+      if (!p.happyAnywhere && validPicks.length === 0) { p.reason = "Only picked non-target areas (e.g. Medical/Registration)"; continue; }
+      const willing = p.happyAnywhere ? order.map(t => t.area) : validPicks;
+      const ageOk = willing.filter(a => eligible(p.age, tByArea[a]));
+      if (ageOk.length === 0) { p.reason = p.happyAnywhere ? "Age-ineligible for every area" : "Age outside the range of every area they picked"; continue; }
+      p.reason = cfg.overflow ? "Picked areas at capacity" : "Picked areas full (overflow off)";
+    }
 
     distReport[R] = {
       D, reviewFixed: reviewFixed.length, assignable: assignable.length, rounds,
@@ -328,7 +341,7 @@ function allocate(records, cfg) {
     mode: { rounds: Math.max(1, Math.min(20, cfg.rounds != null ? (cfg.rounds | 0) : 4)),
             happyFirst: !!cfg.happyFirst, flexOrder: (cfg.flexOrder !== "scarce" ? "below" : "scarce"),
             overflow: !!cfg.overflow },
-    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age })),
+    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age, reason: r.reason || null })),
   };
 }
 

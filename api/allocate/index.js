@@ -94,7 +94,7 @@ module.exports = async function (context, req) {
       for (const d of plan.decisions) {
         if (!pred(d)) continue;
         const i = info.get(String(d.user_id)) || {};
-        out.push({ user_id: d.user_id, name: i.name || "", region: d.region, jk: i.jk || "", age: d.age, bucket: d.bucket, area: d.area });
+        out.push({ user_id: d.user_id, name: i.name || "", region: d.region, jk: i.jk || "", age: d.age, bucket: d.bucket, area: d.area, reason: d.reason || null });
         if (out.length >= CAP) break;
       }
       out.sort((a, b) => (a.region + a.name).localeCompare(b.region + b.name));

@@ -43,6 +43,17 @@
     <div class="count" id="count"></div>
   </div>
   <p class="sub" style="margin-top:12px"><b>Assigned a Duty</b> = cleared into this area with no open conflict. <b>Accepted Duty</b> = confirmed on a call. <b>Call Pending</b> = assigned to a caller, call not yet completed. <b>Declined Duty</b> = declined (counted against the area the person declined; if referred onward they also hold a duty in the new area). Leadership (do-not-allocate) is excluded.</p>
+
+  <div class="panel" style="margin-top:22px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <h2 style="font-family:Georgia,serif;color:var(--ink);font-size:17px;margin:0">Allocations by Ceremony Jamatkhana</h2>
+      <button class="btn ghost2" id="exportJkBtn">Export CSV</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="grid" id="jkGrid"><thead id="jkHead"></thead><tbody id="jkRows"></tbody><tfoot id="jkFoot"></tfoot></table>
+    </div>
+    <div class="count" id="jkCount"></div>
+  </div>
 </div>
 
 <script src="nav.js"></script>

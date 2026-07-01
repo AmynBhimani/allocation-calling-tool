@@ -11,7 +11,7 @@
 // Optional: ?dry=1 computes and returns the HTML WITHOUT sending (for testing).
 
 const { getContainer, readRegion, REGIONS } = require("../shared/store");
-const { rollupRecords, rowsFromByArea } = require("../shared/rollup");
+const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid } = require("../shared/rollup");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const COLS = [
@@ -43,11 +43,13 @@ function regionTable(region, rows, totals) {
 
 async function buildDigest(container) {
   const grand = { byArea: {}, totals: { assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 } };
+  const jkAcc = { byJk: {}, areas: new Set() };
   const sections = [];
   for (const region of REGIONS) {
     const { records } = await readRegion(container, region);
     const { byArea, totals } = rollupRecords(records);   // fresh per-region tally
     rollupRecords(records, grand);                        // also fold into the grand total
+    rollupByJk(records, jkAcc);                           // JK × area grid (all regions)
     sections.push(regionTable(region, rowsFromByArea(byArea), totals));
   }
   const g = grand.totals;
@@ -56,13 +58,29 @@ async function buildDigest(container) {
   const tz = process.env.DIGEST_TIME_ZONE || "America/Vancouver";
   const today = new Date().toLocaleDateString("en-CA", { timeZone: tz, weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const summary = COLS.map(c => `${c.label}: <b>${g[c.key] || 0}</b>`).join(" &nbsp;•&nbsp; ");
+
+  // JK × area allocation grid (all regions).
+  const jkAreas = [...jkAcc.areas].sort();
+  const jk = jkGrid(jkAcc.byJk, jkAreas);
+  let jkSection = "";
+  if (jk.rows.length) {
+    const head = `<tr><th align="left">Ceremony Jamatkhana</th>${jkAreas.map(a => `<th align="right">${esc(a)}</th>`).join("")}<th align="right">Total</th></tr>`;
+    const rows = jk.rows.map(r => `<tr><td>${esc(r.jk)}</td>${jkAreas.map(a => `<td align="right">${r.counts[a] || 0}</td>`).join("")}<td align="right"><b>${r.total}</b></td></tr>`).join("");
+    const foot = `<tr style="font-weight:bold;border-top:2px solid #1f3a5f"><td>All Jamatkhanas</td>${jkAreas.map(a => `<td align="right">${jk.colTotals[a] || 0}</td>`).join("")}<td align="right">${jk.grand}</td></tr>`;
+    jkSection = `
+      <h2 style="font-family:Georgia,serif;color:#1f3a5f;margin:26px 0 8px">Allocations by Ceremony Jamatkhana</h2>
+      <div style="overflow-x:auto"><table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px">
+        <thead style="background:#1f3a5f;color:#fff">${head}</thead><tbody>${rows}${foot}</tbody></table></div>`;
+  }
+
   const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#222;line-height:1.45">
     <h1 style="font-family:Georgia,serif;color:#1f3a5f;font-size:20px;margin:0 0 2px">Volunteer Allocation — Daily Digest</h1>
     <div style="color:#666;font-size:13px">${esc(today)}</div>
     <div style="margin:14px 0 4px;font-size:14px;background:#f4f7fb;border:1px solid #dce5f0;border-radius:8px;padding:10px 12px">
       <b>All regions</b> &nbsp;—&nbsp; ${summary}</div>
     ${sections.join("")}
-    <p style="color:#999;font-size:12px;margin-top:24px">Assigned = Stable with a duty · Accepted = confirmed / iVol-ready · Call pending = assigned to a caller, not yet completed · Declined = withdrew. Generated automatically; reply-to is unmonitored.</p>
+    ${jkSection}
+    <p style="color:#999;font-size:12px;margin-top:24px">Assigned = Stable with a duty · Accepted = confirmed / iVol-ready · Call pending = assigned to a caller, not yet completed · Declined = withdrew. Allocations-by-JK counts everyone holding an area. Generated automatically; reply-to is unmonitored.</p>
   </body></html>`;
   const subject = `Volunteer Digest — ${today} (All: ${g.assignedDuty} assigned, ${g.accepted} accepted, ${g.callPending} pending)`;
   return { html, subject, grand: g };

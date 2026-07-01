@@ -37,4 +37,34 @@ function rollupRecords(records, acc) {
 
 const rowsFromByArea = (byArea) => Object.keys(byArea).sort().map(area => ({ area, ...byArea[area] }));
 
-module.exports = { lastOutcome, blankCounts, rollupRecords, rowsFromByArea };
+// Allocations by Ceremony JK × area: for each JK, how many volunteers landed in each area.
+// Only counts people who actually hold an area (final_area set); leadership is excluded.
+function rollupByJk(records, acc) {
+  const byJk = (acc && acc.byJk) || {};
+  const areas = (acc && acc.areas) || new Set();
+  for (const v of records || []) {
+    if (v.callable_status === "Leadership - Do Not Allocate") continue;
+    const area = v.final_area;
+    if (!area) continue;
+    const jk = v.ceremony_jk || "(no JK)";
+    areas.add(area);
+    const row = byJk[jk] || (byJk[jk] = {});
+    row[area] = (row[area] || 0) + 1;
+  }
+  return { byJk, areas };
+}
+
+// Shape the JK rollup into sorted rows [{ jk, counts:{area:n}, total }] plus per-area column totals.
+function jkGrid(byJk, areasArr) {
+  const rows = Object.keys(byJk).sort().map(jk => {
+    const counts = byJk[jk];
+    const total = areasArr.reduce((s, a) => s + (counts[a] || 0), 0);
+    return { jk, counts, total };
+  });
+  const colTotals = {};
+  let grand = 0;
+  for (const a of areasArr) { colTotals[a] = rows.reduce((s, r) => s + (r.counts[a] || 0), 0); grand += colTotals[a]; }
+  return { rows, colTotals, grand };
+}
+
+module.exports = { lastOutcome, blankCounts, rollupRecords, rowsFromByArea, rollupByJk, jkGrid };

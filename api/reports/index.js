@@ -1,5 +1,5 @@
 const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
-const { rollupRecords, rowsFromByArea } = require("../shared/rollup");
+const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid } = require("../shared/rollup");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -38,13 +38,17 @@ module.exports = async function (context, req) {
     const container = await getContainer(DATA_CONTAINER);
 
     const acc = { byArea: {}, totals: { assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 } };
+    const jkAcc = { byJk: {}, areas: new Set() };
     for (const region of regions) {
       const { records } = await readRegion(container, region);
       rollupRecords(records, acc);
+      rollupByJk(records, jkAcc);
     }
     const rows = rowsFromByArea(acc.byArea);
     const totals = acc.totals;
-    context.res = { body: { region: scopeRegions.includes(qRegion) ? qRegion : "All", regions: scopeRegions, rows, totals } };
+    const jkAreas = [...jkAcc.areas].sort();
+    const jk = jkGrid(jkAcc.byJk, jkAreas);
+    context.res = { body: { region: scopeRegions.includes(qRegion) ? qRegion : "All", regions: scopeRegions, rows, totals, jkAreas, jkRows: jk.rows, jkColTotals: jk.colTotals, jkGrand: jk.grand } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }

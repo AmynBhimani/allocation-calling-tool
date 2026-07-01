@@ -35,6 +35,9 @@
     { "route": "/api/fileimport", "allowedRoles": ["superadmin"] },
     { "route": "/api/biupdates", "allowedRoles": ["superadmin", "admin"] },
     { "route": "/api/reports", "allowedRoles": ["superadmin", "admin"] },
+    { "route": "/api/allvolunteers", "allowedRoles": ["superadmin", "admin"] },
+    { "route": "/all-volunteers.html", "allowedRoles": ["superadmin", "admin"] },
+
     { "route": "/api/roleadmin", "allowedRoles": ["superadmin", "admin", "quarterback"] },
     { "route": "/api/events", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] },
     { "route": "/admin.html", "allowedRoles": ["superadmin", "admin"] },

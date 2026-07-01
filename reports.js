@@ -8,6 +8,7 @@ async function boot(){
   ["BC","Prairies","Edmonton"].forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=r;document.getElementById('regionSel').appendChild(o);});
   document.getElementById('regionSel').addEventListener('change',e=>load(e.target.value));
   document.getElementById('exportBtn').addEventListener('click',exportCsv);
+  var jkb=document.getElementById('exportJkBtn'); if(jkb) jkb.addEventListener('click',exportJkCsv);
   await load("");
 }
 
@@ -50,6 +51,33 @@ function render(){
     <td class="num"><b>${t.declined.toLocaleString()}</b></td>
   </tr>`;
   document.getElementById('count').textContent=`${DATA.rows.length} area(s) · region: ${DATA.region}`;
+  renderJk();
+}
+
+function renderJk(){
+  const areas=DATA.jkAreas||[], rows=DATA.jkRows||[], col=DATA.jkColTotals||{};
+  const head=document.getElementById('jkHead'), body=document.getElementById('jkRows'), foot=document.getElementById('jkFoot');
+  if(!head||!body||!foot) return;
+  if(!rows.length){
+    head.innerHTML=''; body.innerHTML=`<tr><td><div class="empty">No allocations yet for ${DATA.region}.</div></td></tr>`;
+    foot.innerHTML=''; document.getElementById('jkCount').textContent=''; return;
+  }
+  head.innerHTML=`<tr><th>Ceremony Jamatkhana</th>${areas.map(a=>`<th class="num">${a}</th>`).join('')}<th class="num">Total</th></tr>`;
+  body.innerHTML=rows.map(r=>`<tr><td><div class="name">${r.jk}</div></td>${areas.map(a=>`<td class="num">${(r.counts[a]||0)?(r.counts[a]).toLocaleString():'·'}</td>`).join('')}<td class="num"><b>${r.total.toLocaleString()}</b></td></tr>`).join('');
+  foot.innerHTML=`<tr class="totalrow"><td><b>All Jamatkhanas</b></td>${areas.map(a=>`<td class="num"><b>${(col[a]||0).toLocaleString()}</b></td>`).join('')}<td class="num"><b>${(DATA.jkGrand||0).toLocaleString()}</b></td></tr>`;
+  document.getElementById('jkCount').textContent=`${rows.length} Jamatkhana(s) · ${areas.length} area(s) · region: ${DATA.region}`;
+}
+
+function exportJkCsv(){
+  const areas=DATA.jkAreas||[], rows=DATA.jkRows||[], col=DATA.jkColTotals||{};
+  const esc=s=>{ s=String(s==null?'':s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const lines=[['Ceremony Jamatkhana',...areas,'Total'].map(esc).join(',')];
+  for(const r of rows) lines.push([r.jk,...areas.map(a=>r.counts[a]||0),r.total].map(esc).join(','));
+  lines.push(['All Jamatkhanas',...areas.map(a=>col[a]||0),(DATA.jkGrand||0)].map(esc).join(','));
+  const blob=new Blob(["\ufeff"+lines.join("\r\n")],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download=`allocations-by-jk-${(DATA.region||'all')}-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 function exportCsv(){

@@ -12,13 +12,33 @@ on:
 jobs:
   send:
     runs-on: ubuntu-latest
+    env:
+      # Works whether you saved these as repository Variables or Secrets.
+      DIGEST_URL: ${{ vars.DIGEST_URL || secrets.DIGEST_URL }}
+      DIGEST_TRIGGER_KEY: ${{ secrets.DIGEST_TRIGGER_KEY || vars.DIGEST_TRIGGER_KEY }}
     steps:
       - name: Trigger daily digest
         run: |
-          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
-            -H "x-digest-key: ${{ secrets.DIGEST_TRIGGER_KEY }}" \
-            "${{ vars.DIGEST_URL }}/api/dailyDigest")
+          set -u
+          if [ -z "${DIGEST_URL:-}" ]; then
+            echo "::error::DIGEST_URL is not set. Add it under Settings -> Secrets and variables -> Actions -> Variables, value https://<your-app> (no trailing /api)."
+            exit 1
+          fi
+          if [ -z "${DIGEST_TRIGGER_KEY:-}" ]; then
+            echo "::error::DIGEST_TRIGGER_KEY is not set. Add it under Settings -> Secrets and variables -> Actions -> Secrets, matching the app setting."
+            exit 1
+          fi
+          base="${DIGEST_URL%/}"                 # strip any trailing slash
+          base="${base%/api/dailyDigest}"        # tolerate someone pasting the full path
+          url="$base/api/dailyDigest"
+          echo "Calling $url"
+          code=$(curl -sS -m 60 -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-digest-key: $DIGEST_TRIGGER_KEY" "$url") \
+            || { rc=$?; echo "::error::curl failed (exit $rc). If exit 3, DIGEST_URL is malformed - it must start with https:// and be just the host."; exit 1; }
           echo "HTTP $code"
-          cat /tmp/resp.json || true
-          echo
-          test "$code" = "200"
+          echo "Response:"; cat /tmp/resp.json 2>/dev/null || true; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Digest endpoint returned HTTP $code (expected 200). 401 = key mismatch; 500 = email/storage settings missing; 404 = wrong DIGEST_URL or not deployed yet."
+            exit 1
+          fi
+          echo "Digest sent successfully."

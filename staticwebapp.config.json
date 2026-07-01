@@ -50,6 +50,7 @@
     { "route": "/caller.html", "allowedRoles": ["superadmin", "admin", "caller"] },
     { "route": "/api/assign", "allowedRoles": ["superadmin", "admin", "quarterback"] },
     { "route": "/api/calls", "allowedRoles": ["superadmin", "admin", "caller"] },
+    { "route": "/api/release", "allowedRoles": ["anonymous"] },
     { "route": "/api/volunteers", "allowedRoles": ["superadmin", "admin", "dutyteam"] },
     { "route": "/api/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] },
     { "route": "/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] }

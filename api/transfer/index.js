@@ -207,6 +207,7 @@ module.exports = async function (context, req) {
 
     const seenIds = new Set();
     function applyTo(v) {
+      if (v.released_to_pool) return v;   // deliberately released to the pool; never re-hold from review
       const e = byId.get(String(v.user_id));
       if (!e) return v;
       seenIds.add(String(v.user_id));

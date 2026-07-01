@@ -18,7 +18,7 @@ function getPrincipal(req) {
 // A volunteer is "touched" (call state to preserve) if reconciliation/calling has acted on them.
 function isTouched(v) {
   return (Array.isArray(v.activity_log) && v.activity_log.length > 0) || !!v.assigned_caller || !!v.ivol_entered
-    || v.callable_status === "Leadership - Do Not Allocate";
+    || v.callable_status === "Leadership - Do Not Allocate" || !!v.released_to_pool;
 }
 
 module.exports = async function (context, req) {

@@ -1,6 +1,6 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { getContainer, readRegion, mergeRegion, REGIONS, readDidars } = require("../shared/store");
-const { computeCallableStatus, seedEventAssignments } = require("../shared/status");
+const { computeCallableStatus, seedEventAssignments, callerLocked } = require("../shared/status");
 
 const CONN = process.env.RESPONSES_STORAGE;                       // shared volreviewstore account
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -109,6 +109,79 @@ function makeWriteinRecord(a, didars) {
   return base;
 }
 
+// Per-volunteer migration logic, extracted so it can be unit-tested directly. `ctx` carries the
+// state the handler builds: { byId, report, seenIds, idInfo, commit, email, didars }.
+// Behavior is identical to the inline version; the handler calls it once per existing record.
+function applyMigration(v, ctx) {
+  const { byId, report, seenIds, idInfo, commit, email, didars } = ctx;
+  if (v.released_to_pool) return v;   // deliberately released to the pool; never re-hold from review
+  // Never let a migration disturb anyone already on a caller's list or called/accepted/confirmed —
+  // even if a reviewer has since typed them into an area (which could be a conflict). This prevents
+  // an accepted person from being pulled back into reconciliation. This guard supersedes the
+  // "reviewed referral" reopen logic below for these people.
+  if (callerLocked(v) || v.assigned_caller) {
+    if (byId.has(String(v.user_id))) {
+      seenIds.add(String(v.user_id));   // they have a review entry; count as seen, not "unmatched"
+      report.protectedLocked++;
+      if (report.protectedLockedList.length < 300) {
+        const info = idInfo.get(String(v.user_id)) || {};
+        report.protectedLockedList.push({ user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || info.name || "", region: v.region || info.region || "", area: v.final_area || null });
+      }
+    }
+    return v;
+  }
+  const e = byId.get(String(v.user_id));
+  if (!e) return v;
+  seenIds.add(String(v.user_id));
+  const d = decisionFor(e);
+  report.matched++;
+  if (d.final_area) report.toStable++;
+  else if (d.conflict_claims.length >= 2) report.toReconciliation++;
+  else report.noArea++;
+  if (d.leader) report.leaders++;
+
+  const wasCalled = !!v.assigned_caller || !!v.call_done || !!v.call_outcome || !!v.ivol_ready || !!v.ivol_entered;
+  const reviewedReferral = wasCalled && !!d.final_area && !!v.final_area && d.final_area !== v.final_area;
+  if (reviewedReferral) {
+    report.reviewedReferrals++;
+    if (report.reviewedReferralList.length < 300) {
+      const info = idInfo.get(String(v.user_id)) || {};
+      report.reviewedReferralList.push({ user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || info.name || "", region: v.region || info.region || "", from: v.final_area, to: d.final_area });
+    }
+  }
+
+  if (!commit) return v;
+  const nv = { ...v };
+  nv.conflict_claims = d.conflict_claims;
+  nv.leader_flag = d.leader || !!nv.leader_flag;
+  nv.never_reviewed = false;
+  nv.activity_log = nv.activity_log || [];
+
+  if (reviewedReferral) {
+    nv.referred_from = v.final_area;
+    nv.final_area = d.final_area;
+    nv.assigned_caller = null;            // receiving area's quarterback reassigns
+    nv.call_done = false;                 // back in the active calling queue
+    nv.call_outcome = null;
+    nv.ivol_ready = false;
+    nv.confirm_token = null; nv.confirm_sent_at = null; nv.confirmed_at = null;
+    if (v.ivol_entered) nv.bi_correction_needed = true;   // was entered in BI under the old area
+    nv.referral_reason = "Reopened after a new affinity review.";
+    nv.event_assignments = seedEventAssignments({ ...nv, event_assignments: [] }, didars); // fresh rows for the new area; old-area captures dropped
+    nv.callable_status = computeCallableStatus(nv);
+    nv.activity_log.push({ ts: new Date().toISOString(), actor: email || "transfer",
+      action: "reviewed_referral", from: nv.referred_from, to: nv.final_area, note: nv.referral_reason });
+    return nv;
+  }
+
+  nv.final_area = d.final_area;
+  nv.callable_status = computeCallableStatus(nv);
+  if (nv.final_area) nv.event_assignments = seedEventAssignments(nv, didars);
+  nv.activity_log.push({ ts: new Date().toISOString(), actor: email || "transfer",
+    action: "transfer_reconcile", to: nv.final_area || null, claims: d.conflict_claims.length });
+  return nv;
+}
+
 module.exports = async function (context, req) {
   try {
     const principal = getPrincipal(req);
@@ -197,6 +270,7 @@ module.exports = async function (context, req) {
       writtenInContested: writeinContested.length, reconcileTotal: reviewContested + writeinContested.length,
       matched: 0, toStable: 0, toReconciliation: 0, leaders: 0, noArea: 0,
       reviewedReferrals: 0, reviewedReferralList: [],
+      protectedLocked: 0, protectedLockedList: [],
       reviewIdsNotInWorkspace: 0, unknownAreas: [], byRegion: {},
       writtenIn: { total: added.length, rawEntries: addedRaw, matchedByEmail: addedByEmail,
         imported: addedImported, duplicateFlagged: addedDuplicateFlagged, noRegion: addedNoRegion },
@@ -206,63 +280,7 @@ module.exports = async function (context, req) {
     report.unknownAreas = [...unknown];
 
     const seenIds = new Set();
-    function applyTo(v) {
-      if (v.released_to_pool) return v;   // deliberately released to the pool; never re-hold from review
-      const e = byId.get(String(v.user_id));
-      if (!e) return v;
-      seenIds.add(String(v.user_id));
-      const d = decisionFor(e);
-      report.matched++;
-      if (d.final_area) report.toStable++;
-      else if (d.conflict_claims.length >= 2) report.toReconciliation++;
-      else report.noArea++;
-      if (d.leader) report.leaders++;
-
-      // A volunteer who has ALREADY been through calling, whose fresh review now lands them in a
-      // DIFFERENT area, is reopened into that new area — same shape as a caller's decline-referral,
-      // but triggered by the review migration. Their stale call state is cleared so the receiving
-      // area re-calls them, and a note records why.
-      const wasCalled = !!v.assigned_caller || !!v.call_done || !!v.call_outcome || !!v.ivol_ready || !!v.ivol_entered;
-      const reviewedReferral = wasCalled && !!d.final_area && !!v.final_area && d.final_area !== v.final_area;
-      if (reviewedReferral) {
-        report.reviewedReferrals++;
-        if (report.reviewedReferralList.length < 300) {
-          const info = idInfo.get(String(v.user_id)) || {};
-          report.reviewedReferralList.push({ user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || info.name || "", region: v.region || info.region || "", from: v.final_area, to: d.final_area });
-        }
-      }
-
-      if (!commit) return v;
-      const nv = { ...v };
-      nv.conflict_claims = d.conflict_claims;
-      nv.leader_flag = d.leader || !!nv.leader_flag;
-      nv.never_reviewed = false;
-      nv.activity_log = nv.activity_log || [];
-
-      if (reviewedReferral) {
-        nv.referred_from = v.final_area;
-        nv.final_area = d.final_area;
-        nv.assigned_caller = null;            // receiving area's quarterback reassigns
-        nv.call_done = false;                 // back in the active calling queue
-        nv.call_outcome = null;
-        nv.ivol_ready = false;
-        nv.confirm_token = null; nv.confirm_sent_at = null; nv.confirmed_at = null;
-        if (v.ivol_entered) nv.bi_correction_needed = true;   // was entered in BI under the old area
-        nv.referral_reason = "Reopened after a new affinity review.";
-        nv.event_assignments = seedEventAssignments({ ...nv, event_assignments: [] }, didars); // fresh rows for the new area; old-area captures dropped
-        nv.callable_status = computeCallableStatus(nv);
-        nv.activity_log.push({ ts: new Date().toISOString(), actor: email || "transfer",
-          action: "reviewed_referral", from: nv.referred_from, to: nv.final_area, note: nv.referral_reason });
-        return nv;
-      }
-
-      nv.final_area = d.final_area;
-      nv.callable_status = computeCallableStatus(nv);
-      if (nv.final_area) nv.event_assignments = seedEventAssignments(nv, didars);
-      nv.activity_log.push({ ts: new Date().toISOString(), actor: email || "transfer",
-        action: "transfer_reconcile", to: nv.final_area || null, claims: d.conflict_claims.length });
-      return nv;
-    }
+    const applyTo = (v) => applyMigration(v, { byId, report, seenIds, idInfo, commit, email, didars });
 
     for (const region of REGIONS) {
       const newOnes = writeinsByRegion[region] || [];
@@ -290,3 +308,6 @@ module.exports = async function (context, req) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }
 };
+
+module.exports.applyMigration = applyMigration;
+module.exports.decisionFor = decisionFor;

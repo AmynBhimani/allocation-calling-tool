@@ -26,6 +26,8 @@ function streamToString(s) {
 }
 const normEmail = (e) => String(e || "").toLowerCase().trim();
 const normName = (f, l) => (String(f || "") + " " + String(l || "")).toLowerCase().replace(/\s+/g, " ").trim();
+// Digits only, last 10 (drops formatting and a leading country code). Fewer than 10 digits = unusable.
+const normPhone = (p) => { const d = String(p || "").replace(/\D/g, ""); return d.length >= 10 ? d.slice(-10) : ""; };
 
 // Walk every reviewer blob. Build:
 //   byId    : user_id -> { areas:Set, leader:bool }   (people marked active under a BI id)
@@ -198,6 +200,7 @@ module.exports = async function (context, req) {
     // Pre-pass: read all shards once to index the workspace by email and by name.
     const emailIndex = new Map();   // normEmail -> { region, user_id, name }
     const nameIndex = new Map();    // normName  -> [ { region, user_id, email } ]
+    const phoneIndex = new Map();   // normPhone -> [ { region, user_id, email, name } ]  (cell/home/work)
     const idInfo = new Map();       // user_id   -> { name, region }
     const recordsByRegion = {};
     for (const region of REGIONS) {
@@ -213,6 +216,13 @@ module.exports = async function (context, req) {
         if (em && !emailIndex.has(em)) emailIndex.set(em, { region, user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() });
         const nm = normName(v.first, v.last);
         if (nm) { if (!nameIndex.has(nm)) nameIndex.set(nm, []); nameIndex.get(nm).push({ region, user_id: v.user_id, email: v.email || "", name: ((v.first || "") + " " + (v.last || "")).trim() }); }
+        const seenPh = new Set();   // don't index the same number twice for one person (e.g. cell === home)
+        for (const ph of [normPhone(v.cell_phone), normPhone(v.home_phone), normPhone(v.work_phone)]) {
+          if (!ph || seenPh.has(ph)) continue;
+          seenPh.add(ph);
+          if (!phoneIndex.has(ph)) phoneIndex.set(ph, []);
+          phoneIndex.get(ph).push({ region, user_id: v.user_id, email: v.email || "", name: ((v.first || "") + " " + (v.last || "")).trim() });
+        }
       }
     }
 
@@ -251,6 +261,12 @@ module.exports = async function (context, req) {
     const writeinContested = [];   // imported write-ins claimed in 2+ areas (also land "In reconciliation")
     const reviewActiveRaw = byId.size;   // people marked active in review cells, BEFORE folding write-ins
     let addedByEmail = 0, addedImported = 0, addedDuplicateFlagged = 0, addedNoRegion = 0, emailFoldedNew = 0;
+    let addedByName = 0;
+    let addedByPhone = 0;
+    const resolvedByName = [];       // JK-less write-ins folded into a UNIQUE existing person by name
+    const ambiguousNameMatch = [];   // JK-less write-ins whose name matched 2+ people — left for a human
+    const resolvedByPhone = [];      // JK-less write-ins folded into a UNIQUE existing person by phone
+    const ambiguousPhoneMatch = [];  // JK-less write-ins whose phone matched 2+ people (shared line)
     for (const a of added) {
       const em = normEmail(a.email);
       if (em && emailIndex.has(em)) {
@@ -262,7 +278,51 @@ module.exports = async function (context, req) {
         continue;
       }
       const region = regionFromJk(a.ceremonyJk);
-      if (!region) { addedNoRegion++; continue; }     // can't place without a region — reported, not imported
+      if (!region) {
+        // No usable JK to place them on their own. Before leaving them hanging, see if they already
+        // exist in the allocation tool under a recognized JK. Fold in ONLY on a unique match — that
+        // inherits their JK/region and avoids creating a JK-less record. Try phone, then name.
+        // 1) Phone (cell/home/work). Strong signal, but a shared household line can hit 2+ people,
+        //    so we only fold on a unique match and surface shared-line hits for a human.
+        const ph = normPhone(a.phone);
+        if (ph) {
+          const raw = phoneIndex.get(ph) || [];
+          const ids = [...new Set(raw.map(c => String(c.user_id)))];   // distinct people, not index entries
+          if (ids.length === 1) {
+            const w = raw.find(c => String(c.user_id) === ids[0]);
+            let e = byId.get(String(w.user_id));
+            if (!e) { e = { areas: new Set(), leader: false }; byId.set(String(w.user_id), e); emailFoldedNew++; }
+            for (const ar of a.areas) e.areas.add(ar);
+            addedByPhone++;
+            resolvedByPhone.push({ name: ((a.first || "") + " " + (a.last || "")).trim(), areas: [...a.areas].sort(),
+              matched_user_id: w.user_id, region: w.region, matched_name: w.name || "" });
+            continue;
+          }
+          if (ids.length >= 2) {
+            ambiguousPhoneMatch.push({ name: ((a.first || "") + " " + (a.last || "")).trim(), areas: [...a.areas].sort(),
+              candidates: raw.filter((c, i, arr) => arr.findIndex(x => String(x.user_id) === String(c.user_id)) === i).slice(0, 5).map(c => ({ user_id: c.user_id, region: c.region, name: c.name || "" })) });
+          }
+        }
+        // 2) Unique name match.
+        const nmz = normName(a.first, a.last);
+        const cands = nmz ? (nameIndex.get(nmz) || []) : [];
+        if (cands.length === 1) {
+          const w = cands[0];
+          let e = byId.get(String(w.user_id));
+          if (!e) { e = { areas: new Set(), leader: false }; byId.set(String(w.user_id), e); emailFoldedNew++; }
+          for (const ar of a.areas) e.areas.add(ar);
+          addedByName++;
+          resolvedByName.push({ name: ((a.first || "") + " " + (a.last || "")).trim(), areas: [...a.areas].sort(),
+            matched_user_id: w.user_id, region: w.region, matched_email: w.email || "" });
+          continue;
+        }
+        if (cands.length >= 2) {
+          ambiguousNameMatch.push({ name: ((a.first || "") + " " + (a.last || "")).trim(), areas: [...a.areas].sort(),
+            candidates: cands.slice(0, 5).map(c => ({ user_id: c.user_id, region: c.region, email: c.email || "" })) });
+        }
+        addedNoRegion++;     // still can't place: no JK, no email match, and no unique name match
+        continue;
+      }
       const nm = normName(a.first, a.last);
       a.candidates = nm ? (nameIndex.get(nm) || []) : [];   // consumed by makeWriteinRecord for the dup flag
       const rec = makeWriteinRecord(a, didars);
@@ -300,7 +360,11 @@ module.exports = async function (context, req) {
       protectedLocked: 0, protectedLockedList: [],
       reviewIdsNotInWorkspace: 0, unknownAreas: [], byRegion: {},
       writtenIn: { total: added.length, rawEntries: addedRaw, matchedByEmail: addedByEmail,
-        imported: addedImported, duplicateFlagged: addedDuplicateFlagged, noRegion: addedNoRegion },
+        matchedByName: addedByName, matchedByPhone: addedByPhone, imported: addedImported, duplicateFlagged: addedDuplicateFlagged, noRegion: addedNoRegion },
+      resolvedByName: resolvedByName.slice(0, 300), resolvedByNameCount: resolvedByName.length,
+      ambiguousNameMatch: ambiguousNameMatch.slice(0, 300), ambiguousNameMatchCount: ambiguousNameMatch.length,
+      resolvedByPhone: resolvedByPhone.slice(0, 300), resolvedByPhoneCount: resolvedByPhone.length,
+      ambiguousPhoneMatch: ambiguousPhoneMatch.slice(0, 300), ambiguousPhoneMatchCount: ambiguousPhoneMatch.length,
     };
     const unknown = new Set();
     for (const [, e] of byId) for (const a of e.areas) if (!AREAS.has(a)) unknown.add(a);

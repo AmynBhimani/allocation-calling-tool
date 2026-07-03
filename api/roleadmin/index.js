@@ -5,7 +5,7 @@ const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
 
 // Roles manageable here. superadmin is excluded — controlled by SUPER_ADMIN_EMAILS so the tool
 // can never be locked out via the role store.
-const MANAGEABLE = ["admin", "dutyteam", "quarterback", "caller"];
+const MANAGEABLE = ["admin", "dutyteam", "quarterback", "caller", "ivoladmin", "leadership"];
 const REGIONS = ["BC", "Prairies", "Edmonton"];
 const AREAS = [
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
@@ -140,8 +140,13 @@ module.exports = async function (context, req) {
         if (isSuper && !MANAGEABLE.includes(role)) {
           context.res = { status: 400, body: { error: `Role must be one of: ${MANAGEABLE.join(", ")}. (Super Admin is managed via app settings.)` } }; return;
         }
-        if (!eventId) { context.res = { status: 400, body: { error: "Tag this person to an event." } }; return; }
-        if (!evRegions.length) { context.res = { status: 400, body: { error: "That event has no regions set — set them on the Events screen first." } }; return; }
+        // iVolunteer Administrator and Leadership are org-wide roles: no event/region scope, one entry.
+        const GLOBAL_ROLES = ["ivoladmin", "leadership"];
+        const isGlobal = GLOBAL_ROLES.includes(role);
+        if (!isGlobal) {
+          if (!eventId) { context.res = { status: 400, body: { error: "Tag this person to an event." } }; return; }
+          if (!evRegions.length) { context.res = { status: 400, body: { error: "That event has no regions set — set them on the Events screen first." } }; return; }
+        }
         if (role === "quarterback" || role === "caller") {
           if (!areas.length) { context.res = { status: 400, body: { error: "Pick at least one area." } }; return; }
           if (areas.some(a => !AREAS.includes(a))) { context.res = { status: 400, body: { error: "One or more areas are invalid." } }; return; }
@@ -149,10 +154,12 @@ module.exports = async function (context, req) {
         // Expand the event tag into one role entry per region it covers (× area for qb/caller),
         // stamping the event so the screen can group by it. The region on each row drives the data wall.
         // A quarterback only creates the area×region combos within their own scope; out-of-scope
-        // regions of the same event belong to other quarterbacks.
+        // regions of the same event belong to other quarterbacks. Global roles get a single scopeless row.
         const toAdd = [];
         const allow = (a, r) => isSuper || scopeHas(myScopes, a, r);
-        if (role === "quarterback" || role === "caller") {
+        if (isGlobal) {
+          toAdd.push({ email: reqEmail, role });
+        } else if (role === "quarterback" || role === "caller") {
           for (const r of evRegions) for (const a of areas) if (allow(a, r)) toAdd.push({ email: reqEmail, role, area: a, region: r, event: eventId });
         } else {
           for (const r of evRegions) toAdd.push({ email: reqEmail, role, region: r, event: eventId });

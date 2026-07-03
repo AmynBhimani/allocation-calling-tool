@@ -38,13 +38,13 @@ module.exports = async function (context, req) {
     const principal = getPrincipal(req);
     const email = emailOf(principal);
     const roles = (principal && principal.userRoles) || [];
-    if (!email || !(roles.includes("superadmin") || roles.includes("admin"))) {
+    if (!email || !(roles.includes("superadmin") || roles.includes("admin") || roles.includes("leadership"))) {
       context.res = { status: 403, body: { error: "Admin or Super Admin only." } }; return;
     }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
     const isSuper = roles.includes("superadmin");
-    const allowed = isSuper ? null : allowedRegionsFor(await readRolesStore(), email);
+    const allowed = (isSuper || roles.includes("leadership")) ? null : allowedRegionsFor(await readRolesStore(), email);
     const scopeRegions = allowed ? REGIONS.filter(r => allowed.includes(r)) : REGIONS;
     const only = req.query && req.query.region;
     const regions = (only && scopeRegions.includes(only)) ? [only] : scopeRegions;

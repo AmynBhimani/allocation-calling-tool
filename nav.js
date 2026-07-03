@@ -3,12 +3,12 @@
 (function(){
   var NAV=[
     {href:'/index.html',       label:'Reconcile',       roles:['superadmin','admin','dutyteam']},
-    {href:'/all-volunteers.html',label:'All Volunteers',    roles:['superadmin','admin']},
+    {href:'/all-volunteers.html',label:'All Volunteers',    roles:['superadmin','admin','leadership']},
     {href:'/quarterback.html', label:'Assign Callers',   roles:['superadmin','admin','quarterback']},
     {href:'/caller.html',      label:'My Calls',         roles:['superadmin','admin','caller']},
-    {href:'/ivol.html',        label:'iVol report',      roles:['superadmin','admin']},
-    {href:'/biupdates.html',   label:'BI updates',       roles:['superadmin','admin']},
-    {href:'/reports.html',     label:'Dashboard',        roles:['superadmin','admin']},
+    {href:'/ivol.html',        label:'iVol report',      roles:['superadmin','admin','ivoladmin']},
+    {href:'/biupdates.html',   label:'BI updates',       roles:['superadmin','admin','ivoladmin']},
+    {href:'/reports.html',     label:'Dashboard',        roles:['superadmin','admin','leadership']},
     {href:'/duties.html',      label:'Duties',           roles:['superadmin','admin','quarterback']},
     {href:'/events.html',      label:'Events',           roles:['superadmin','admin']},
     {href:'/admin.html',       label:'Team & Roles',     roles:['superadmin','admin']},

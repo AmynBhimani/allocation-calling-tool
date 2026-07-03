@@ -6,66 +6,327 @@
         "externalid": {
           "registration": {
             "clientIdSettingName": "EXTERNALID_CLIENT_ID",
-            "clientCredential": { "clientSecretSettingName": "EXTERNALID_CLIENT_SECRET" },
+            "clientCredential": {
+              "clientSecretSettingName": "EXTERNALID_CLIENT_SECRET"
+            },
             "openIdConnectConfiguration": {
               "wellKnownOpenIdConfiguration": "https://630d47b9-754d-45e1-ba64-2c1e0e0e8ea0.ciamlogin.com/630d47b9-754d-45e1-ba64-2c1e0e0e8ea0/v2.0/.well-known/openid-configuration"
             }
           },
-          "login": { "nameClaimType": "email", "scopes": ["openid", "profile", "email"] }
+          "login": {
+            "nameClaimType": "email",
+            "scopes": [
+              "openid",
+              "profile",
+              "email"
+            ]
+          }
         }
       }
     }
   },
   "routes": [
-    { "route": "/.auth/login/github", "statusCode": 404 },
-    { "route": "/.auth/login/aad", "statusCode": 404 },
-    { "route": "/api/ping", "allowedRoles": ["anonymous"] },
-    { "route": "/api/dailyDigest", "allowedRoles": ["anonymous"] },
-    { "route": "/unauthorized.html", "allowedRoles": ["anonymous"] },
-    { "route": "/confirm.html", "allowedRoles": ["anonymous"] },
-    { "route": "/api/confirm", "allowedRoles": ["anonymous"] },
-    { "route": "/api/seed", "allowedRoles": ["superadmin"] },
-    { "route": "/api/sync", "allowedRoles": ["superadmin"] },
-    { "route": "/api/backup", "allowedRoles": ["superadmin"] },
-    { "route": "/api/reset", "allowedRoles": ["superadmin"] },
-    { "route": "/api/transfer", "allowedRoles": ["superadmin"] },
-    { "route": "/api/allocate", "allowedRoles": ["superadmin"] },
-    { "route": "/api/ivolreport", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/api/duties", "allowedRoles": ["superadmin", "admin", "quarterback", "dutyteam", "caller"] },
-    { "route": "/api/fileimport", "allowedRoles": ["superadmin"] },
-    { "route": "/api/biupdates", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/api/reports", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/api/allvolunteers", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/all-volunteers.html", "allowedRoles": ["superadmin", "admin"] },
-
-    { "route": "/api/roleadmin", "allowedRoles": ["superadmin", "admin", "quarterback"] },
-    { "route": "/api/events", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] },
-    { "route": "/admin.html", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/events.html", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/quarterback.html", "allowedRoles": ["superadmin", "admin", "quarterback"] },
-    { "route": "/ivol.html", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/duties.html", "allowedRoles": ["superadmin", "admin", "quarterback"] },
-    { "route": "/fileimport.html", "allowedRoles": ["superadmin"] },
-    { "route": "/migration.html", "allowedRoles": ["superadmin"] },
-    { "route": "/allocate.html", "allowedRoles": ["superadmin"] },
-    { "route": "/biupdates.html", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/reports.html", "allowedRoles": ["superadmin", "admin"] },
-    { "route": "/caller.html", "allowedRoles": ["superadmin", "admin", "caller"] },
-    { "route": "/api/assign", "allowedRoles": ["superadmin", "admin", "quarterback"] },
-    { "route": "/api/calls", "allowedRoles": ["superadmin", "admin", "caller"] },
-    { "route": "/api/release", "allowedRoles": ["anonymous"] },
-    { "route": "/api/volunteers", "allowedRoles": ["superadmin", "admin", "dutyteam"] },
-    { "route": "/api/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] },
-    { "route": "/*", "allowedRoles": ["superadmin", "admin", "dutyteam", "quarterback", "caller"] }
+    {
+      "route": "/.auth/login/github",
+      "statusCode": 404
+    },
+    {
+      "route": "/.auth/login/aad",
+      "statusCode": 404
+    },
+    {
+      "route": "/api/ping",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/api/dailyDigest",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/unauthorized.html",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/confirm.html",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/api/confirm",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/api/seed",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/api/sync",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/api/backup",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/api/reset",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/api/transfer",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/api/allocate",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/api/ivolreport",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "ivoladmin"
+      ]
+    },
+    {
+      "route": "/api/duties",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "quarterback",
+        "dutyteam",
+        "caller"
+      ]
+    },
+    {
+      "route": "/api/fileimport",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/api/biupdates",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "ivoladmin"
+      ]
+    },
+    {
+      "route": "/api/reports",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "leadership"
+      ]
+    },
+    {
+      "route": "/api/allvolunteers",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "leadership"
+      ]
+    },
+    {
+      "route": "/all-volunteers.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "leadership"
+      ]
+    },
+    {
+      "route": "/api/roleadmin",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "quarterback"
+      ]
+    },
+    {
+      "route": "/api/events",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "caller"
+      ]
+    },
+    {
+      "route": "/admin.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/events.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/quarterback.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "quarterback"
+      ]
+    },
+    {
+      "route": "/ivol.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "ivoladmin"
+      ]
+    },
+    {
+      "route": "/duties.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "quarterback"
+      ]
+    },
+    {
+      "route": "/fileimport.html",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/migration.html",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/allocate.html",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/biupdates.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "ivoladmin"
+      ]
+    },
+    {
+      "route": "/reports.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "leadership"
+      ]
+    },
+    {
+      "route": "/caller.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "caller"
+      ]
+    },
+    {
+      "route": "/api/assign",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "quarterback"
+      ]
+    },
+    {
+      "route": "/api/calls",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "caller"
+      ]
+    },
+    {
+      "route": "/api/release",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/api/volunteers",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam"
+      ]
+    },
+    {
+      "route": "/api/*",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "caller"
+      ]
+    },
+    {
+      "route": "/*",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "caller"
+      ]
+    }
   ],
   "responseOverrides": {
-    "401": { "redirect": "/.auth/login/externalid", "statusCode": 302 },
-    "403": { "redirect": "/unauthorized.html", "statusCode": 302 }
+    "401": {
+      "redirect": "/.auth/login/externalid",
+      "statusCode": 302
+    },
+    "403": {
+      "redirect": "/unauthorized.html",
+      "statusCode": 302
+    }
   },
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/*.css", "/*.js", "/unauthorized.html"]
+    "exclude": [
+      "/*.css",
+      "/*.js",
+      "/unauthorized.html"
+    ]
   },
-  "globalHeaders": { "cache-control": "no-store" },
-  "platform": { "apiRuntime": "node:18" }
+  "globalHeaders": {
+    "cache-control": "no-store"
+  },
+  "platform": {
+    "apiRuntime": "node:18"
+  }
 }

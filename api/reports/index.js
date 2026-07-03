@@ -24,13 +24,13 @@ module.exports = async function (context, req) {
     const principal = getPrincipal(req);
     const email = emailOf(principal);
     const roles = (principal && principal.userRoles) || [];
-    const allowed = roles.includes("superadmin") || roles.includes("admin");
+    const allowed = roles.includes("superadmin") || roles.includes("admin") || roles.includes("leadership");
     if (!email || !allowed) { context.res = { status: 403, body: { error: "Admin or Super Admin only." } }; return; }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
     // Region wall: super-admins see all; admins are limited to their tagged events' regions.
     const isSuper = roles.includes("superadmin");
-    const allowRegions = isSuper ? null : allowedRegionsFor(await readRolesStore(), email);
+    const allowRegions = (isSuper || roles.includes("leadership")) ? null : allowedRegionsFor(await readRolesStore(), email);
     const scopeRegions = allowRegions ? REGIONS.filter(r => allowRegions.includes(r)) : REGIONS;
 
     const qRegion = String(req.query.region || "").trim();

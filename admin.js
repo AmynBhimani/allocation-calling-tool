@@ -7,12 +7,14 @@ function banner(msg, isErr) {
 }
 function clearBanner(){ document.getElementById('banner').hidden = true; }
 
-const ROLE_LABEL = { admin: "Admin", dutyteam: "Duty Allocation Team", quarterback: "Quarterback", caller: "Caller" };
+const ROLE_LABEL = { admin: "Admin", dutyteam: "Duty Allocation Team", quarterback: "Quarterback", caller: "Caller", ivoladmin: "iVolunteer Administrator", leadership: "Leadership" };
 const ROLE_HINT = {
   admin: "Manages everything within their event's regions. Tag them to an event.",
   dutyteam: "Reconciliation within their event's regions. Tag them to an event.",
   quarterback: "Manages area(s) within their event's regions. Event and at least one area required.",
   caller: "Makes calls for area(s) within their event's regions. Event and at least one area required.",
+  ivoladmin: "iVolunteer Administrator — org-wide access to the iVol report and BI updates. No event needed.",
+  leadership: "Leadership — org-wide read access to All Volunteers and the Dashboard. No event needed.",
 };
 
 async function boot() {
@@ -46,7 +48,8 @@ function clearAreaChecks() {
 function onRoleChange() {
   const role = document.getElementById('role').value;
   const needsArea = role === 'quarterback' || role === 'caller';
-  document.getElementById('eventField').classList.remove('hide'); // every role is event-scoped now
+  const isGlobal = role === 'ivoladmin' || role === 'leadership';   // org-wide, no event/region scope
+  document.getElementById('eventField').classList.toggle('hide', isGlobal);
   document.getElementById('areaField').classList.toggle('hide', !needsArea);
   document.getElementById('roleHint').textContent = ROLE_HINT[role] || "";
 }
@@ -91,7 +94,7 @@ function render(list) {
     if (a.area) g.areas.add(a.area);
   }
   const arr = Object.values(groups);
-  const order = ["admin", "dutyteam", "quarterback", "caller"];
+  const order = ["admin", "ivoladmin", "leadership", "dutyteam", "quarterback", "caller"];
   arr.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role) || (a.event || '').localeCompare(b.event || '') || a.email.localeCompare(b.email));
   document.getElementById('count').textContent = `${arr.length} assignment${arr.length === 1 ? "" : "s"}`;
   rows.innerHTML = arr.map(g => {

@@ -24,7 +24,7 @@ async function readRoleStore() {
   } catch { return []; }
 }
 
-const VALID = ["superadmin", "admin", "dutyteam", "quarterback", "caller"];
+const VALID = ["superadmin", "admin", "dutyteam", "quarterback", "caller", "ivoladmin", "leadership"];
 
 module.exports = async function (context, req) {
   const p = (req.body && req.body) || {};

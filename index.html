@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Duty Allocation Team · Reconciliation</title>
 <link rel="stylesheet" href="styles.css">
+<script>
+// Landing router: the root serves this Reconcile page, but roles that can't use Reconcile should land
+// on their own home tab instead of an empty screen. Runs before the app loads. Reconcile roles stay.
+(function(){
+  try{
+    fetch('/.auth/me').then(function(r){return r.json();}).then(function(me){
+      var roles=(me&&me.clientPrincipal&&me.clientPrincipal.userRoles)||[];
+      var canReconcile=['superadmin','admin','dutyteam'].some(function(r){return roles.indexOf(r)>=0;});
+      if(canReconcile) return;                       // stays on Reconcile
+      var home=[['quarterback','/quarterback.html'],['caller','/caller.html'],
+                ['ivoladmin','/ivol.html'],['leadership','/all-volunteers.html']];
+      for(var i=0;i<home.length;i++){ if(roles.indexOf(home[i][0])>=0){ location.replace(home[i][1]); return; } }
+    }).catch(function(){});
+  }catch(e){}
+})();
+</script>
 </head>
 <body>
 <header class="app">

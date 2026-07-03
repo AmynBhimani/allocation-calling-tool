@@ -301,7 +301,9 @@
         "admin",
         "dutyteam",
         "quarterback",
-        "caller"
+        "caller",
+        "leadership",
+        "ivoladmin"
       ]
     }
   ],

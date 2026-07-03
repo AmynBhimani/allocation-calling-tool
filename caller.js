@@ -181,14 +181,16 @@ function renderPanel(v){
     ? `<div class="dup-alert">⚠ <b>Possible duplicate.</b> A reviewer wrote this person in by hand; they may already be registered${dupCandidateText(v.potential_duplicate)}. Please confirm with them on the call. If they're already registered, mark <b>Duplicate / already registered</b>; otherwise continue as a new volunteer.</div>` : '';
 
   const contact = readonly
-    ? `<div class="contact"><label>Cell</label><div class="phone">${v.cell||'—'}</div><label>Email</label><div>${v.email||'—'}</div></div>`
+    ? `<div class="contact"><label>Cell</label><div class="phone">${v.cell||'—'}</div>${v.home?`<label>Home</label><div class="phone">${escapeHtml(v.home)}</div>`:''}${v.work?`<label>Work</label><div class="phone">${escapeHtml(v.work)}</div>`:''}<label>Email</label><div>${v.email||'—'}</div></div>`
     : `<div class="contact">
          <label>First</label><input id="cFirst" value="${escapeAttr(v.first||'')}">
          <label>Last</label><input id="cLast" value="${escapeAttr(v.last||'')}">
          <label>Cell</label><input id="cCell" value="${escapeAttr(v.cell||'')}">
+         ${v.home?`<label>Home</label><div class="phone">${escapeHtml(v.home)}</div>`:''}
+         ${v.work?`<label>Work</label><div class="phone">${escapeHtml(v.work)}</div>`:''}
          <label>Email</label><input id="cEmail" value="${escapeAttr(v.email||'')}">
        </div>
-       <div class="contact-note">Edits here are saved with the call and flagged for iVol to update in Better Impact (the source of truth).</div>`;
+       <div class="contact-note">Edits here are saved with the call and flagged for iVol to update in Better Impact (the source of truth). Home and Work numbers are shown when available — try them if the cell doesn't reach them.</div>`;
 
   const logHtml = (v.log&&v.log.length)
     ? `<div class="log"><h4>Call history</h4>${v.log.map(e=>`<div class="e"><span class="t">${new Date(e.ts).toLocaleString()}</span> — ${e.outcome}${e.note?': '+escapeHtml(e.note):''}</div>`).join('')}</div>`

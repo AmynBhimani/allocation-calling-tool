@@ -216,7 +216,34 @@ module.exports = async function (context, req) {
       }
     }
 
-    // Resolve the write-ins:
+    // Read-only audit (?audit=1): who did a PRIOR (pre-guard) migration disturb while they were on a
+    // caller's list or called/accepted? Returns them without running any migration.
+    if (req.query && req.query.audit === "1") {
+      const lockedNow = (v) => callerLocked(v) || !!v.assigned_caller;
+      const nm = (v) => ((v.first || "") + " " + (v.last || "")).trim();
+      const inReconciliation = [], reopenedByReferral = [];
+      for (const region of REGIONS) {
+        for (const v of (recordsByRegion[region] || [])) {
+          const claims = Array.isArray(v.conflict_claims) ? v.conflict_claims : [];
+          const contested = v.callable_status === "In reconciliation" || claims.length >= 2;
+          if (contested && lockedNow(v)) {
+            inReconciliation.push({ user_id: v.user_id, name: nm(v), region, jk: v.ceremony_jk || "",
+              signal: v.assigned_caller ? "on a caller's list" : (v.ivol_ready ? "accepted" : "called"),
+              assigned_caller: v.assigned_caller || null, claims });
+          }
+          const ref = (v.activity_log || []).filter(e => e && e.action === "reviewed_referral").slice(-1)[0];
+          if (ref) reopenedByReferral.push({ user_id: v.user_id, name: nm(v), region, jk: v.ceremony_jk || "", from: ref.from || null, to: ref.to || null, when: ref.ts || null });
+        }
+      }
+      const bySort = (a, b) => (a.region + a.name).localeCompare(b.region + b.name);
+      inReconciliation.sort(bySort); reopenedByReferral.sort(bySort);
+      context.res = { body: {
+        note: "People a prior migration disturbed while called or on a caller's list. inReconciliation = knocked into reconciliation (fix: set their final area back on the Reconcile screen, which clears the conflict). reopenedByReferral = moved to a new area with their caller cleared (fix: reassign, or restore from the pre-migration backup).",
+        inReconciliationCount: inReconciliation.length, inReconciliation: inReconciliation.slice(0, 2000),
+        reopenedByReferralCount: reopenedByReferral.length, reopenedByReferral: reopenedByReferral.slice(0, 2000),
+      } };
+      return;
+    }
     //  - email match  -> fold their area(s) into the existing record (no duplicate created)
     //  - everyone else -> import as a brand-new callable No-BI record, flagged "potential duplicate"
     //                     when their name matches an existing person (caller confirms on the call)

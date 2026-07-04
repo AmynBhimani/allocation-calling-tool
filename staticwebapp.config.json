@@ -89,6 +89,12 @@
       ]
     },
     {
+      "route": "/api/jkoverrides",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
       "route": "/api/transfer",
       "allowedRoles": [
         "superadmin"

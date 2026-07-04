@@ -5,6 +5,20 @@ const { computeCallableStatus, seedEventAssignments, callerLocked } = require(".
 const CONN = process.env.RESPONSES_STORAGE;                       // shared volreviewstore account
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const REVIEW_CONTAINER = process.env.RESPONSES_CONTAINER || "reviewer-responses";  // review tool's blobs
+const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
+const JK_OVERRIDES_BLOB = "writein-jk-overrides.json";                             // { match_key: "Ceremony JK" }
+
+// Offline-filled JK corrections for stranded write-ins: match_key -> "Region - Jamatkhana".
+async function readJkOverrides() {
+  if (!CONN) return {};
+  try {
+    const c = BlobServiceClient.fromConnectionString(CONN).getContainerClient(CONFIG_CONTAINER);
+    const b = c.getBlockBlobClient(JK_OVERRIDES_BLOB);
+    if (!(await b.exists())) return {};
+    const obj = JSON.parse(await streamToString((await b.download()).readableStreamBody));
+    return (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
+  } catch { return {}; }
+}
 
 const AREAS = new Set([
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
@@ -193,6 +207,14 @@ module.exports = async function (context, req) {
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
     const { byId, added, reviewerCount, addedRaw } = await aggregateReview();
+
+    // Apply offline-filled JK corrections: a stranded write-in (no JK) whose match_key has an override
+    // inherits that Jamatkhana, so it places normally on this run instead of stranding again.
+    const jkOverrides = await readJkOverrides();
+    let jkOverridesApplied = 0;
+    for (const a of added) {
+      if (!String(a.ceremonyJk || "").trim() && jkOverrides[a.key]) { a.ceremonyJk = jkOverrides[a.key]; jkOverridesApplied++; }
+    }
     const didars = await readDidars();
     const container = await getContainer(DATA_CONTAINER);
     const commit = req.method === "POST" && (req.body || {}).mode === "commit";
@@ -267,6 +289,7 @@ module.exports = async function (context, req) {
     const ambiguousNameMatch = [];   // JK-less write-ins whose name matched 2+ people — left for a human
     const resolvedByPhone = [];      // JK-less write-ins folded into a UNIQUE existing person by phone
     const ambiguousPhoneMatch = [];  // JK-less write-ins whose phone matched 2+ people (shared line)
+    const strandedList = [];         // JK-less write-ins with NO match anywhere — the exportable list
     for (const a of added) {
       const em = normEmail(a.email);
       if (em && emailIndex.has(em)) {
@@ -320,6 +343,12 @@ module.exports = async function (context, req) {
           ambiguousNameMatch.push({ name: ((a.first || "") + " " + (a.last || "")).trim(), areas: [...a.areas].sort(),
             candidates: cands.slice(0, 5).map(c => ({ user_id: c.user_id, region: c.region, email: c.email || "" })) });
         }
+        // Truly stranded: no JK, and no email/phone/name match. Capture with its stable key so the JK
+        // can be filled in offline and re-imported (the key round-trips through the override table).
+        if (strandedList.length < 5000) {
+          strandedList.push({ match_key: a.key, first: a.first || "", last: a.last || "", email: a.email || "",
+            phone: a.phone || "", areas: [...a.areas].sort() });
+        }
         addedNoRegion++;     // still can't place: no JK, no email match, and no unique name match
         continue;
       }
@@ -365,6 +394,8 @@ module.exports = async function (context, req) {
       ambiguousNameMatch: ambiguousNameMatch.slice(0, 300), ambiguousNameMatchCount: ambiguousNameMatch.length,
       resolvedByPhone: resolvedByPhone.slice(0, 300), resolvedByPhoneCount: resolvedByPhone.length,
       ambiguousPhoneMatch: ambiguousPhoneMatch.slice(0, 300), ambiguousPhoneMatchCount: ambiguousPhoneMatch.length,
+      strandedList: strandedList.slice(0, 5000), strandedCount: strandedList.length,
+      jkOverridesApplied,
     };
     const unknown = new Set();
     for (const [, e] of byId) for (const a of e.areas) if (!AREAS.has(a)) unknown.add(a);

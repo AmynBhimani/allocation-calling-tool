@@ -6,7 +6,7 @@ let CALLERS = [];     // [{email, area, region}]
 let EVENTS = [];      // [{id, name, regions}] — Didars this QB can tag a caller to
 let ROLES = [];
 const selected = new Set();
-const filters = { q:"", jk:"", scope:"", area:"", caller:"", unassignedOnly:false, assignedOnly:false, leader:false, nobi:false, referred:false };
+const filters = { q:"", jk:"", scope:"", area:"", caller:"", group:"", unassignedOnly:false, assignedOnly:false, leader:false, nobi:false, referred:false };
 let qtab = "pool";          // "pool" | "done"
 let doneQuery = "";         // search text for the Completed tab
 
@@ -35,6 +35,7 @@ async function boot(){
   document.getElementById('q').addEventListener('input',e=>{filters.q=e.target.value.toLowerCase();render();});
   document.getElementById('jk').addEventListener('change',e=>{filters.jk=e.target.value;render();});
   document.getElementById('areaSel').addEventListener('change',e=>{filters.area=e.target.value;render();});
+  document.getElementById('groupSel').addEventListener('change',e=>{filters.group=e.target.value;render();});
   document.getElementById('scopeSel').addEventListener('change',e=>{filters.scope=e.target.value;filters.jk="";buildJk();render();});
   document.getElementById('callerFilter').addEventListener('change',e=>{filters.caller=e.target.value;render();});
   document.getElementById('clearFilters').addEventListener('click',clearFilters);
@@ -112,7 +113,7 @@ function buildCallerFilter(){
   sel.innerHTML='<option value="">Any caller</option>'+opts.join('');
 }
 function clearFilters(){
-  filters.q=""; filters.jk=""; filters.scope=""; filters.area=""; filters.caller="";
+  filters.q=""; filters.jk=""; filters.scope=""; filters.area=""; filters.caller=""; filters.group="";
   filters.unassignedOnly=false; filters.assignedOnly=false; filters.leader=false; filters.nobi=false; filters.referred=false;
   document.getElementById('q').value=""; document.getElementById('scopeSel').value=""; document.getElementById('callerFilter').value="";
   const aSel=document.getElementById('areaSel'); if(aSel) aSel.value="";
@@ -146,6 +147,14 @@ function matches(v){
   if(filters.nobi && !v.no_bi) return false;
   if(filters.referred && !v.referred_from) return false;
   if(filters.caller && v.assigned!==filters.caller) return false;
+  if(filters.group && !matchesGroup(v,filters.group)) return false;
+  return true;
+}
+// Special-group filter: IFF (interfaith list), Seniors (>65), Young (5–13). Age-based ones need an age on file.
+function matchesGroup(v,g){
+  if(g==="iff") return !!v.iff;
+  if(g==="seniors") return v.age!=null && v.age>65;
+  if(g==="young") return v.age!=null && v.age>=5 && v.age<=13;
   return true;
 }
 

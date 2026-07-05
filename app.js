@@ -5,7 +5,7 @@ const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception 
 let DATA = [];
 let resolvedThisSession = 0;
 let ROLES = [];
-const filters = { q:"", region:"", jk:"", area:"", recon:false, unassigned:false, leadership:false, leader:false, new:false, nobi:false };
+const filters = { q:"", region:"", jk:"", area:"", group:"", recon:false, unassigned:false, leadership:false, leader:false, new:false, nobi:false };
 
 function banner(msg, isErr) {
   const b = document.getElementById('banner');
@@ -35,6 +35,7 @@ async function boot() {
   document.getElementById('region').addEventListener('change',e=>{filters.region=e.target.value;filters.jk="";buildJk();render();});
   document.getElementById('jk').addEventListener('change',e=>{filters.jk=e.target.value;render();});
   document.getElementById('area').addEventListener('change',e=>{filters.area=e.target.value;render();});
+  document.getElementById('groupSel').addEventListener('change',e=>{filters.group=e.target.value;render();});
   document.querySelectorAll('.chip').forEach(ch=>ch.addEventListener('click',()=>{
     const f=ch.dataset.f; filters[f]=!filters[f]; ch.setAttribute('aria-pressed',filters[f]); render();
   }));
@@ -129,6 +130,14 @@ function matches(v){
   if(filters.leader && !v.leader) return false;
   if(filters.new && !v.new) return false;
   if(filters.nobi && !v.no_bi) return false;
+  if(filters.group && !matchesGroup(v,filters.group)) return false;
+  return true;
+}
+// Special-group filter: IFF (interfaith list), Seniors (>65), Young (5–13). Age-based ones need an age on file.
+function matchesGroup(v,g){
+  if(g==="iff") return !!v.iff;
+  if(g==="seniors") return v.age!=null && v.age>65;
+  if(g==="young") return v.age!=null && v.age>=5 && v.age<=13;
   return true;
 }
 

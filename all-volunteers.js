@@ -1,5 +1,5 @@
 let DATA = { volunteers: [], tiles: null };
-const filters = { region: "", jk: "", area: "", q: "", acceptedOnly: false, needsDecisionOnly: false };
+const filters = { region: "", jk: "", area: "", group: "", q: "", acceptedOnly: false, needsDecisionOnly: false };
 const EL = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const LEADERSHIP = "Leadership - Do Not Allocate";
@@ -22,6 +22,7 @@ async function boot() {
   EL("regionSel").addEventListener("change", e => { filters.region = e.target.value; load(); });
   EL("jkSel").addEventListener("change", e => { filters.jk = e.target.value; render(); });
   EL("areaSel").addEventListener("change", e => { filters.area = e.target.value; render(); });
+  EL("groupSel").addEventListener("change", e => { filters.group = e.target.value; render(); });
   EL("q").addEventListener("input", e => { filters.q = e.target.value; render(); });
   EL("acceptedOnly").addEventListener("change", e => { filters.acceptedOnly = e.target.checked; render(); });
   EL("needsDecisionOnly").addEventListener("change", e => { filters.needsDecisionOnly = e.target.checked; render(); });
@@ -81,7 +82,15 @@ function shown() {
     (!filters.area || v.area === filters.area) &&
     (!filters.acceptedOnly || v.accepted) &&
     (!filters.needsDecisionOnly || v.needsDecision) &&
+    (!filters.group || matchesGroup(v, filters.group)) &&
     (!q || v.name.toLowerCase().includes(q)));
+}
+// Special-group filter: IFF (interfaith list), Seniors (>65), Young (5–13). Age-based ones need an age on file.
+function matchesGroup(v, g) {
+  if (g === "iff") return !!v.iff;
+  if (g === "seniors") return v.age != null && v.age > 65;
+  if (g === "young") return v.age != null && v.age >= 5 && v.age <= 13;
+  return true;
 }
 
 function render() {

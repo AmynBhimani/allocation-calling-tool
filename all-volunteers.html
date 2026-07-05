@@ -44,15 +44,34 @@
     <button class="btn ghost2" id="exportBtn">Export CSV</button>
   </div>
 
+  <div id="acceptBar" class="av-accept" hidden style="margin:0 0 12px;padding:10px 12px;border:1px solid #CFE3E6;background:#EEF5F6;border-radius:8px;display:flex;align-items:center;gap:12px">
+    <b id="selCount">0 selected</b>
+    <button class="btn" id="markAcceptedBtn" disabled>Mark selected as accepted (no call)</button>
+    <button class="btn ghost2" id="clearSelBtn">Clear</button>
+    <span class="small" style="color:#5a6b6e">For pre-formed teams already working together. This is the same as an accepted call.</span>
+  </div>
+
   <div class="panel">
     <table class="av-table">
-      <thead><tr>
+      <thead><tr id="theadRow">
         <th>Name</th><th>Region</th><th>Jamatkhana</th><th>Area</th><th>Status</th>
         <th>Caller</th><th>Accepted</th><th class="n">Age</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <div class="count" id="count" style="padding:10px 4px"></div>
+  </div>
+</div>
+
+<div id="acceptModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,35,.5);z-index:50;align-items:center;justify-content:center">
+  <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;padding:20px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+    <h2 style="font-family:Georgia,serif;color:var(--ink);margin:0 0 8px">Mark these people as accepted?</h2>
+    <p class="small" style="color:#5a6b6e;margin:0 0 10px">This marks them <b>Accepted without a call</b> — the same state as an accepted call. They'll leave the calling queue and flow to the iVol report for Better Impact entry. Use only for pre-formed teams who are already working together. This isn't easily undone.</p>
+    <div id="acceptWho" style="max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn ghost2" id="acceptCancel">Cancel</button>
+      <button class="btn" id="acceptConfirm">Yes, mark <span id="acceptConfirmN">0</span> accepted</button>
+    </div>
   </div>
 </div>
 

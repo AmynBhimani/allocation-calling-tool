@@ -153,6 +153,13 @@
       ]
     },
     {
+      "route": "/api/bulkaccept",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/api/allvolunteers",
       "allowedRoles": [
         "superadmin",

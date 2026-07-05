@@ -2,7 +2,7 @@
   var AREAS = [
     "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
     "Seniors & Mobility", "Food Services", "Layout & Logistics", "Registration & Access",
-    "Medical Services", "Finance & Procurement", "Environmental Sustainability",
+    "Medical Services", "Diverse Abilities Support", "Finance & Procurement", "Environmental Sustainability",
     "Memorabilia & Design", "Jamati Preparation"
   ];
   var SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file", "Unassigned"];
@@ -20,7 +20,8 @@
     { area: "Parking & Transportation", id: "t_par", pct: 7, min: 19, max: 65, rule: "age 19\u201365" },
     { area: "Food Services", id: "t_food", pct: 4, min: 16, max: null, rule: "min age 16" },
     { area: "Layout & Logistics", id: "t_lay", pct: 4, min: 19, max: 65, rule: "age 19\u201365" },
-    { area: "Memorabilia & Design", id: "t_mem", pct: 2, min: 16, max: null, rule: "min age 16 \u00b7 flex-only" }
+    { area: "Memorabilia & Design", id: "t_mem", pct: 2, min: 16, max: null, rule: "min age 16 \u00b7 flex-only" },
+    { area: "Diverse Abilities Support", id: "t_da", pct: 0, min: null, max: null, rule: "set target % & age" }
   ];
 
   function buildTargetInputs() {
@@ -213,6 +214,47 @@
     });
   }
 
+  // ---- Persist last-used settings (targets + toggles) across sessions ----
+  function currentSettings() {
+    var t = {};
+    TARGET_DEFS.forEach(function (def) {
+      t[def.area] = { pct: EL(def.id) ? EL(def.id).value : "", min: EL(def.id + "_min") ? EL(def.id + "_min").value : "", max: EL(def.id + "_max") ? EL(def.id + "_max").value : "" };
+    });
+    return {
+      seed: EL("seed") ? EL("seed").value : "", rounds: EL("rounds") ? EL("rounds").value : "",
+      overflow: EL("overflow") ? EL("overflow").checked : true,
+      phaseOrder: EL("phaseOrder") ? EL("phaseOrder").value : "",
+      flexOrder: EL("flexOrder") ? EL("flexOrder").value : "",
+      allocMode: EL("allocMode") ? EL("allocMode").value : "",
+      targets: t,
+    };
+  }
+  function applySettings(s) {
+    if (!s) return;
+    if (EL("seed") && s.seed != null && s.seed !== "") EL("seed").value = s.seed;
+    if (EL("rounds") && s.rounds != null && s.rounds !== "") EL("rounds").value = s.rounds;
+    if (EL("overflow") && typeof s.overflow === "boolean") EL("overflow").checked = s.overflow;
+    if (EL("phaseOrder") && s.phaseOrder) EL("phaseOrder").value = s.phaseOrder;
+    if (EL("flexOrder") && s.flexOrder) EL("flexOrder").value = s.flexOrder;
+    if (EL("allocMode") && s.allocMode) EL("allocMode").value = s.allocMode;
+    if (s.targets) TARGET_DEFS.forEach(function (def) {
+      var v = s.targets[def.area]; if (!v) return;   // new/renamed areas keep their default
+      if (EL(def.id) && v.pct != null && v.pct !== "") EL(def.id).value = v.pct;
+      if (EL(def.id + "_min")) EL(def.id + "_min").value = (v.min == null ? "" : v.min);
+      if (EL(def.id + "_max")) EL(def.id + "_max").value = (v.max == null ? "" : v.max);
+    });
+    updatePctSum();
+  }
+  function saveSettings() {
+    try { fetch("/api/allocsettings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: currentSettings() }) }); } catch (e) {}
+  }
+  async function restoreSettings() {
+    try {
+      var r = await fetch("/api/allocsettings"); if (!r.ok) return;
+      var d = await r.json(); if (d && d.settings) applySettings(d.settings);
+    } catch (e) {}
+  }
+
   async function call(mode) {
     var seed = parseInt(EL("seed").value, 10) || 20260723;
     var rounds = Math.max(1, Math.min(20, parseInt(EL("rounds").value, 10) || 4));
@@ -230,6 +272,7 @@
       if (!r.ok) { banner(d.error || "Request failed.", "err"); btnP.disabled = false; return; }
       banner("", "");
       lastPlan = d; render(d);
+      saveSettings();   // remember what was used, for next time
       if (mode === "commit") { btnC.disabled = true; btnP.disabled = false; }
       else { btnP.disabled = false; btnC.disabled = false; }
     } catch (e) {
@@ -253,4 +296,5 @@
     var el = EL(id); if (el) el.addEventListener("change", onSettingChanged);
   });
   buildTargetInputs();
+  restoreSettings();   // reopen with the settings used in the last allocation
 })();

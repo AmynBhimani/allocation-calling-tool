@@ -23,7 +23,7 @@ async function readJkOverrides() {
 const AREAS = new Set([
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
   "Seniors & Mobility", "Food Services", "Layout & Logistics", "Registration & Access",
-  "Medical Services", "Finance & Procurement", "Environmental Sustainability",
+  "Medical Services", "Diverse Abilities Support", "Finance & Procurement", "Environmental Sustainability",
   "Memorabilia & Design", "Jamati Preparation",
 ]);
 

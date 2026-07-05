@@ -18,7 +18,7 @@ const REGIONS = ["BC", "Prairies", "Edmonton"];
 const ALL_AREAS = [
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
   "Seniors & Mobility", "Food Services", "Layout & Logistics", "Registration & Access",
-  "Medical Services", "Finance & Procurement", "Environmental Sustainability",
+  "Medical Services", "Diverse Abilities Support", "Finance & Procurement", "Environmental Sustainability",
   "Memorabilia & Design", "Jamati Preparation",
 ];
 const SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file", "Unassigned"];
@@ -33,6 +33,7 @@ const ASSIGN_TARGETS = [
   { area: "Food Services",                pct: 0.04, min: 16, max: null },
   { area: "Layout & Logistics",           pct: 0.04, min: 19, max: 65 },
   { area: "Memorabilia & Design",         pct: 0.02, min: 16, max: null },
+  { area: "Diverse Abilities Support",            pct: 0, min: null, max: null },
 ];
 
 function mulberry32(a) {

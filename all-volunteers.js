@@ -1,5 +1,5 @@
 let DATA = { volunteers: [], tiles: null };
-const filters = { region: "", jk: "", area: "", group: "", q: "", acceptedOnly: false, needsDecisionOnly: false };
+const filters = { region: "", jk: "", area: "", group: "", q: "", acceptedOnly: false, needsDecisionOnly: false, leadershipOnly: false };
 const EL = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const LEADERSHIP = "Leadership - Do Not Allocate";
@@ -26,6 +26,7 @@ async function boot() {
   EL("q").addEventListener("input", e => { filters.q = e.target.value; render(); });
   EL("acceptedOnly").addEventListener("change", e => { filters.acceptedOnly = e.target.checked; render(); });
   EL("needsDecisionOnly").addEventListener("change", e => { filters.needsDecisionOnly = e.target.checked; render(); });
+  EL("leadershipOnly").addEventListener("change", e => { filters.leadershipOnly = e.target.checked; render(); });
   EL("exportBtn").addEventListener("click", exportCsv);
   if (CAN_ACCEPT) {
     EL("acceptBar").hidden = false;
@@ -82,6 +83,7 @@ function shown() {
     (!filters.area || v.area === filters.area) &&
     (!filters.acceptedOnly || v.accepted) &&
     (!filters.needsDecisionOnly || v.needsDecision) &&
+    (!filters.leadershipOnly || v.status === LEADERSHIP) &&
     (!filters.group || matchesGroup(v, filters.group)) &&
     (!q || v.name.toLowerCase().includes(q)));
 }

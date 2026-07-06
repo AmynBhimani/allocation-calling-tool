@@ -68,7 +68,7 @@ module.exports = async function (context, req) {
 
         tiles.total++;
         if (area && !isLeadership) tiles.allocated++;
-        if (accepted) tiles.accepted++;
+        if (accepted && !isLeadership) tiles.accepted++;   // match the Dashboard: leadership is outside the pipeline
         if (callPending) tiles.callPending++;
         if (toAssign) tiles.toAssign++;
 

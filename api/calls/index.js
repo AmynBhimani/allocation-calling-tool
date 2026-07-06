@@ -138,8 +138,11 @@ module.exports = async function (context, req) {
           if (mineNow && !v.call_done) { active.push(full(v)); continue; }
           const iLoggedOutcome = loggedByMe(v, me);
           const iSentEmail = (v.activity_log || []).some(e => e.actor === me && e.action === "confirm_email_sent");
-          // show in Done if I logged an outcome, OR it's mine/I emailed it and it's now done (e.g. self-confirmed via the link)
-          if (iLoggedOutcome || ((mineNow || iSentEmail) && v.call_done)) {
+          // Completed = the call is actually DONE (a terminal outcome, or a self-confirm via my emailed
+          // link). Non-terminal outcomes (No answer / Thinking / Emailed) keep call_done=false and must
+          // NOT land here — otherwise a person I logged "No answer" for shows as completed once they're
+          // no longer in my active list (e.g. a QB reassigned them), and can't be reopened.
+          if (v.call_done && (iLoggedOutcome || mineNow || iSentEmail)) {
             const f = full(v);
             // latest outcome from me or from the volunteer's own link-accept (which my email triggered)
             const rel = (v.activity_log || []).filter(e => e.action === "outcome" && (e.actor === me || e.actor === "self-confirm")).pop();

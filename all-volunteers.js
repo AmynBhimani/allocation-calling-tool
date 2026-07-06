@@ -51,7 +51,6 @@ async function load() {
     DATA = await r.json();
     EL("banner").hidden = true;
     buildDropdowns();
-    renderTiles();
     render();
   } catch (e) { banner("Could not load: " + e.message, true); EL("count").textContent = "Load failed."; }
 }
@@ -64,14 +63,14 @@ function buildDropdowns() {
   EL("jkSel").value = filters.jk; EL("areaSel").value = filters.area;
 }
 
-function renderTiles() {
-  const t = DATA.tiles || {};
+function renderTiles(list) {
+  const filtered = list.length !== DATA.volunteers.length;
   EL("kpis").innerHTML = [
-    ["", t.total, "Total Volunteers"],
-    ["callable", t.allocated, "Allocated to an Area"],
-    ["stable", t.accepted, "Accepted Assignment"],
-    ["recon", t.callPending, "Call Pending"],
-    ["un", t.toAssign, "To Be Assigned to a Caller"],
+    ["", list.length, filtered ? "Volunteers (filtered)" : "Total Volunteers"],
+    ["callable", list.filter(v => v.area && v.status !== LEADERSHIP).length, "Allocated to an Area"],
+    ["stable", list.filter(v => v.accepted && v.status !== LEADERSHIP).length, "Accepted Assignment"],
+    ["recon", list.filter(v => v.callPending).length, "Call Pending"],
+    ["un", list.filter(v => v.toAssign).length, "To Be Assigned to a Caller"],
   ].map(([cls, n, l]) => `<div class="kpi ${cls}"><div class="n">${(n || 0).toLocaleString()}</div><div class="l">${l}</div></div>`).join("");
 }
 
@@ -97,6 +96,7 @@ function matchesGroup(v, g) {
 
 function render() {
   const list = shown();
+  renderTiles(list);
   const rows = EL("rows");
   const cols = CAN_ACCEPT ? 9 : 8;
   if (!list.length) { rows.innerHTML = `<tr><td colspan="${cols}"><div class="empty">No volunteers match these filters.</div></td></tr>`; EL("count").textContent = ""; if (CAN_ACCEPT) updateBar(); return; }

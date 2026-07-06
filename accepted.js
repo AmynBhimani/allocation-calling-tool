@@ -26,7 +26,6 @@ async function load() {
     DATA = await r.json();
     EL("banner").hidden = true;
     buildDropdowns();
-    renderTiles();
     render();
   } catch (e) { banner("Could not load: " + e.message, true); EL("count").textContent = "Load failed."; }
 }
@@ -42,13 +41,14 @@ function buildDropdowns() {
   EL("regionSel").value = filters.region; EL("jkSel").value = filters.jk; EL("areaSel").value = filters.area;
 }
 
-function renderTiles() {
-  const all = DATA.volunteers;
-  const inBi = all.filter(v => v.entered).length;
+function renderTiles(list) {
+  const total = list.length;
+  const inBi = list.filter(v => v.entered).length;
+  const filtered = total !== DATA.volunteers.length;
   EL("kpis").innerHTML = [
-    ["stable", all.length, "Accepted Volunteers"],
+    ["stable", total, filtered ? "Accepted (filtered)" : "Accepted Volunteers"],
     ["callable", inBi, "Entered in Better Impact"],
-    ["recon", all.length - inBi, "Awaiting BI Entry"],
+    ["recon", total - inBi, "Awaiting BI Entry"],
   ].map(([cls, n, l]) => `<div class="kpi ${cls}"><div class="n">${(n || 0).toLocaleString()}</div><div class="l">${l}</div></div>`).join("");
 }
 
@@ -73,6 +73,7 @@ function fmtDate(s) { if (!s) return "—"; const d = new Date(s); return isNaN(
 
 function render() {
   const list = shown();
+  renderTiles(list);
   const rows = EL("rows");
   if (!list.length) { rows.innerHTML = `<tr><td colspan="7"><div class="empty">No accepted volunteers match these filters.</div></td></tr>`; EL("count").textContent = ""; return; }
   rows.innerHTML = list.slice(0, 2000).map(v => `<tr>

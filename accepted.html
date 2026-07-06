@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accepted Volunteers</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .av-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .av-controls select,.av-controls input[type=search]{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+  .av-controls label.chk{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--ink)}
+  .av-table{width:100%;border-collapse:collapse;font-size:14px}
+  .av-table th,.av-table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .av-table th{font-size:12px;text-transform:uppercase;letter-spacing:.3px;color:var(--mute)}
+  .av-table td.n{text-align:right}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--line)}
+  .pill.ok{background:var(--ok-soft);border-color:var(--stable)}
+  .pill.no{background:#fff3e0;border-color:var(--recon)}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Accepted Volunteers</h1>
+  <span class="sub">Everyone who has accepted a duty, within your area & region</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap" style="max-width:1200px;margin:0 auto;padding:18px 24px 70px">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="av-controls" style="margin-top:14px">
+    <select id="regionSel"><option value="">All regions</option></select>
+    <select id="jkSel"><option value="">All Jamatkhanas</option></select>
+    <select id="areaSel"><option value="">All areas</option></select>
+    <select id="groupSel"><option value="">All groups</option><option value="iff">IFF (Interfaith)</option><option value="seniors">Seniors (&gt;65)</option><option value="young">Young (5&ndash;13)</option></select>
+    <input id="q" type="search" placeholder="Filter by name…" autocomplete="off">
+    <label class="chk"><input type="checkbox" id="notInBi"> Not yet in Better Impact</label>
+    <button class="btn ghost2" id="exportBtn">Export CSV</button>
+  </div>
+
+  <div class="panel">
+    <table class="av-table">
+      <thead><tr>
+        <th>Name</th><th>Region</th><th>Jamatkhana</th><th>Area</th><th class="n">Age</th>
+        <th>In Better Impact</th><th>Accepted</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="count" id="count" style="padding:10px 4px"></div>
+  </div>
+</div>
+
+<script src="nav.js"></script>
+<script src="accepted.js"></script>
+</body>
+</html>

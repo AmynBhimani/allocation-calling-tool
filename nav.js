@@ -4,6 +4,7 @@
   var NAV=[
     {href:'/index.html',       label:'Reconcile',       roles:['superadmin','admin','dutyteam']},
     {href:'/all-volunteers.html',label:'All Volunteers',    roles:['superadmin','admin','leadership']},
+    {href:'/accepted.html',     label:'Accepted',         roles:['superadmin','admin','dutyteam','quarterback','leadership']},
     {href:'/quarterback.html', label:'Assign Callers',   roles:['superadmin','admin','quarterback']},
     {href:'/caller.html',      label:'My Calls',         roles:['superadmin','admin','caller']},
     {href:'/ivol.html',        label:'iVol report',      roles:['superadmin','admin','ivoladmin']},

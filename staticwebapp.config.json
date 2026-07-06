@@ -27,6 +27,26 @@
   },
   "routes": [
     {
+      "route": "/accepted.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "leadership"
+      ]
+    },
+    {
+      "route": "/api/accepted",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "leadership"
+      ]
+    },
+    {
       "route": "/.auth/login/github",
       "statusCode": 404
     },

@@ -27,6 +27,12 @@
   },
   "routes": [
     {
+      "route": "/api/restorecaller",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
       "route": "/caller-activity.html",
       "allowedRoles": [
         "superadmin",

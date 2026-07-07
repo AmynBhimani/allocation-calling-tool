@@ -27,6 +27,26 @@
   },
   "routes": [
     {
+      "route": "/caller-activity.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "leadership"
+      ]
+    },
+    {
+      "route": "/api/calleractivity",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "leadership"
+      ]
+    },
+    {
       "route": "/api/reshard",
       "allowedRoles": [
         "superadmin"

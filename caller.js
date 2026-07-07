@@ -14,6 +14,20 @@ const OUTCOME_LABEL = { "Accepted":"Accepted","Thinking":"Thinking about it",
 
 function banner(msg, isErr){ const b=document.getElementById('banner'); b.hidden=false; b.className="banner"+(isErr?" err":""); b.innerHTML=msg; }
 function clearBanner(){ document.getElementById('banner').hidden=true; }
+const _sleep = ms => new Promise(r=>setTimeout(r,ms));
+// Absorb transient "busy" (throttling / partial reads) under heavy load: retry network failures and
+// 5xx/429/409 a few times with backoff, so callers rarely see a failure. 4xx (real errors) pass through.
+async function fetchR(url, opts, tries){
+  tries = tries || 4; let lastErr;
+  for(let i=0;i<tries;i++){
+    try{
+      const r = await fetch(url, opts);
+      if((r.status>=500 || r.status===429 || r.status===409) && i<tries-1){ await _sleep(400*(i+1)+Math.random()*400); continue; }
+      return r;
+    }catch(e){ lastErr=e; if(i<tries-1){ await _sleep(400*(i+1)+Math.random()*400); continue; } throw e; }
+  }
+  throw lastErr;
+}
 
 // Events + duty catalog — fetched once; the caller can still log outcomes if these fail.
 async function loadConfig(){
@@ -118,7 +132,7 @@ async function boot(){
 async function load(){
   document.getElementById('qcount').textContent="Loading…";
   try{
-    const r=await fetch('/api/calls');
+    const r=await fetchR('/api/calls');
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||("HTTP "+r.status));
     const d=await r.json();
     ACTIVE=d.active||[]; COMPLETED=d.completed||[];
@@ -293,7 +307,7 @@ async function save(outcome, extra){
   if(cell) contact.cell=cell.value; if(email) contact.email=email.value;
   const body={ user_id:current.id, region:current.region, outcome, note, contact, event_assignments:collectAssignments(), ...extra };
   try{
-    const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetchR('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
     banner(`Logged <b>${outcome}</b> for ${current.first} ${current.last}.`, false);
     current=null; selectedOutcome=null;
@@ -305,7 +319,7 @@ async function save(outcome, extra){
 async function reopen(v){
   if(!confirm(`Reopen ${v.first} ${v.last} and return them to your active call list?`)) return;
   try{
-    const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'reopen',user_id:v.id,region:v.region})});
+    const r=await fetchR('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'reopen',user_id:v.id,region:v.region})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
     banner(`Reopened ${v.first} ${v.last} — back in your active list.`, false);
     current=null; tab="active"; await load();
@@ -315,7 +329,7 @@ async function reopen(v){
 async function sendConfirmEmail(v){
   const btn=document.getElementById('emailBtn'); if(btn) btn.disabled=true;
   try{
-    const r=await fetch('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'send_confirm',user_id:v.id,region:v.region,event_assignments:collectAssignments()})});
+    const r=await fetchR('/api/calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'send_confirm',user_id:v.id,region:v.region,event_assignments:collectAssignments()})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
     const url=`${location.origin}/confirm.html?u=${encodeURIComponent(v.id)}&r=${encodeURIComponent(v.region)}&t=${encodeURIComponent(d.token)}`;
     const urlAttr=url.replace(/&/g,'&amp;');

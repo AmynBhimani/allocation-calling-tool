@@ -18,6 +18,15 @@ function isConditionError(e) {
   return e && (e.statusCode === 412 || e.code === "ConditionNotMet" ||
     e.code === "TargetConditionNotMet" || /condition/i.test(e.message || ""));
 }
+// Throttling / transient storage errors that are worth retrying under heavy concurrent load.
+function isTransientError(e) {
+  if (!e) return false;
+  const s = e.statusCode || e.status;
+  if (s === 429 || s === 500 || s === 503 || s === 408) return true;
+  const hay = String(e.code || "") + " " + String(e.message || "");
+  return /throttl|ServerBusy|OperationTimedOut|InternalError|timeout|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(hay);
+}
+const isRetryable = (e) => isConditionError(e) || isTransientError(e);
 
 async function getContainer(name) {
   if (!CONN) throw new Error("RESPONSES_STORAGE not configured.");
@@ -29,12 +38,25 @@ async function getContainer(name) {
 // Read one region shard. Returns { records, etag } (etag null if the blob doesn't exist yet).
 async function readRegion(container, region) {
   const b = container.getBlockBlobClient(`volunteers-${region}.json`);
-  if (!(await b.exists())) return { records: [], etag: null };
-  const dl = await b.download();
-  const text = await streamToString(dl.readableStreamBody);
-  let records = [];
-  try { records = JSON.parse(text); } catch { records = []; }
-  return { records, etag: dl.etag };
+  if (!(await b.exists())) return { records: [], etag: null };   // genuinely no shard yet
+  let lastErr = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const dl = await b.download();
+      const text = await streamToString(dl.readableStreamBody);
+      const records = JSON.parse(text);   // a partial/throttled download fails here -> retry, never swallow
+      if (!Array.isArray(records)) throw new Error("shard did not parse to an array");
+      return { records, etag: dl.etag };
+    } catch (e) {
+      lastErr = e;
+      await sleep(70 * (attempt + 1) + Math.random() * 90);
+    }
+  }
+  // Do NOT return [] on a failed read — that silently blanks a caller's list and could let a write
+  // save against empty data. Surface it as a retryable error so the caller just tries again.
+  const err = new Error(`The ${region} list is busy right now — please try again in a moment.`);
+  err.transientRead = true;
+  throw err;
 }
 
 // Write a region shard. If etag is given, the write only succeeds when the blob is unchanged
@@ -56,7 +78,7 @@ async function overwriteRegion(container, region, records) {
 
 // Safe single-volunteer update: read-modify-write with retry on ETag conflict.
 // mutator(volunteer, allRecords) mutates the record in place; re-runs on each retry against fresh data.
-async function mutateVolunteer(container, region, user_id, mutator, { retries = 8 } = {}) {
+async function mutateVolunteer(container, region, user_id, mutator, { retries = 12 } = {}) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const { records, etag } = await readRegion(container, region);
     const v = records.find(x => x.user_id === user_id);
@@ -66,7 +88,7 @@ async function mutateVolunteer(container, region, user_id, mutator, { retries = 
       await writeRegion(container, region, records, etag);
       return { ok: true, volunteer: v, extra };
     } catch (e) {
-      if (isConditionError(e) && attempt < retries) { await sleep(40 * (attempt + 1) + Math.random() * 50); continue; }
+      if (isRetryable(e) && attempt < retries) { await sleep(50 * (attempt + 1) + Math.random() * 120); continue; }
       throw e;
     }
   }
@@ -84,7 +106,7 @@ async function mergeRegion(container, region, mergeFn, { retries = 6 } = {}) {
       else await writeRegion(container, region, next, null);
       return next;
     } catch (e) {
-      if (isConditionError(e) && attempt < retries) { await sleep(50 * (attempt + 1) + Math.random() * 50); continue; }
+      if (isRetryable(e) && attempt < retries) { await sleep(50 * (attempt + 1) + Math.random() * 50); continue; }
       throw e;
     }
   }

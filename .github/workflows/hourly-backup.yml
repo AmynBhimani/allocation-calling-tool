@@ -1,0 +1,47 @@
+name: Hourly volunteer backup
+
+# Pings the secured backup endpoint every hour so it snapshots the region shards + caller roster
+# into the `backups` container (keeping the most recent BACKUP_KEEP per source). Static Web App
+# managed Functions can't run timer triggers, so the schedule lives here.
+on:
+  schedule:
+    - cron: "0 * * * *"        # top of every hour (UTC)
+  workflow_dispatch: {}         # lets you run a snapshot on demand from the Actions tab
+
+# Don't let a slow run overlap the next hour's run.
+concurrency:
+  group: hourly-backup
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    env:
+      # Works whether you saved these as repository Variables or Secrets.
+      BACKUP_URL: ${{ vars.BACKUP_URL || secrets.BACKUP_URL }}
+      BACKUP_TRIGGER_KEY: ${{ secrets.BACKUP_TRIGGER_KEY || vars.BACKUP_TRIGGER_KEY }}
+    steps:
+      - name: Trigger backup snapshot
+        run: |
+          set -u
+          if [ -z "${BACKUP_URL:-}" ]; then
+            echo "::error::BACKUP_URL is not set. Add it under Settings -> Secrets and variables -> Actions -> Variables, value https://<your-app> (just the host, no /api)."
+            exit 1
+          fi
+          if [ -z "${BACKUP_TRIGGER_KEY:-}" ]; then
+            echo "::error::BACKUP_TRIGGER_KEY is not set. Add it under Settings -> Secrets and variables -> Actions -> Secrets, matching the app setting."
+            exit 1
+          fi
+          base="${BACKUP_URL%/}"                    # strip any trailing slash
+          base="${base%/api/backupSnapshot}"        # tolerate someone pasting the full path
+          url="$base/api/backupSnapshot"
+          echo "Calling $url"
+          code=$(curl -sS -m 120 -o /tmp/resp.json -w "%{http_code}" \
+            -H "x-backup-key: $BACKUP_TRIGGER_KEY" "$url") \
+            || { rc=$?; echo "::error::curl failed (exit $rc). If exit 3, BACKUP_URL is malformed - it must start with https:// and be just the host."; exit 1; }
+          echo "HTTP $code"
+          echo "Response:"; cat /tmp/resp.json 2>/dev/null || true; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Backup endpoint returned HTTP $code."
+            exit 1
+          fi

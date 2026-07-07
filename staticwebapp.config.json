@@ -61,6 +61,12 @@
       ]
     },
     {
+      "route": "/api/backupSnapshot",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
       "route": "/api/dailyDigest",
       "allowedRoles": [
         "anonymous"

@@ -29,15 +29,28 @@ async function listSnapshotStamps(svc) {
   }
   return [...stamps].sort();
 }
-// Read a region's records from a snapshot — works for legacy (one file) and sharded (bucket files).
+// Read a region's records from a snapshot. A single snapshot can hold BOTH layouts at the same stamp
+// when a reshard left the pre-reshard whole-region file (`volunteers-<region>.json`) in place next to
+// the new bucket files (`volunteers-<region>-<n>.json`) — the backup copies whatever is live, so it
+// grabs both. Reading both returns every person twice (the 2x that made a caller's list look doubled).
+// So: prefer the sharded bucket files when any exist for this stamp, fall back to the single legacy
+// file only when there are none, and dedupe by user_id as a final guard.
 async function readSnapshotRegion(svc, region, stamp) {
   const c = svc.getContainerClient(BACKUP_CONTAINER);
-  const all = [];
-  for await (const b of c.listBlobsFlat({ prefix: `snapshots/volunteers-${region}` })) {
-    if (!b.name.endsWith(`-${stamp}.json`)) continue;
-    try { const recs = JSON.parse(await streamToString((await c.getBlockBlobClient(b.name).download()).readableStreamBody)); if (Array.isArray(recs)) for (const r of recs) all.push(r); } catch {}
+  const rx = (t) => String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const bucketRe = new RegExp(`^snapshots/volunteers-${rx(region)}-\\d+-${rx(stamp)}\\.json$`);
+  const legacyRe = new RegExp(`^snapshots/volunteers-${rx(region)}-${rx(stamp)}\\.json$`);
+  const bucketBlobs = [], legacyBlobs = [];
+  for await (const b of c.listBlobsFlat({ prefix: `snapshots/volunteers-${region}-` })) {
+    if (bucketRe.test(b.name)) bucketBlobs.push(b.name);
+    else if (legacyRe.test(b.name)) legacyBlobs.push(b.name);
   }
-  return all;
+  const chosen = bucketBlobs.length ? bucketBlobs : legacyBlobs;   // never blend the two layouts
+  const byId = new Map();
+  for (const name of chosen) {
+    try { const recs = JSON.parse(await streamToString((await c.getBlockBlobClient(name).download()).readableStreamBody)); if (Array.isArray(recs)) for (const r of recs) byId.set(String(r.user_id), r); } catch {}
+  }
+  return [...byId.values()];
 }
 
 module.exports = async function (context, req) {

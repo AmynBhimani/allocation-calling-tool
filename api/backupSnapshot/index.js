@@ -35,7 +35,7 @@ async function prune(svc) {
   const c = svc.getContainerClient(BACKUP_CONTAINER);
   const groups = {};
   for await (const b of c.listBlobsFlat({ prefix: "snapshots/" })) {
-    const m = b.name.match(/^(snapshots\/[A-Za-z-]+?)-\d{4}-\d\d-\d\d/);
+    const m = b.name.match(/^(snapshots\/.+)-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\dZ\.json$/);   // group = name minus the timestamp
     const key = m ? m[1] : b.name;
     (groups[key] || (groups[key] = [])).push(b.name);
   }
@@ -60,14 +60,19 @@ module.exports = async function (context, req) {
     await svc.getContainerClient(BACKUP_CONTAINER).createIfNotExists();
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + "Z";
 
-    const regions = [];
-    for (const region of REGIONS) {
-      if (await snapshot(svc, DATA_CONTAINER, `volunteers-${region}.json`, `snapshots/volunteers-${region}-${stamp}.json`)) regions.push(region);
+    // Snapshot EVERY volunteers-* blob that's actually live — this captures the single-blob layout
+    // and the sharded layout (volunteers-<region>-<bucket>.json) alike, so it stays correct after a reshard.
+    const dataC = svc.getContainerClient(DATA_CONTAINER);
+    const volunteerBlobs = [];
+    for await (const b of dataC.listBlobsFlat({ prefix: "volunteers-" })) if (/\.json$/i.test(b.name)) volunteerBlobs.push(b.name);
+    const shards = [];
+    for (const name of volunteerBlobs) {
+      if (await snapshot(svc, DATA_CONTAINER, name, `snapshots/${name.replace(/\.json$/i, "")}-${stamp}.json`)) shards.push(name);
     }
     const rolesBackedUp = await snapshot(svc, CONFIG_CONTAINER, "roles.json", `snapshots/roles-${stamp}.json`);
     const pruned = await prune(svc);
 
-    context.res = { body: { ok: true, stamp, container: BACKUP_CONTAINER, regions, rolesBackedUp, keepPerSource: KEEP, pruned } };
+    context.res = { body: { ok: true, stamp, container: BACKUP_CONTAINER, blobs: shards, rolesBackedUp, keepPerSource: KEEP, pruned } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }

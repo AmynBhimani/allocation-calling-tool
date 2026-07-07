@@ -36,56 +36,85 @@ async function getContainer(name) {
 }
 
 // Read one region shard. Returns { records, etag } (etag null if the blob doesn't exist yet).
-async function readRegion(container, region) {
-  const b = container.getBlockBlobClient(`volunteers-${region}.json`);
-  if (!(await b.exists())) return { records: [], etag: null };   // genuinely no shard yet
+// ---- Region sharding ----------------------------------------------------------------------------
+// A region is stored either as one legacy blob (volunteers-<region>.json) or split into
+// SHARDS_PER_REGION smaller blobs (volunteers-<region>-<bucket>.json) keyed by a stable hash of
+// user_id, which spreads write contention across many blobs. SHARDS defaults to 1 — byte-for-byte
+// the original single-blob behavior — so deploying this changes NOTHING until SHARDS_PER_REGION is
+// raised AND the data is migrated (api/reshard). Rollback is just setting it back to 1.
+const SHARDS = Math.max(1, parseInt(process.env.SHARDS_PER_REGION, 10) || 1);
+const legacyName = (region) => `volunteers-${region}.json`;
+const shardName = (region, bucket) => `volunteers-${region}-${bucket}.json`;
+function bucketOf(user_id, n) {
+  const s = String(user_id); let h = 2166136261;                 // FNV-1a — deterministic across runs
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % n;
+}
+function splitBuckets(records, n) {
+  const buckets = Array.from({ length: n }, () => []);
+  for (const r of records) buckets[bucketOf(r.user_id, n)].push(r);
+  return buckets;
+}
+// Read one blob into records with retry (never silently returns [] on a bad/partial read).
+async function readBlob(container, name) {
+  const b = container.getBlockBlobClient(name);
+  if (!(await b.exists())) return { records: [], etag: null };
   let lastErr = null;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const dl = await b.download();
       const text = await streamToString(dl.readableStreamBody);
-      const records = JSON.parse(text);   // a partial/throttled download fails here -> retry, never swallow
+      const records = JSON.parse(text);
       if (!Array.isArray(records)) throw new Error("shard did not parse to an array");
       return { records, etag: dl.etag };
-    } catch (e) {
-      lastErr = e;
-      await sleep(70 * (attempt + 1) + Math.random() * 90);
-    }
+    } catch (e) { lastErr = e; await sleep(70 * (attempt + 1) + Math.random() * 90); }
   }
-  // Do NOT return [] on a failed read — that silently blanks a caller's list and could let a write
-  // save against empty data. Surface it as a retryable error so the caller just tries again.
-  const err = new Error(`The ${region} list is busy right now — please try again in a moment.`);
-  err.transientRead = true;
-  throw err;
+  const err = new Error(`A data file (${name}) is busy right now — please try again in a moment.`);
+  err.transientRead = true; throw err;
 }
-
-// Write a region shard. If etag is given, the write only succeeds when the blob is unchanged
-// (If-Match); if null, it only succeeds if the blob still doesn't exist (If-None-Match: *).
-async function writeRegion(container, region, records, etag) {
-  const b = container.getBlockBlobClient(`volunteers-${region}.json`);
+// Write one blob. etag -> If-Match (optimistic update); no etag + create -> If-None-Match:* (first
+// write only); no etag + no create -> unconditional overwrite.
+async function writeBlob(container, name, records, { etag = null, create = false } = {}) {
+  const b = container.getBlockBlobClient(name);
   const body = JSON.stringify(records);
   const opts = { blobHTTPHeaders: { blobContentType: "application/json" } };
-  opts.conditions = etag ? { ifMatch: etag } : { ifNoneMatch: "*" };
+  if (etag) opts.conditions = { ifMatch: etag };
+  else if (create) opts.conditions = { ifNoneMatch: "*" };
   await b.upload(body, Buffer.byteLength(body), opts);
 }
 
-// Overwrite a region shard unconditionally (used by seed / full reloads).
-async function overwriteRegion(container, region, records) {
-  const b = container.getBlockBlobClient(`volunteers-${region}.json`);
-  const body = JSON.stringify(records);
-  await b.upload(body, Buffer.byteLength(body), { blobHTTPHeaders: { blobContentType: "application/json" } });
+async function readRegion(container, region) {
+  if (SHARDS === 1) return readBlob(container, legacyName(region));
+  const all = [];
+  for (let b = 0; b < SHARDS; b++) { const { records } = await readBlob(container, shardName(region, b)); for (const r of records) all.push(r); }
+  return { records: all, etag: null };
 }
 
-// Safe single-volunteer update: read-modify-write with retry on ETag conflict.
-// mutator(volunteer, allRecords) mutates the record in place; re-runs on each retry against fresh data.
+// Kept for backward-compat; operates on the legacy single blob.
+async function writeRegion(container, region, records, etag) {
+  await writeBlob(container, legacyName(region), records, { etag, create: !etag });
+}
+
+// Overwrite a region unconditionally (seed / full reload); splits across shards when SHARDS > 1.
+async function overwriteRegion(container, region, records) {
+  if (SHARDS === 1) { await writeBlob(container, legacyName(region), records, { create: false }); return; }
+  const buckets = splitBuckets(records, SHARDS);
+  for (let b = 0; b < SHARDS; b++) await writeBlob(container, shardName(region, b), buckets[b], { create: false });
+}
+
+// Safe single-volunteer update. Under sharding this reads+writes ONLY the one shard holding the
+// volunteer (1/SHARDS of the data and of the contention), with ETag/transient retry. Note: the
+// mutator's second argument is that shard's records, not the whole region — every current caller
+// only uses the first argument (the volunteer), so this is safe.
 async function mutateVolunteer(container, region, user_id, mutator, { retries = 12 } = {}) {
+  const name = SHARDS === 1 ? legacyName(region) : shardName(region, bucketOf(user_id, SHARDS));
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const { records, etag } = await readRegion(container, region);
+    const { records, etag } = await readBlob(container, name);
     const v = records.find(x => x.user_id === user_id);
     if (!v) return { ok: false, notFound: true };
     const extra = mutator(v, records);
     try {
-      await writeRegion(container, region, records, etag);
+      await writeBlob(container, name, records, { etag, create: !etag });
       return { ok: true, volunteer: v, extra };
     } catch (e) {
       if (isRetryable(e) && attempt < retries) { await sleep(50 * (attempt + 1) + Math.random() * 120); continue; }
@@ -95,26 +124,43 @@ async function mutateVolunteer(container, region, user_id, mutator, { retries = 
   return { ok: false, conflict: true };
 }
 
-// Safe bulk merge for a region (used by the sync): re-reads existing on conflict and re-applies
-// mergeFn(existingRecords) -> newRecords, so concurrent caller writes are never clobbered by a sync.
+// Safe bulk merge for a region. mergeFn(allRecords) -> newRecords; re-reads on conflict so concurrent
+// caller writes are never clobbered. Under sharding it reads every shard, merges the whole set, then
+// re-splits and writes each shard with its own ETag.
 async function mergeRegion(container, region, mergeFn, { retries = 6 } = {}) {
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const { records, etag } = await readRegion(container, region);
-    const next = mergeFn(records);
-    try {
-      if (etag) await writeRegion(container, region, next, etag);
-      else await writeRegion(container, region, next, null);
-      return next;
-    } catch (e) {
-      if (isRetryable(e) && attempt < retries) { await sleep(50 * (attempt + 1) + Math.random() * 50); continue; }
-      throw e;
+    if (SHARDS === 1) {
+      const { records, etag } = await readBlob(container, legacyName(region));
+      const next = mergeFn(records);
+      try { await writeBlob(container, legacyName(region), next, { etag, create: !etag }); return next; }
+      catch (e) { if (isRetryable(e) && attempt < retries) { await sleep(50 * (attempt + 1) + Math.random() * 50); continue; } throw e; }
+    } else {
+      const etags = [], all = [];
+      for (let b = 0; b < SHARDS; b++) { const s = await readBlob(container, shardName(region, b)); etags.push(s.etag); for (const r of s.records) all.push(r); }
+      const next = mergeFn(all);
+      const buckets = splitBuckets(next, SHARDS);
+      try {
+        for (let b = 0; b < SHARDS; b++) await writeBlob(container, shardName(region, b), buckets[b], { etag: etags[b], create: !etags[b] });
+        return next;
+      } catch (e) { if (isRetryable(e) && attempt < retries) { await sleep(60 * (attempt + 1) + Math.random() * 80); continue; } throw e; }
     }
   }
   throw new Error(`mergeRegion: too many conflicts on ${region}`);
 }
 
+// Migration helper: rewrite a region into `toN` blobs, reading its CURRENT layout (env SHARDS). Never
+// deletes the source layout, so flipping SHARDS_PER_REGION back is an instant, lossless rollback.
+async function reshardRegion(container, region, toN) {
+  const { records } = await readRegion(container, region);
+  if (toN === 1) { await writeBlob(container, legacyName(region), records, { create: false }); return { region, total: records.length, to: 1 }; }
+  const buckets = splitBuckets(records, toN);
+  for (let b = 0; b < toN; b++) await writeBlob(container, shardName(region, b), buckets[b], { create: false });
+  return { region, total: records.length, to: toN, perShard: buckets.map(x => x.length) };
+}
+
 module.exports = {
   REGIONS, getContainer, readRegion, writeRegion, overwriteRegion, mutateVolunteer, mergeRegion, streamToString,
+  reshardRegion, bucketOf, SHARDS,
   readRolesStore, allowedRegionsFor, readConfigJson, readDidars,
 };
 

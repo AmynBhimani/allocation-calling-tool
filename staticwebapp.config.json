@@ -27,6 +27,12 @@
   },
   "routes": [
     {
+      "route": "/api/reshard",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
       "route": "/accepted.html",
       "allowedRoles": [
         "superadmin",

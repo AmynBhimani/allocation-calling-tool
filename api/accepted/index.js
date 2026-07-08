@@ -24,6 +24,7 @@ function ageOf(v) {
   return a >= 0 && a < 130 ? a : null;
 }
 const iffOf = (v) => !!v.interfaith || v.list === "IFF";
+const diverseOf = (v) => /diverse/i.test(String(v.list || ""));
 // Quarterback / caller area×region scopes from the role store.
 const scopesFor = (store, email, role) => store
   .filter(a => clean(a.email).toLowerCase() === email && clean(a.role) === role && clean(a.area))
@@ -76,7 +77,7 @@ module.exports = async function (context, req) {
         if (!inUserScope(v)) continue;
         vols.push({
           id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
-          region, jk: v.ceremony_jk || "", area: v.final_area || "", age: ageOf(v), iff: iffOf(v),
+          region, jk: v.ceremony_jk || "", area: v.final_area || "", age: ageOf(v), iff: iffOf(v), diverse: diverseOf(v),
           entered: !!v.ivol_entered, acceptedAt: acceptedAt(v),
         });
       }

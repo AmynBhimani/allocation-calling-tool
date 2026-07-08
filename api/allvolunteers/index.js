@@ -33,6 +33,7 @@ function ageOf(v) {
   return a >= 0 && a < 130 ? a : null;
 }
 const iffOf = (v) => !!v.interfaith || v.list === "IFF";
+const diverseOf = (v) => /diverse/i.test(String(v.list || ""));
 
 module.exports = async function (context, req) {
   try {
@@ -75,7 +76,7 @@ module.exports = async function (context, req) {
         vols.push({
           id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
           region, jk: v.ceremony_jk || "", area, status,
-          accepted, callerAssigned, callPending, toAssign, needsDecision, age: ageOf(v), iff: iffOf(v),
+          accepted, callerAssigned, callPending, toAssign, needsDecision, age: ageOf(v), iff: iffOf(v), diverse: diverseOf(v),
         });
       }
     }

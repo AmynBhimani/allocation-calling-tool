@@ -16,6 +16,27 @@
   .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--line)}
   .pill.ok{background:var(--ok-soft);border-color:var(--stable)}
   .pill.rec{background:#fff3e0;border-color:var(--recon)}
+  /* clickable rows + left detail panel */
+  .av-layout{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:20px;align-items:start}
+  @media (max-width:1000px){.av-layout{grid-template-columns:1fr}}
+  .av-table tbody tr{cursor:pointer}
+  .av-table tbody tr:hover{background:#FAFCFC}
+  .av-table tbody tr.active{background:#E9F4F4;box-shadow:inset 3px 0 0 var(--teal,#028090)}
+  .detailcard{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;position:sticky;top:16px}
+  .detailcard.empty-state{color:var(--mute);text-align:center;padding:44px 18px}
+  .detailcard h2{font-family:Cambria,Georgia,serif;font-size:20px;margin:0 0 2px;color:var(--ink)}
+  .detailcard .sub2{color:var(--mute);font-size:13px;margin-bottom:14px}
+  .detailcard .contact{display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:center;margin-bottom:2px}
+  .detailcard .contact label{font-size:11.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+  .detailcard .contact .phone{font-size:15px;font-weight:600;color:var(--ink)}
+  .detailcard .contact a{color:var(--teal,#028090);text-decoration:none}
+  .dsec{margin-top:14px;border-top:1px solid var(--line);padding-top:11px}
+  .dsec h4{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:0 0 8px}
+  .chiprow{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);background:var(--wash);color:var(--ink)}
+  .dsec.log .e{font-size:12.5px;color:var(--ink);margin-bottom:5px;line-height:1.4}
+  .dsec.log .e .t{color:var(--mute)}
+  .dmuted{font-size:12.5px;color:var(--mute);font-style:italic}
 </style>
 </head>
 <body>
@@ -31,14 +52,14 @@
 
 <div id="banner" class="banner" hidden></div>
 
-<div class="wrap" style="max-width:1200px;margin:0 auto;padding:18px 24px 70px">
+<div class="wrap" style="max-width:1400px;margin:0 auto;padding:18px 24px 70px">
   <div class="kpis" id="kpis"></div>
 
   <div class="av-controls" style="margin-top:14px">
     <select id="regionSel"><option value="">All regions</option></select>
     <select id="jkSel"><option value="">All Jamatkhanas</option></select>
     <select id="areaSel"><option value="">All areas</option></select>
-    <select id="groupSel"><option value="">All groups</option><option value="iff">IFF (Interfaith)</option><option value="seniors">Seniors (&gt;65)</option><option value="young">Young (5&ndash;13)</option></select>
+    <select id="groupSel"><option value="">All groups</option><option value="iff">IFF (Interfaith)</option><option value="seniors">Seniors (&gt;65)</option><option value="young">Young (5&ndash;13)</option><option value="diverse">Diverse Abilities</option></select>
     <input id="q" type="search" placeholder="Filter by name…" autocomplete="off">
     <label class="chk"><input type="checkbox" id="acceptedOnly"> Accepted only</label>
     <label class="chk"><input type="checkbox" id="needsDecisionOnly"> Needs decision</label>
@@ -53,7 +74,9 @@
     <span class="small" style="color:#5a6b6e">For pre-formed teams already working together. This is the same as an accepted call.</span>
   </div>
 
-  <div class="panel">
+  <div class="av-layout">
+    <aside id="detailPanel" class="detailcard empty-state">Click a volunteer to see their contact info, duties of interest, and call history.</aside>
+    <div class="panel">
     <table class="av-table">
       <thead><tr id="theadRow">
         <th>Name</th><th>Region</th><th>Jamatkhana</th><th>Area</th><th>Status</th>
@@ -62,6 +85,7 @@
       <tbody id="rows"></tbody>
     </table>
     <div class="count" id="count" style="padding:10px 4px"></div>
+    </div>
   </div>
 </div>
 

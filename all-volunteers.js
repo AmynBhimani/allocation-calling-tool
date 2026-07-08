@@ -23,6 +23,11 @@ async function boot() {
   EL("jkSel").addEventListener("change", e => { filters.jk = e.target.value; render(); });
   EL("areaSel").addEventListener("change", e => { filters.area = e.target.value; render(); });
   EL("groupSel").addEventListener("change", e => { filters.group = e.target.value; render(); });
+  EL("rows").addEventListener("click", (e) => {
+    if (e.target.closest("input,button,a,label")) return;   // let checkboxes/links behave normally
+    const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+    selectVolunteer(tr.getAttribute("data-id"), tr.getAttribute("data-region"), tr);
+  });
   EL("q").addEventListener("input", e => { filters.q = e.target.value; render(); });
   EL("acceptedOnly").addEventListener("change", e => { filters.acceptedOnly = e.target.checked; render(); });
   EL("needsDecisionOnly").addEventListener("change", e => { filters.needsDecisionOnly = e.target.checked; render(); });
@@ -89,9 +94,59 @@ function shown() {
 // Special-group filter: IFF (interfaith list), Seniors (>65), Young (5–13). Age-based ones need an age on file.
 function matchesGroup(v, g) {
   if (g === "iff") return !!v.iff;
+  if (g === "diverse") return !!v.diverse;
   if (g === "seniors") return v.age != null && v.age > 65;
   if (g === "young") return v.age != null && v.age >= 5 && v.age <= 13;
   return true;
+}
+
+// ---- Detail panel: fetch one volunteer's contact, duties of interest, and call history on click ----
+let DETAIL_ID = null;
+async function selectVolunteer(id, region, trEl) {
+  DETAIL_ID = String(id);
+  document.querySelectorAll("#rows tr.active").forEach(r => r.classList.remove("active"));
+  if (trEl) trEl.classList.add("active");
+  const panel = EL("detailPanel");
+  panel.className = "detailcard";
+  panel.innerHTML = `<div class="dmuted">Loading…</div>`;
+  try {
+    const r = await fetch(`/api/volunteer?id=${encodeURIComponent(id)}&region=${encodeURIComponent(region)}`);
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Error ${r.status}`); }
+    const d = await r.json();
+    if (DETAIL_ID !== String(id)) return;   // a newer click already won — drop this stale response
+    renderDetail(d);
+  } catch (err) {
+    if (DETAIL_ID !== String(id)) return;
+    panel.className = "detailcard";
+    panel.innerHTML = `<div class="dmuted">Couldn't load details: ${esc(err.message)}</div>`;
+  }
+}
+function renderDetail(d) {
+  const tel = (n) => `tel:${String(n).replace(/[^\d+]/g, "")}`;
+  const contact = `<div class="contact">
+    <label>Cell</label><div class="phone">${d.cell ? `<a href="${tel(d.cell)}">${esc(d.cell)}</a>` : "—"}</div>
+    ${d.home ? `<label>Home</label><div class="phone"><a href="${tel(d.home)}">${esc(d.home)}</a></div>` : ""}
+    ${d.work ? `<label>Work</label><div class="phone"><a href="${tel(d.work)}">${esc(d.work)}</a></div>` : ""}
+    <label>Email</label><div>${d.email ? `<a href="mailto:${esc(d.email)}">${esc(d.email)}</a>` : "—"}</div>
+    ${d.jk ? `<label>Jamatkhana</label><div>${esc(d.jk)}</div>` : ""}
+    ${d.age != null ? `<label>Age</label><div>${d.age}</div>` : ""}
+  </div>`;
+  const dutiesHtml = `<div class="dsec"><h4>Duties of interest</h4>${
+    (d.duties && d.duties.length)
+      ? `<div class="chiprow">${d.duties.map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>`
+      : `<div class="dmuted">None captured yet — duties are noted when a caller reaches them.</div>`}</div>`;
+  const prefs = d.happyAnywhere ? ["Happy anywhere"] : (d.prefAreas || []);
+  const prefHtml = prefs.length
+    ? `<div class="dsec"><h4>Preferred areas</h4><div class="chiprow">${prefs.map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div></div>`
+    : "";
+  const log = d.log || [];
+  const logHtml = `<div class="dsec log"><h4>Call history</h4>${
+    log.length
+      ? log.map(e => `<div class="e"><span class="t">${new Date(e.ts).toLocaleString()}</span> — ${esc(e.outcome || "—")}${e.note ? ": " + esc(e.note) : ""}</div>`).join("")
+      : `<div class="dmuted">No calls logged yet.</div>`}</div>`;
+  const panel = EL("detailPanel");
+  panel.className = "detailcard";
+  panel.innerHTML = `<h2>${esc(d.name)}</h2><div class="sub2">${esc(d.region)}${d.area ? " · " + esc(d.area) : ""}</div>${contact}${dutiesHtml}${prefHtml}${logHtml}`;
 }
 
 function render() {
@@ -106,7 +161,7 @@ function render() {
         ? `<td><input type="checkbox" class="selbox" data-id="${esc(v.id)}"${SELECTED.has(String(v.id)) ? " checked" : ""}></td>`
         : `<td><input type="checkbox" disabled title="${v.accepted ? "Already accepted" : v.needsDecision ? "In reconciliation — resolve first" : !v.area ? "Not allocated to an area yet" : "Not eligible"}"></td>`)
       : "";
-    return `<tr>${cell}
+    return `<tr data-id="${esc(v.id)}" data-region="${esc(v.region)}">${cell}
     <td>${esc(v.name)}</td><td>${esc(v.region)}</td><td>${esc(v.jk) || "—"}</td>
     <td>${esc(v.area) || "—"}</td>
     <td>${v.needsDecision ? '<span class="pill rec">In reconciliation</span>' : esc(v.status)}</td>

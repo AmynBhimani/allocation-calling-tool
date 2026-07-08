@@ -1,7 +1,7 @@
 // Restore one caller's lost assignments from a backup snapshot. Finds the volunteers that were
-// assigned to the caller at that snapshot, and re-points ONLY the ones that are now unassigned back
-// to them. Never overrides a volunteer that has since been called, accepted, or reassigned to another
-// caller. Preview with ?dry=1 before committing. Super Admin only.
+// assigned to the caller at that snapshot, and re-points ONLY the ones that are now unassigned back to
+// them. Never touches a volunteer that has since been called, accepted, reassigned to another caller, or
+// DELIBERATELY unassigned (released to pool / unassign / transfer). Preview with ?dry=1 first. Super Admin only.
 //
 //   /api/restorecaller?list=1                                  -> available snapshot timestamps
 //   /api/restorecaller?caller=<email>&snapshot=<ts>&dry=1      -> preview what would be restored
@@ -14,6 +14,20 @@ const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const BACKUP_CONTAINER = process.env.BACKUP_CONTAINER || "backups";
 const clean = (s) => String(s == null ? "" : s).trim();
 const nm = (v) => ((v.first || "") + " " + (v.last || "")).trim();
+
+// A now-cleared assignment is DELIBERATE (not a silent loss) if the record was released to the pool, or
+// its log shows an unassign / reassign / release / transfer event AFTER the last time it was assigned to
+// THIS caller. We never restore those — the person was let go on purpose. A silent loss, by contrast,
+// has the pointer cleared with no such event (the corruption signature), and only those get restored.
+const CLEAR_EVENTS = new Set(["unassign", "reassigned", "release_to_pool", "transfer_reconcile"]);
+function deliberatelyRemoved(v, caller) {
+  if (v && v.released_to_pool) return true;
+  const log = Array.isArray(v && v.activity_log) ? v.activity_log : [];
+  let lastAssign = -1;
+  for (let i = 0; i < log.length; i++) { const e = log[i] || {}; if (e.action === "assign" && clean(e.to).toLowerCase() === caller) lastAssign = i; }
+  const after = lastAssign >= 0 ? log.slice(lastAssign + 1) : log;
+  return after.some(e => e && CLEAR_EVENTS.has(e.action));
+}
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -88,7 +102,7 @@ module.exports = async function (context, req) {
     const liveByRegion = {};
     for (const region of regions) { const { records } = await readRegion(container, region); const m = new Map(); for (const v of records) m.set(String(v.user_id), v); liveByRegion[region] = m; }
 
-    const buckets = { restore: [], alreadyAssigned: [], reassignedToOther: [], calledOrAccepted: [], notFound: [] };
+    const buckets = { restore: [], alreadyAssigned: [], reassignedToOther: [], calledOrAccepted: [], deliberatelyRemoved: [], notFound: [] };
     for (const s of snapAssigned) {
       const live = liveByRegion[s.region] && liveByRegion[s.region].get(String(s.user_id));
       if (!live) { buckets.notFound.push(s); continue; }
@@ -96,7 +110,8 @@ module.exports = async function (context, req) {
       if (lc === caller) { buckets.alreadyAssigned.push(s); continue; }
       if (live.call_done || live.call_outcome === "Accepted" || live.ivol_ready) { buckets.calledOrAccepted.push(s); continue; }
       if (lc && lc !== caller) { buckets.reassignedToOther.push({ ...s, to: lc }); continue; }
-      buckets.restore.push(s);   // now unassigned + not called -> safe to give back
+      if (deliberatelyRemoved(live, caller)) { buckets.deliberatelyRemoved.push(s); continue; }  // unassigned ON PURPOSE
+      buckets.restore.push(s);   // unassigned + not called + no removal event -> silent loss, safe to give back
     }
 
     let restored = 0;
@@ -107,6 +122,7 @@ module.exports = async function (context, req) {
           if (lc === caller) return { skip: "already" };
           if (v.call_done || v.call_outcome === "Accepted" || v.ivol_ready) return { skip: "called" };
           if (lc && lc !== caller) return { skip: "reassigned" };
+          if (deliberatelyRemoved(v, caller)) return { skip: "deliberate" };
           v.assigned_caller = caller;
           v.activity_log = v.activity_log || [];
           v.activity_log.push({ ts: new Date().toISOString(), actor: "restore", action: "reassigned", note: `Restored to ${caller} from snapshot ${stamp}.` });
@@ -123,11 +139,13 @@ module.exports = async function (context, req) {
         alreadyAssigned: buckets.alreadyAssigned.length,
         reassignedToOther: buckets.reassignedToOther.length,
         calledOrAccepted: buckets.calledOrAccepted.length,
+        deliberatelyRemoved: buckets.deliberatelyRemoved.length,
         notFound: buckets.notFound.length,
         detail: {
           restore: buckets.restore.slice(0, 500),
           reassignedToOther: buckets.reassignedToOther.slice(0, 200),
           calledOrAccepted: buckets.calledOrAccepted.slice(0, 200),
+          deliberatelyRemoved: buckets.deliberatelyRemoved.slice(0, 200),
           notFound: buckets.notFound.slice(0, 200),
         },
         note: dry ? "Preview only — nothing changed. Re-run with &commit=1 (and remove dry) to apply the restore." : "Restore applied.",

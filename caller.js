@@ -346,9 +346,9 @@ async function sendConfirmEmail(v){
     let roleHtml, rolePlain;
     if(asg.length){
       const items=asg.map(a=>({ nm:eventName(a.event), ds:(a.candidate_duties.length?a.candidate_duties.join(', '):'duty to be confirmed') }));
-      roleHtml=`<p>Based on our conversation, here's where you'll be helping:</p><ul>`
+      roleHtml=`<p>Based on the areas you expressed an interest in, here's where you'll be helping:</p><ul>`
         +items.map(i=>`<li><b>${escapeHtml(i.nm)}</b> — ${escapeHtml(i.ds)}</li>`).join('')+`</ul>`;
-      rolePlain=`Based on our conversation, here's where you'll be helping:\n`
+      rolePlain=`Based on the areas you expressed an interest in, here's where you'll be helping:\n`
         +items.map(i=>`  - ${i.nm} - ${i.ds}`).join('\n');
     } else {
       roleHtml=`<p>Your assigned role is as follows: <b>${areaTxt}</b>.</p>`;

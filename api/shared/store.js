@@ -85,8 +85,11 @@ async function writeBlob(container, name, records, { etag = null, create = false
 
 async function readRegion(container, region) {
   if (SHARDS === 1) return readBlob(container, legacyName(region));
+  // Read all shards concurrently so region-read latency stays flat as the shard count grows.
+  // Promise.all preserves input order, so buckets 0..N-1 concatenate exactly as the old loop did.
+  const parts = await Promise.all(Array.from({ length: SHARDS }, (_, b) => readBlob(container, shardName(region, b))));
   const all = [];
-  for (let b = 0; b < SHARDS; b++) { const { records } = await readBlob(container, shardName(region, b)); for (const r of records) all.push(r); }
+  for (const p of parts) for (const r of p.records) all.push(r);
   return { records: all, etag: null };
 }
 

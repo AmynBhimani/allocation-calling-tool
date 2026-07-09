@@ -362,6 +362,18 @@
       ]
     },
     {
+      "route": "/api/volunteer",
+      "allowedRoles": ["superadmin", "admin", "leadership"]
+    },
+    {
+      "route": "/api/assignmentaudit",
+      "allowedRoles": ["superadmin", "admin"]
+    },
+    {
+      "route": "/api/clearassignments",
+      "allowedRoles": ["superadmin"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "superadmin",

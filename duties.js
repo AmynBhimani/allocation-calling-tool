@@ -51,15 +51,12 @@ function renderList(){
   const order = ALL_AREAS.filter(a=>byArea[a] && (!pick || a===pick));
   if(!order.length){ box.innerHTML='<div class="empty">No duties in that area yet.</div>'; return; }
   box.innerHTML = order.map(area=>{
-    const canManage = MANAGEABLE.includes(area);
     const items = byArea[area].sort((a,b)=>a.name.localeCompare(b.name)).map(d=>`
       <div class="duty">
         <div><div class="dn">${esc(d.name)}</div>${d.description?`<div class="dd">${esc(d.description)}</div>`:''}</div>
-        ${canManage?`<button class="remove" data-area="${esc(d.area)}" data-name="${esc(d.name)}">Remove</button>`:''}
       </div>`).join('');
     return `<div class="area-group"><h3>${esc(area)} <span class="sub">(${byArea[area].length})</span></h3>${items}</div>`;
   }).join('');
-  box.querySelectorAll('.remove').forEach(b=>b.addEventListener('click',()=>removeDuty(b.dataset.area,b.dataset.name)));
 }
 
 async function addOne(){
@@ -79,14 +76,6 @@ async function addOne(){
   finally{ btn.disabled=false; }
 }
 
-async function removeDuty(area,name){
-  if(!confirm(`Remove "${name}" from ${area}?`)) return;
-  try{
-    const r=await fetch('/api/duties',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'remove',entry:{area,name}})});
-    const d=await r.json(); if(!r.ok) throw new Error(d.error||("HTTP "+r.status));
-    DUTIES=d.duties||DUTIES; banner(`Removed "${name}".`, false); renderList();
-  }catch(e){ banner('Could not remove: '+e.message, true); }
-}
 
 // ---- file upload ----
 function pick(row, names){

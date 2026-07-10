@@ -1,11 +1,18 @@
 // Single-volunteer detail for the All Volunteers / Accepted side panels: contact numbers, email,
 // preferred areas, any duties captured during calling, and the call-outcome history. Read-only.
-// Super Admin / Admin / Leadership, region-walled to the viewer's events like the rest of the tool.
+// Super Admin and Leadership see everyone; Admin is walled to their event regions; a Quarterback is
+// walled to their own area x region, mirroring exactly what /api/accepted already lets them list.
 //   /api/volunteer?id=<user_id>&region=<Region>
 const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
+
+const clean = (s) => String(s == null ? "" : s).trim();
+const scopesFor = (store, email, role) => store
+  .filter(a => clean(a.email).toLowerCase() === email && clean(a.role) === role && clean(a.area))
+  .map(a => ({ area: clean(a.area), region: clean(a.region) }));
+const inScope = (scopes, area, region) => scopes.some(s => s.area === area && s.region === region);
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -37,8 +44,12 @@ module.exports = async function (context, req) {
     const principal = getPrincipal(req);
     const email = emailOf(principal);
     const roles = (principal && principal.userRoles) || [];
-    if (!email || !(roles.includes("superadmin") || roles.includes("admin") || roles.includes("leadership"))) {
-      context.res = { status: 403, body: { error: "Admin or Super Admin only." } }; return;
+    const isSuper = roles.includes("superadmin");
+    const isLead  = roles.includes("leadership");
+    const isAdmin = roles.includes("admin");
+    const isQB    = roles.includes("quarterback");
+    if (!email || !(isSuper || isAdmin || isLead || isQB)) {
+      context.res = { status: 403, body: { error: "Not authorised to view volunteer details." } }; return;
     }
     if (!CONN) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
@@ -47,16 +58,27 @@ module.exports = async function (context, req) {
     if (id == null || id === "" || !region || !REGIONS.includes(region)) {
       context.res = { status: 400, body: { error: "id and a valid region are required." } }; return;
     }
-    const isSuper = roles.includes("superadmin");
-    const allowed = (isSuper || roles.includes("leadership")) ? null : allowedRegionsFor(await readRolesStore(), email);
-    if (allowed && !allowed.includes(region)) {
-      context.res = { status: 403, body: { error: "That region is outside your assigned events." } }; return;
+    // Resolve what this viewer may see. Region is checked up front; a quarterback's area can only be
+    // checked once we have the record, so it is re-checked below before anything is returned.
+    let allowedRegions = null, qbScopes = null;
+    if (!(isSuper || isLead)) {
+      const store = await readRolesStore();
+      if (isAdmin) allowedRegions = allowedRegionsFor(store, email);
+      if (isQB) qbScopes = scopesFor(store, email, "quarterback");
+      const regionOk = (allowedRegions && allowedRegions.includes(region))
+                    || (qbScopes && qbScopes.some(s => s.region === region));
+      if (!regionOk) { context.res = { status: 403, body: { error: "That region is outside your assigned events." } }; return; }
     }
 
     const container = await getContainer(DATA_CONTAINER);
     const { records } = await readRegion(container, region);
     const v = records.find(r => String(r.user_id) === String(id));
     if (!v) { context.res = { status: 404, body: { error: "Volunteer not found in that region." } }; return; }
+
+    // A quarterback with no wider role only sees volunteers inside their own area x region.
+    if (!(isSuper || isLead || isAdmin) && qbScopes && !inScope(qbScopes, clean(v.final_area), region)) {
+      context.res = { status: 403, body: { error: "That volunteer is outside your assigned area." } }; return;
+    }
 
     // Duties captured across events (deduped) — the same candidate duties the Callers page surfaces.
     const duties = [...new Set((Array.isArray(v.event_assignments) ? v.event_assignments : [])

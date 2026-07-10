@@ -363,7 +363,7 @@
     },
     {
       "route": "/api/volunteer",
-      "allowedRoles": ["superadmin", "admin", "leadership"]
+      "allowedRoles": ["superadmin", "admin", "leadership", "quarterback"]
     },
     {
       "route": "/api/assignmentaudit",

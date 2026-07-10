@@ -25,6 +25,10 @@ function ageOf(v) {
 }
 const iffOf = (v) => !!v.interfaith || v.list === "IFF";
 const diverseOf = (v) => /diverse/i.test(String(v.list || ""));
+// Duties the volunteer expressed interest in, captured by the caller across events. Deduped, order preserved.
+const dutiesOf = (v) => [...new Set((Array.isArray(v.event_assignments) ? v.event_assignments : [])
+  .flatMap(a => Array.isArray(a.candidate_duties) ? a.candidate_duties : [])
+  .map(d => String(d).trim()).filter(Boolean))];
 // Quarterback / caller area×region scopes from the role store.
 const scopesFor = (store, email, role) => store
   .filter(a => clean(a.email).toLowerCase() === email && clean(a.role) === role && clean(a.area))
@@ -78,7 +82,7 @@ module.exports = async function (context, req) {
         vols.push({
           id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
           region, jk: v.ceremony_jk || "", area: v.final_area || "", age: ageOf(v), iff: iffOf(v), diverse: diverseOf(v),
-          entered: !!v.ivol_entered, acceptedAt: acceptedAt(v),
+          entered: !!v.ivol_entered, acceptedAt: acceptedAt(v), duties: dutiesOf(v),
         });
       }
     }

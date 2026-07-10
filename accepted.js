@@ -143,10 +143,10 @@ function render() {
 
 function exportCsv() {
   const list = shown();
-  const cols = ["Name", "Region", "Jamatkhana", "Area", "Age", "In Better Impact", "Accepted"];
+  const cols = ["Name", "Region", "Jamatkhana", "Area", "Age", "In Better Impact", "Accepted", "Duties of Interest"];
   const esc2 = s => { s = String(s == null ? "" : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const lines = [cols.join(",")];
-  for (const v of list) lines.push([v.name, v.region, v.jk, v.area || "", v.age == null ? "" : v.age, v.entered ? "Yes" : "No", fmtDate(v.acceptedAt)].map(esc2).join(","));
+  for (const v of list) lines.push([v.name, v.region, v.jk, v.area || "", v.age == null ? "" : v.age, v.entered ? "Yes" : "No", fmtDate(v.acceptedAt), (v.duties || []).join("; ")].map(esc2).join(","));
   const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob); const a = document.createElement("a");
   a.href = url; a.download = `accepted-volunteers-${new Date().toISOString().slice(0, 10)}.csv`;

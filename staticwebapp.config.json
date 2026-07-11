@@ -374,6 +374,14 @@
       "allowedRoles": ["superadmin", "admin"]
     },
     {
+      "route": "/api/biidset",
+      "allowedRoles": ["superadmin"]
+    },
+    {
+      "route": "/api/dedupresolve",
+      "allowedRoles": ["superadmin"]
+    },
+    {
       "route": "/api/clearassignments",
       "allowedRoles": ["superadmin"]
     },

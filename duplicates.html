@@ -34,6 +34,21 @@
   .muted{color:var(--mute);font-size:13.5px}
   .note{font-size:13px;color:var(--mute);background:#FBFDFD;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:16px}
   .loading{color:var(--mute);padding:24px;text-align:center}
+  /* resolution controls */
+  .bibar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FBFDFD;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13.5px}
+  .bibar .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .bibar .dot.fresh{background:#2E7D32} .bibar .dot.stale{background:#B26B00} .bibar .dot.none{background:#B03A2E}
+  .cluster .cactions{padding:10px 14px;border-top:1px solid #F0F5F6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#FBFDFD}
+  .cluster .cactions .hint{font-size:12.5px;color:var(--mute);margin-left:auto}
+  .survpick{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;background:#fff}
+  .btn-resolve{background:#028090;color:#fff;border:none;border-radius:8px;padding:7px 14px;font:inherit;font-size:13px;cursor:pointer}
+  .btn-resolve[disabled]{opacity:.45;cursor:not-allowed}
+  .btn-ghost{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
+  .setaside{background:#FFF3E0;border:1px solid #F0C67C;border-radius:8px;padding:6px 11px;font-size:12.5px;color:#8A5A00}
+  .rowpick{cursor:pointer}
+  .dtable tr.survivor{background:#E9F4F4;box-shadow:inset 3px 0 0 #028090}
+  .resolvemsg{font-size:12.5px;padding:6px 11px;border-radius:8px;margin-top:6px}
+  .resolvemsg.ok{background:#E8F5E9;color:#1B5E20} .resolvemsg.err{background:#FBEAE7;color:#B03A2E}
 </style>
 </head>
 <body>
@@ -49,10 +64,18 @@
 
 <main class="wrap">
   <div class="note">
-    This is a <b>read-only</b> scan. Nothing is changed here. It groups records that look like the same
-    person, most urgent first. <b>Accepted in two areas</b> means someone is double-counted and needs
-    resolving. <b>Needs BI check</b> means the group has two Better&nbsp;Impact accounts — a fresh BI
-    sync decides whether they merge or go to the BI team. Resolution happens on the resolution screen.
+    This scan groups records that look like the same person, most urgent first. Pick the record to
+    <b>keep</b> (the survivor) in each group and resolve it — the others fold into it, carrying their
+    call/accept work. <b>Accepted in two areas</b> is a double-count; resolve those first. A group with
+    <b>two live Better&nbsp;Impact accounts</b> can't be merged here — it's set aside for the BI team to
+    merge in Better&nbsp;Impact, then re-scan.
+  </div>
+
+  <div class="bibar" id="bibar">
+    <span class="dot none" id="biDot"></span>
+    <span id="biStatus">Checking Better Impact snapshot…</span>
+    <button class="btn-ghost" id="biRefresh">Refresh BI snapshot</button>
+    <span class="hint muted" id="biHint" style="margin-left:auto"></span>
   </div>
 
   <div class="dup-controls">

@@ -20,6 +20,7 @@ const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } =
 const { findDuplicateClusters } = require("../shared/dedup");
 
 const CONN = process.env.RESPONSES_STORAGE;
+const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -58,7 +59,7 @@ module.exports = async function (context, req) {
 
     // Read the requested regions and scan each independently (a duplicate pair always shares a region,
     // since a person's region is derived from their JK — cross-region pairs are not real duplicates).
-    const container = await getContainer();
+    const container = await getContainer(DATA_CONTAINER);
     let allClusters = [];
     const perRegion = {};
     let scanned = 0;

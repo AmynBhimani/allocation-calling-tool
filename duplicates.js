@@ -11,6 +11,7 @@ const CAT_CLASS = { accepted_multi_area: "danger", needs_bi_check: "warn", merge
 const SIGNAL_LABEL = {
   email: "same email", phone: "same phone",
   name_same_jk: "same name + JK", name_diff_jk: "same name, different JK",
+  name_diff_jk_age_match: "same name + age, different JK",
 };
 
 async function boot() {
@@ -101,6 +102,7 @@ function clusterHtml(c) {
     return `<tr>
       <td class="${idCls}">${esc(String(m.user_id))}${m.is_writein ? " (write-in)" : ""}</td>
       <td>${esc(m.name)}</td>
+      <td>${m.age == null ? "—" : m.age}</td>
       <td>${esc(m.ceremony_jk || "—")}</td>
       <td class="${areaCls}">${esc(m.final_area || "—")}</td>
       <td>${state}</td>
@@ -112,7 +114,7 @@ function clusterHtml(c) {
   return `<div class="cluster ${cls === "danger" ? "danger" : ""}">
     <div class="chead">${badges}<span class="why">${why ? "matched on " + esc(why) : ""}</span></div>
     <table class="dtable">
-      <thead><tr><th>Account ID</th><th>Name</th><th>Jamatkhana</th><th>Area</th><th>Status</th><th>Caller</th><th>Contact</th></tr></thead>
+      <thead><tr><th>Account ID</th><th>Name</th><th>Age</th><th>Jamatkhana</th><th>Area</th><th>Status</th><th>Caller</th><th>Contact</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;

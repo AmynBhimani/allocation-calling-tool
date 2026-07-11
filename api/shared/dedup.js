@@ -15,6 +15,29 @@
 
 const lc = (s) => String(s == null ? "" : s).trim().toLowerCase();
 const dig10 = (s) => String(s == null ? "" : s).replace(/\D/g, "").slice(-10);
+
+// Derive age identically to the rest of the tool (all-volunteers / volunteer endpoints): stored `age`
+// wins, else compute from `birthday`, else null. ~98% of real records have this, so it's a reliable
+// disambiguator — two records that "match" on name/email but differ sharply in age are different people.
+function ageOf(v) {
+  if (v.age != null && Number.isFinite(Number(v.age))) return Number(v.age);
+  if (!v.birthday) return null;
+  const d = new Date(v.birthday); if (isNaN(d)) return null;
+  const now = new Date();
+  let a = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--;
+  return a >= 0 && a < 130 ? a : null;
+}
+// How far apart are two records in age? null if either lacks age (then age can't gate the match).
+function ageGap(a, b) {
+  const aa = ageOf(a), ab = ageOf(b);
+  if (aa == null || ab == null) return null;
+  return Math.abs(aa - ab);
+}
+// A real duplicate is the same person, so ages match within a birthday's slop. Beyond this, different
+// people (parent/child sharing an email, two same-named relatives). 3 tolerates stale/mis-keyed data.
+const AGE_SPLIT_THRESHOLD = 3;
 // Normalize a name for comparison: strip accents, lowercase, drop non-alnum, collapse spaces.
 const normName = (first, last) => String((first || "") + " " + (last || ""))
   .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -61,17 +84,32 @@ function namesMatch(aFirst, aLast, bFirst, bLast) {
   // exact normalized name
   const an = normName(aFirst, aLast), bn = normName(bFirst, bLast);
   if (an && an === bn) return true;
-  // surname must be close (edit<=1 or phonetic-equal); then first name close or phonetic-equal
+  // Surname must be close; then the FIRST name must be a genuine spelling variant, not merely one edit
+  // away. Single-letter SUBSTITUTIONS on short first names are almost always DIFFERENT people in this
+  // community (Zahra/Zuhra/Zahir, Amin/Amir, Nadia/Nadir), so edit<=1 is far too loose. We only accept:
+  //   - identical first names, OR
+  //   - a variant explained by insertion/deletion of a repeated letter (Aamir/Amir, Nurin/Nuurin), i.e.
+  //     the shorter collapses into the longer, OR
+  //   - phonetic-equal where that equality is NOT produced by swapping a single distinguishing letter.
   const lastClose = al && bl && (editDistance(al, bl) <= 1 || phonetic(al) === phonetic(bl));
-  if (lastClose) {
-    const firstClose = af && bf && (editDistance(af, bf) <= 1 || phonetic(af) === phonetic(bf));
-    if (firstClose) return true;
-  }
-  // whole-name phonetic equality (catches e.g. slight reorder / compound)
-  if (an && bn && phonetic(an.replace(/ /g, "")) === phonetic(bn.replace(/ /g, "")) && phonetic(an.replace(/ /g, ""))) {
-    // require at least the surname to be non-trivially similar too, to avoid over-clustering
-    if (lastClose) return true;
-  }
+  if (lastClose && af && bf && firstNamesSamePerson(af, bf)) return true;
+  return false;
+}
+
+// Collapse a name to its "shape" for repeated-letter comparison: lowercase, drop non-letters,
+// collapse any run of the same letter to one. Aamir->amir, Amir->amir (match). Zahra->zahra,
+// Zahir->zahir (NO match — different letters, not a repeat).
+const collapseRepeats = (s) => String(s || "").toLowerCase().replace(/[^a-z]/g, "").replace(/(.)\1+/g, "$1");
+
+// Are two FIRST names the same person's name (identical or a safe spelling variant)?
+function firstNamesSamePerson(a, b) {
+  a = lc(a); b = lc(b);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // variant only if they collapse to the SAME letter-sequence once repeated letters are removed.
+  // This accepts Aamir/Amir and Muhammad/Muhamad, but rejects Zahra/Zuhra and Zahra/Zahir (their
+  // collapsed forms still differ). This is the key guard against short-name over-matching.
+  if (collapseRepeats(a) === collapseRepeats(b) && collapseRepeats(a).length >= 2) return true;
   return false;
 }
 
@@ -95,20 +133,30 @@ function pairSignal(a, b) {
   const phoneSame = aph.some(p => bph.has(p));
 
   const nameFuzzy = namesMatch(a.first, a.last, b.first, b.last);
-  const surnameOk = surnamesCompatible(a.last, b.last);
+
+  // Age gate: if a match is otherwise indicated but ages differ sharply, these are different people
+  // (parent/child on a shared email, same-named relatives) — downgrade to a non-linking hint. When
+  // either record lacks age (~2%), the gate is inactive and matching falls back to name/contact.
+  const gap = ageGap(a, b);
+  const ageSplits = gap != null && gap > AGE_SPLIT_THRESHOLD;   // strong evidence of DIFFERENT people
+  const ageTight = gap != null && gap <= 1;                      // strong evidence of SAME person
 
   if (emailSame || phoneSame) {
-    // Same contact is only SAME-PERSON evidence when the full name is compatible (fuzzy match, which
-    // already requires a compatible surname AND first name). Same contact with a compatible surname but
-    // a DIFFERENT first name is a household/shared line (siblings, spouses) — or, in synthetic data, a
-    // coincidental collision. Either way it is NOT the same person, so we surface it as a non-linking
-    // hint rather than chaining a whole family into one cluster.
-    if (nameFuzzy) return { signal: emailSame ? "email" : "phone", confidence: "high" };
-    return { signal: "shared_contact_diff_name", confidence: "low", link: false };
+    // Same contact is same-person evidence only when the name is compatible AND age doesn't contradict.
+    if (nameFuzzy && !ageSplits) return { signal: emailSame ? "email" : "phone", confidence: "high" };
+    // Same contact but names differ, OR a large age gap -> household/family/relatives; hint, no link.
+    return { signal: ageSplits ? "shared_contact_age_gap" : "shared_contact_diff_name", confidence: "low", link: false };
   }
   if (nameFuzzy) {
+    // A large age gap splits even a same-name+JK pair (two same-named relatives at one JK).
+    if (ageSplits) return { signal: "same_name_age_gap", confidence: "low", link: false };
     const sameJk = lc(a.ceremony_jk) && lc(a.ceremony_jk) === lc(b.ceremony_jk);
-    return sameJk ? { signal: "name_same_jk", confidence: "medium" } : { signal: "name_diff_jk", confidence: "low" };
+    if (sameJk) return { signal: "name_same_jk", confidence: ageTight ? "high" : "medium" };
+    // Same name, different JK: normally a non-linking hint (could be relatives). But if age is TIGHT,
+    // it's more likely one person who moved / attends two JKs, so we allow a medium link.
+    return ageTight
+      ? { signal: "name_diff_jk_age_match", confidence: "medium" }
+      : { signal: "name_diff_jk", confidence: "low", link: false };
   }
   return null;
 }
@@ -221,6 +269,7 @@ function findDuplicateClusters(records, opts = {}) {
         region: m.region || "",
         ceremony_jk: m.ceremony_jk || "",
         final_area: m.final_area || "",
+        age: ageOf(m),
         accepted: isAccepted(m),
         assigned_caller: m.assigned_caller || null,
         call_outcome: m.call_outcome || null,
@@ -250,4 +299,4 @@ function findDuplicateClusters(records, opts = {}) {
   return { clusters, stats };
 }
 
-module.exports = { findDuplicateClusters, pairSignal, namesMatch, phonetic, editDistance, normName };
+module.exports = { findDuplicateClusters, pairSignal, namesMatch, phonetic, editDistance, normName, firstNamesSamePerson };

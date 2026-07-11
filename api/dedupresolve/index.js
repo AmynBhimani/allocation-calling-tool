@@ -15,8 +15,10 @@
 // POST body:
 //   {
 //     region, survivorId, loserIds: [...],
-//     winner?: "survivor" | "loser",     // which side's work-block wins on conflict (per-loser default: most progress)
-//     winningArea?: "<area>",            // required when survivor ends with no single area (both accepted, 2 areas)
+//     winner?: "survivor" | "loser",     // cluster-wide work-block winner on conflict (per-loser default: most progress)
+//     keepAcceptanceOf?: "<id>",         // when 2+ members are Accepted, the id whose acceptance STANDS. Its fold
+//                                        //   wins ("loser") and every other fold loses ("survivor"), so exactly one
+//                                        //   acceptance survives regardless of cluster size. Overrides `winner`.
 //     commit?: bool,                      // default false (dry-run)
 //     backedUp?: bool                     // the UI asserts a backup was just taken
 //   }
@@ -64,6 +66,10 @@ module.exports = async function (context, req) {
     const survivorId = body.survivorId != null ? String(body.survivorId) : "";
     const loserIds = Array.isArray(body.loserIds) ? body.loserIds.map(String).filter(id => id && id !== survivorId) : [];
     const commit = body.commit === true;
+    // When 2+ members accepted, keepAcceptanceOf names the id whose acceptance survives. It resolves the
+    // both-accepted refusal by handing each fold an explicit winner: the kept id's fold wins ("loser" side),
+    // all others lose ("survivor" side). Absent -> fall back to the cluster-wide body.winner (or none).
+    const keepAcceptanceOf = body.keepAcceptanceOf != null ? String(body.keepAcceptanceOf) : null;
     if (!REGIONS.includes(region)) { context.res = { status: 400, body: { error: "Unknown region." } }; return; }
     if (!survivorId || !loserIds.length) { context.res = { status: 400, body: { error: "Provide survivorId and at least one loserId." } }; return; }
 
@@ -102,14 +108,19 @@ module.exports = async function (context, req) {
 
     // Build the plan: fold each loser into the survivor in turn. Dry-run computes the outcome with the
     // pure mergeRecords; commit performs it with retireInto (which persists + re-buckets).
-    const opts = { biIds, winner: body.winner, actor: email || "dedupresolve" };
+    const opts = { biIds, actor: email || "dedupresolve" };
+    // Per-loser winner: if a kept acceptance is named, that fold wins and the rest lose; else the
+    // cluster-wide body.winner (usually undefined -> most-progress default inside mergeRecords).
+    const winnerFor = (lid) => keepAcceptanceOf != null
+      ? (String(lid) === keepAcceptanceOf ? "loser" : "survivor")
+      : body.winner;
     const results = [];
     if (!commit) {
       // DRY RUN: simulate sequentially against an in-memory copy so multi-loser folds are realistic.
       let workingSurvivor = { ...survivor };
       for (const lid of loserIds) {
         const loser = byId.get(lid);
-        const m = mergeRecords(loser, workingSurvivor, opts);
+        const m = mergeRecords(loser, workingSurvivor, { ...opts, winner: winnerFor(lid) });
         results.push({ loserId: lid, ok: m.ok, reason: m.reason || null,
           bothInBi: m.reason === "both_in_bi", needsWinner: m.reason === "both_accepted_needs_winner" });
         if (m.ok) workingSurvivor = m.record;   // chain: next loser folds into the growing survivor
@@ -137,7 +148,7 @@ module.exports = async function (context, req) {
     // Perform folds one at a time. Each retireInto is its own atomic region merge; if one refuses
     // (both_in_bi / needs winner), we record it and continue with the rest.
     for (const lid of loserIds) {
-      const r = await retireInto(container, region, lid, survivorId, opts);
+      const r = await retireInto(container, region, lid, survivorId, { ...opts, winner: winnerFor(lid) });
       results.push({ loserId: lid, ...r, bothInBi: r.reason === "both_in_bi", needsWinner: r.reason === "both_accepted_needs_winner" });
     }
     context.res = { body: {

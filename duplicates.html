@@ -49,6 +49,23 @@
   .dtable tr.survivor{background:#E9F4F4;box-shadow:inset 3px 0 0 #028090}
   .resolvemsg{font-size:12.5px;padding:6px 11px;border-radius:8px;margin-top:6px}
   .resolvemsg.ok{background:#E8F5E9;color:#1B5E20} .resolvemsg.err{background:#FBEAE7;color:#B03A2E}
+  /* both-accepted "which duty stands" picker */
+  .keeppick{margin:0 14px 12px;border:1px solid #E7B4AC;background:#FDF3F1;border-radius:10px;padding:10px 12px}
+  .kp-title{font-size:12.5px;font-weight:600;color:#B03A2E;margin-bottom:8px}
+  .kp-opts{display:flex;flex-wrap:wrap;gap:8px}
+  .kp-opt{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+  .kp-opt input{margin:0}
+  .kp-opt b{color:#046}
+  .kp-meta{color:var(--mute);font-size:12px}
+  .kp-note{font-size:11.5px;color:var(--mute);margin-top:8px}
+  /* batch bar */
+  .batchbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#F3FAFB;border:1px solid #BFE3E6;border-radius:10px;padding:10px 14px;margin-bottom:16px;min-height:20px}
+  .batchbar .bb-count{font-weight:600;color:var(--ink);font-size:13.5px}
+  .batchbar .bb-note{font-size:12.5px;color:var(--mute)}
+  .bb-msg{font-size:13px;padding:2px 0;width:100%}
+  .bb-msg.ok{color:#1B5E20} .bb-msg.err{color:#B03A2E}
+  .pickbatch{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em;cursor:pointer;user-select:none}
+  .pickbatch input{margin:0}
 </style>
 </head>
 <body>
@@ -66,9 +83,12 @@
   <div class="note">
     This scan groups records that look like the same person, most urgent first. Pick the record to
     <b>keep</b> (the survivor) in each group and resolve it — the others fold into it, carrying their
-    call/accept work. <b>Accepted in two areas</b> is a double-count; resolve those first. A group with
-    <b>two live Better&nbsp;Impact accounts</b> can't be merged here — it's set aside for the BI team to
-    merge in Better&nbsp;Impact, then re-scan.
+    call/accept work. <b>Accepted in two areas</b> is a double-count — an inline picker asks which duty the
+    person actually serves; the other acceptance is released and logged. A group with <b>two live
+    Better&nbsp;Impact accounts</b> can't be merged here — it's set aside for the BI team to merge in
+    Better&nbsp;Impact, then re-scan. To clear several at once, tick <b>batch</b> on each group and use
+    <b>Merge selected groups</b> (groups accepted in 2+ areas are skipped from a batch so you choose the
+    surviving duty yourself).
   </div>
 
   <div class="bibar" id="bibar">
@@ -96,6 +116,7 @@
   </div>
 
   <div class="summary" id="summary"></div>
+  <div class="batchbar" id="batchbar"></div>
   <div id="clusters"><div class="loading">Scanning…</div></div>
 </main>
 

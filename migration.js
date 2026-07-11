@@ -206,4 +206,68 @@
       banner('Transfer committed — ' + d.toStable + ' now Stable, ' + d.toReconciliation + ' in reconciliation, ' + d.leaders + ' leaders.', 'good');
     } catch (e) { banner('Commit failed: ' + e.message, 'err'); COMMIT.disabled = false; }
   });
+
+  // ---- Step 5: mass-accept the migrated team (dry-run to list eligible, then commit selected) ----
+  var MA = { would: [], skipped: {} };
+  var maLoad = document.getElementById('maLoad');
+  var maAccept = document.getElementById('maAccept');
+  var maSelectAll = document.getElementById('maSelectAll');
+  var maRes = document.getElementById('maRes');
+
+  function maUpdateBtn() {
+    var n = MA.would.filter(function (p) { return p._sel; }).length;
+    maAccept.disabled = n === 0;
+    maAccept.textContent = 'Accept selected' + (n ? ' (' + n + ')' : '');
+  }
+  function maRender() {
+    var sk = MA.skipped || {};
+    var skipBits = [];
+    [['alreadyAccepted', 'already accepted'], ['assignedToCaller', "on a caller's list"], ['inReconciliation', 'in reconciliation'], ['noArea', 'no area yet'], ['leadership', 'leadership']].forEach(function (p) {
+      if (sk[p[0]]) skipBits.push(sk[p[0]] + ' ' + p[1]);
+    });
+    var html = '<div class="ok" style="margin-top:0"><b>' + MA.would.length + '</b> eligible to accept without a call.'
+      + (skipBits.length ? ' Left out: ' + skipBits.join(', ') + '.' : '') + '</div>';
+    if (MA.would.length) {
+      var rows = MA.would.map(function (p, i) {
+        return '<tr><td><input type="checkbox" class="ma-chk" data-i="' + i + '"' + (p._sel ? ' checked' : '') + '></td>'
+          + '<td>' + esc(p.name) + '</td><td>' + esc(p.final_area || '—') + '</td><td>' + esc(p.ceremony_jk || '—') + '</td><td>' + esc(p.region) + '</td></tr>';
+      }).join('');
+      html += '<table style="margin-top:8px"><tr><th></th><th>Name</th><th>Area</th><th>Jamatkhana</th><th>Region</th></tr>' + rows + '</table>';
+    }
+    maRes.innerHTML = html; maRes.style.display = 'block';
+    maRes.querySelectorAll('.ma-chk').forEach(function (chk) {
+      chk.addEventListener('change', function () { MA.would[+chk.dataset.i]._sel = chk.checked; maUpdateBtn(); });
+    });
+    maSelectAll.style.display = MA.would.length ? '' : 'none';
+    maAccept.style.display = MA.would.length ? '' : 'none';
+    maUpdateBtn();
+  }
+
+  maLoad.addEventListener('click', async function () {
+    maLoad.disabled = true; maLoad.textContent = 'Loading…';
+    try {
+      var d = await call('/api/bulkaccept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dryRun: true }) });
+      MA.would = (d.wouldAccept || []).map(function (p) { p._sel = false; return p; });
+      MA.skipped = d.skipped || {};
+      maRender();
+    } catch (e) { banner('Could not load eligible members: ' + e.message, 'err'); }
+    maLoad.disabled = false; maLoad.textContent = 'Reload eligible team members';
+  });
+  maSelectAll.addEventListener('click', function () {
+    var allSel = MA.would.length > 0 && MA.would.every(function (p) { return p._sel; });
+    MA.would.forEach(function (p) { p._sel = !allSel; });
+    maRender();
+  });
+  maAccept.addEventListener('click', async function () {
+    var sel = MA.would.filter(function (p) { return p._sel; }).map(function (p) { return { user_id: p.user_id, region: p.region }; });
+    if (!sel.length) return;
+    if (!confirm('Accept ' + sel.length + " team member(s) with no call? They'll be marked Accepted and flow to the iVol report like any accept.")) return;
+    maAccept.disabled = true; maAccept.textContent = 'Accepting…';
+    try {
+      var d = await call('/api/bulkaccept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: sel }) });
+      var skipTotal = Object.keys(d.skipped || {}).reduce(function (s, k) { return s + (d.skipped[k] || 0); }, 0);
+      banner('Accepted ' + d.acceptedCount + ' team member(s)' + (skipTotal ? ' — ' + skipTotal + ' skipped by the guards' : '') + '.', 'good');
+      maLoad.click();   // reload; accepted ones drop off the eligible list
+    } catch (e) { banner('Accept failed: ' + e.message, 'err'); maAccept.disabled = false; maUpdateBtn(); }
+  });
 })();

@@ -13,6 +13,8 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { getContainer, streamToString } = require("../shared/store");
 const { fetchAllUsers } = require("../sync/bi");
+const { normalize } = require("../sync/fields");
+const { upsertNormalized } = require("../shared/biupsert");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -51,17 +53,32 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // POST -> pull BI fresh.
+    // POST -> pull BI fresh: (1) cache the id-set for the both-in-BI safety check, and (2) upsert the
+    // pulled records into the workspace — refresh existing people's identity/contact from BI and create
+    // anyone in BI but not yet in the app as Unassigned. All reconciliation/call/accept work and no-BI
+    // write-ins are preserved, and un-pushed caller contact edits are left intact. Pass { idsOnly: true }
+    // to only refresh the id-set (skip the volunteer upsert).
     if (!BI_USER || !BI_PASS) { context.res = { status: 500, body: { error: "BI_API_USER / BI_API_PASS not set." } }; return; }
-    const ids = [];
+    const idsOnly = (req.body && req.body.idsOnly === true) || req.query.idsOnly === "1";
+    const ids = [], normalized = [];
     const { pages, total } = await fetchAllUsers({
       base: BI_BASE, user: BI_USER, pass: BI_PASS, pageSize: 250, maxPages: 250,
-      onBatch: (users) => { for (const u of users) if (u && u.user_id != null) ids.push(String(u.user_id)); },
+      onBatch: (users) => {
+        for (const u of users) {
+          if (!u || u.user_id == null) continue;
+          ids.push(String(u.user_id));
+          if (!idsOnly) normalized.push(normalize(u));
+        }
+      },
     });
     const fetchedAt = new Date().toISOString();
     const snapshot = { fetchedAt, ids, biTotal: total, pages };
     await container.getBlockBlobClient(SNAPSHOT_BLOB).upload(JSON.stringify(snapshot), Buffer.byteLength(JSON.stringify(snapshot)), { overwrite: true });
-    context.res = { body: { present: true, count: ids.length, fetchedAt, ageMinutes: 0, biTotal: total, pages } };
+
+    // Upsert the pulled records into the live workspace (unless id-set-only was requested).
+    let upsert = null;
+    if (!idsOnly) upsert = await upsertNormalized(container, normalized, { protectEdits: true });
+    context.res = { body: { present: true, count: ids.length, fetchedAt, ageMinutes: 0, biTotal: total, pages, upsert } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }

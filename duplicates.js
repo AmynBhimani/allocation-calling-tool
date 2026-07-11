@@ -85,16 +85,22 @@ async function refreshBiStatus() {
     dot.className = "dot " + (fresh ? "fresh" : "stale");
     status.textContent = `Better Impact snapshot: ${BI_STATUS.count} accounts, ${BI_STATUS.ageMinutes} min old${fresh ? "" : " (stale — refresh to resolve BI-vs-BI groups)"}.`;
   }
-  btn.textContent = "Refresh BI snapshot";
+  btn.textContent = "Sync from Better Impact";
 }
 async function refreshBiSnapshot() {
   const btn = document.getElementById("biRefresh");
-  btn.disabled = true; btn.textContent = "Pulling Better Impact… (this can take a minute)";
+  if (!confirm("Sync from Better Impact? This refreshes existing volunteers with BI's latest details and creates any new BI people as Unassigned. All call/accept/reconciliation work is preserved, and un-pushed caller contact edits are kept. A backup is taken first.")) return;
+  btn.disabled = true; btn.textContent = "Backing up…";
   try {
+    const b = await fetch("/api/backupSnapshot", { method: "POST" });
+    if (!b.ok) { const e = await b.json().catch(() => ({})); throw new Error(e.error || ("backup HTTP " + b.status)); }
+    btn.textContent = "Syncing from Better Impact… (this can take a minute)";
     const r = await fetch("/api/biidset", { method: "POST" });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
-  } catch (e) { alert("Could not refresh BI snapshot: " + e.message); }
+    const u = d.upsert;
+    if (u) alert(`Better Impact sync done — ${d.count} accounts. ${u.added} created (Unassigned), ${u.preserved + u.refreshed} updated${u.contactEditsKept ? `, ${u.contactEditsKept} un-pushed caller edit(s) kept` : ""}.`);
+  } catch (e) { alert("Could not sync from Better Impact: " + e.message); }
   btn.disabled = false;
   await refreshBiStatus();
   await load();   // re-render so resolve buttons re-enable
@@ -366,39 +372,61 @@ function clearBatch() {
   renderBatchBar();
 }
 
-// Partition the current selection into what we'll merge vs. what we deliberately defer.
+// Partition the current selection into what we'll merge vs. what we defer. Accepted-in-2+-areas groups
+// are now INCLUDED — each carries its own "which duty stands" pick (default or operator-chosen) and is
+// listed for review before anything commits. Only 2+-BI-account groups without a fresh snapshot defer.
 function partitionBatch() {
-  const go = [], deferDiff = [], deferBi = [];
+  const go = [], deferBi = [];
   for (const i of BATCH) {
     const c = window.__clusters[i];
     if (!c) continue;
-    if (isDiffAreaDoubleAccept(c)) { deferDiff.push(i); continue; }   // needs an explicit winner choice
     if (c.numericIdCount >= 2 && !biFresh()) { deferBi.push(i); continue; }  // needs a fresh BI snapshot
     go.push(i);
   }
-  return { go, deferDiff, deferBi };
+  return { go, deferBi };
+}
+
+const nameOf = (c, id) => { const m = c.members.find(x => String(x.user_id) === String(id)); return (m && m.name) || String(id); };
+// One reviewable line per group for the confirm list — spells out the duty decision on double-accepts.
+function batchDecisionLine(i) {
+  const c = window.__clusters[i];
+  const survivorId = selectedSurvivor(i) || defaultSurvivor(c);
+  const keep = computeKeepAcceptance(c, survivorId, selectedAcceptance(i));
+  const n = c.members.length - 1;
+  if (isDiffAreaDoubleAccept(c) && keep) {
+    const kept = c.members.find(m => String(m.user_id) === String(keep));
+    const keptArea = (kept && kept.final_area) || "chosen";
+    const released = acceptedMembers(c)
+      .filter(m => String(m.user_id) !== String(keep) && (m.final_area || "") && lc(m.final_area) !== lc(keptArea))
+      .map(m => m.final_area);
+    const rel = released.length ? ` · release ${esc(released.join(", "))}` : "";
+    return `<b>${esc(nameOf(c, survivorId))}</b> — keep <b>${esc(keptArea)}</b>${rel} <span class="muted">(${esc(c.region)})</span>`;
+  }
+  return `<b>${esc(nameOf(c, survivorId))}</b> — merge ${n} record${n === 1 ? "" : "s"} <span class="muted">(${esc(c.region)})</span>`;
 }
 
 function armBatch() {
   const bar = document.getElementById("batchbar");
-  const { go, deferDiff, deferBi } = partitionBatch();
-  const skipParts = [];
-  if (deferDiff.length) skipParts.push(`${deferDiff.length} accepted in 2+ areas (pick the surviving duty individually)`);
-  if (deferBi.length) skipParts.push(`${deferBi.length} need a fresh BI snapshot`);
-  const skipNote = skipParts.length ? ` ${deferDiff.length + deferBi.length} will be skipped: ${skipParts.join("; ")}.` : "";
+  const { go, deferBi } = partitionBatch();
+  const skipNote = deferBi.length ? ` ${deferBi.length} skipped — need a fresh BI snapshot (resolve those after a superadmin refreshes).` : "";
   if (!go.length) {
-    bar.innerHTML = `<div class="bb-msg err" style="display:block">Nothing to merge in this selection.${skipNote} Resolve those individually.</div>` +
+    bar.innerHTML = `<div class="bb-msg err" style="display:block">Nothing to merge in this selection.${skipNote}</div>` +
       `<button class="btn-ghost" id="bbBack">Back</button>`;
     document.getElementById("bbBack").onclick = renderBatchBar;
     return;
   }
+  const diffCount = go.filter(i => isDiffAreaDoubleAccept(window.__clusters[i])).length;
+  const list = go.map(i => `<li>${batchDecisionLine(i)}</li>`).join("");
   bar.innerHTML =
-    `<span class="bb-count">Merge ${go.length} group${go.length === 1 ? "" : "s"} now?</span>` +
-    `<span class="bb-note">A backup is taken first.${skipNote}</span>` +
+    `<div class="bb-review">` +
+    `<div class="bb-count">Review ${go.length} merge${go.length === 1 ? "" : "s"} before running` +
+    (diffCount ? ` — ${diffCount} decide a duty (change the pick in the group above if any is wrong)` : "") + `:</div>` +
+    `<ul class="bb-list">${list}</ul>` +
+    `<div class="bb-note">A backup is taken first.${skipNote}</div>` +
     `<button class="btn-resolve" id="bbGo">Merge ${go.length} now</button>` +
     `<button class="btn-ghost" id="bbCancel">Cancel</button>` +
-    `<div class="bb-msg" id="bbMsg" style="display:none"></div>`;
-  document.getElementById("bbGo").onclick = () => runBatch(go, deferDiff.length + deferBi.length);
+    `<div class="bb-msg" id="bbMsg" style="display:none"></div></div>`;
+  document.getElementById("bbGo").onclick = () => runBatch(go, deferBi.length);
   document.getElementById("bbCancel").onclick = renderBatchBar;
 }
 

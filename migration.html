@@ -89,6 +89,22 @@
     </div>
     <div class="resbox" id="tRes"></div>
   </div>
+
+  <div class="card">
+    <div class="step">Step 5 · Mass-accept the team</div>
+    <h2>Accept the migrated team members</h2>
+    <p class="hint">The migration only brings over people selected as part of an existing team. This marks the
+      eligible ones as <b>Accepted</b> without a call, exactly like a caller's Accept — they flow to the iVol
+      report and count everywhere. The usual guards still apply: anyone already accepted, <b>on a caller's
+      list</b>, still in reconciliation, with no area, or flagged leadership is left out (and shown below).
+      Nothing is selected by default — load, review, then accept.</p>
+    <div class="row">
+      <button class="btn ghost2" id="maLoad">Load eligible team members</button>
+      <button class="btn ghost2" id="maSelectAll" style="display:none">Select all / none</button>
+      <button class="btn commit" id="maAccept" style="display:none" disabled>Accept selected</button>
+    </div>
+    <div class="resbox" id="maRes"></div>
+  </div>
 </main>
 
 <script src="nav.js"></script>

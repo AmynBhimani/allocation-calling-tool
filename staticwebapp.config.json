@@ -203,6 +203,14 @@
       ]
     },
     {
+      "route": "/api/biresolutions",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "ivoladmin"
+      ]
+    },
+    {
       "route": "/api/reports",
       "allowedRoles": [
         "superadmin",
@@ -316,6 +324,14 @@
       ]
     },
     {
+      "route": "/bi-resolutions.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "ivoladmin"
+      ]
+    },
+    {
       "route": "/reports.html",
       "allowedRoles": [
         "superadmin",
@@ -363,27 +379,44 @@
     },
     {
       "route": "/api/volunteer",
-      "allowedRoles": ["superadmin", "admin", "leadership", "quarterback"]
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "leadership",
+        "quarterback"
+      ]
     },
     {
       "route": "/api/assignmentaudit",
-      "allowedRoles": ["superadmin", "admin"]
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
     },
     {
       "route": "/api/dedupscan",
-      "allowedRoles": ["superadmin", "admin"]
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
     },
     {
       "route": "/api/biidset",
-      "allowedRoles": ["superadmin"]
+      "allowedRoles": [
+        "superadmin"
+      ]
     },
     {
       "route": "/api/dedupresolve",
-      "allowedRoles": ["superadmin"]
+      "allowedRoles": [
+        "superadmin"
+      ]
     },
     {
       "route": "/api/clearassignments",
-      "allowedRoles": ["superadmin"]
+      "allowedRoles": [
+        "superadmin"
+      ]
     },
     {
       "route": "/api/*",

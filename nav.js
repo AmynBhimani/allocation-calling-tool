@@ -10,6 +10,7 @@
     {href:'/caller.html',      label:'My Calls',         roles:['superadmin','admin','caller']},
     {href:'/ivol.html',        label:'iVol report',      roles:['superadmin','admin','ivoladmin']},
     {href:'/biupdates.html',   label:'BI updates',       roles:['superadmin','admin','ivoladmin']},
+    {href:'/bi-resolutions.html', label:'BI resolutions', roles:['superadmin','admin','ivoladmin']},
     {href:'/reports.html',     label:'Dashboard',        roles:['superadmin','admin','leadership']},
     {href:'/duties.html',      label:'Duties',           roles:['superadmin','admin','quarterback']},
     {href:'/duplicates.html',  label:'Duplicates',       roles:['superadmin','admin']},

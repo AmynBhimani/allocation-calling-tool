@@ -66,6 +66,9 @@
   .bb-msg.ok{color:#1B5E20} .bb-msg.err{color:#B03A2E}
   .pickbatch{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em;cursor:pointer;user-select:none}
   .pickbatch input{margin:0}
+  .bb-review{width:100%}
+  .bb-list{margin:6px 0;padding-left:18px;max-height:220px;overflow:auto;font-size:13px}
+  .bb-list li{margin:3px 0}
 </style>
 </head>
 <body>
@@ -94,7 +97,7 @@
   <div class="bibar" id="bibar">
     <span class="dot none" id="biDot"></span>
     <span id="biStatus">Checking Better Impact snapshot…</span>
-    <button class="btn-ghost" id="biRefresh">Refresh BI snapshot</button>
+    <button class="btn-ghost" id="biRefresh">Sync from Better Impact</button>
     <span class="hint muted" id="biHint" style="margin-left:auto"></span>
   </div>
 

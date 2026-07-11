@@ -370,6 +370,10 @@
       "allowedRoles": ["superadmin", "admin"]
     },
     {
+      "route": "/api/dedupscan",
+      "allowedRoles": ["superadmin", "admin"]
+    },
+    {
       "route": "/api/clearassignments",
       "allowedRoles": ["superadmin"]
     },

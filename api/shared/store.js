@@ -161,10 +161,213 @@ async function reshardRegion(container, region, toN) {
   return { region, total: records.length, to: toN, perShard: buckets.map(x => x.length) };
 }
 
+// ---- Record merge (de-duplication + write-in→BI promotion) ---------------------------------------
+//
+// retireInto(container, region, loserId, survivorId, opts) folds one duplicate volunteer record into
+// another. Both the internal de-dup screen (two records for one human) and BI reconciliation (a
+// write-in that has since gained a real BI account) reduce to this one primitive. The only structural
+// difference is promotion, where the survivor's user_id is rewritten to a real BI id (opts.newId),
+// which moves the record to a different shard bucket — mergeRegion handles that automatically because
+// it re-splits the whole region on write.
+//
+// SAFETY MODEL:
+//  - BI is the source of truth. If BOTH ids currently exist in Better Impact (opts.biIds), the two
+//    accounts are genuinely distinct as far as BI is concerned, so we REFUSE to merge and defer to the
+//    BI team to resolve upstream, then re-run. If exactly one is in BI, that record's identity fields
+//    (contact / JK / age) are authoritative. If neither is in BI, we fall back to most-progress rules.
+//  - No work is ever silently lost or downgraded: the higher-progress work-block (accepted > confirmed
+//    > called > assigned > none) wins as the DEFAULT, but the caller may override which side wins via
+//    opts.winner ("survivor" | "loser"). If BOTH are accepted, we refuse unless the caller has picked a
+//    winner explicitly — a silent pick there is exactly the double-accept bug we are trying to kill.
+//  - activity_log is the union of both, timestamp-sorted, plus a "merged" marker recording what folded
+//    in and what was carried. merged_from accumulates TRANSITIVELY: the survivor inherits the loser's
+//    own merged_from history plus the loser's id, so a chain A→B→C leaves C aware of A. transfer reads
+//    merged_from to stay idempotent (it must never re-create a wi- record that was already merged away).
+
+const lc = (s) => String(s == null ? "" : s).trim().toLowerCase();
+const dig10 = (s) => String(s == null ? "" : s).replace(/\D/g, "").slice(-10);
+
+// The set of work fields that must move together as one coherent block.
+const WORK_FIELDS = [
+  "call_done", "call_outcome", "ivol_ready", "ivol_entered",
+  "confirmed_at", "confirm_sent_at", "confirm_token",
+  "assigned_caller", "callable_status", "held_aside", "released_to_pool",
+  "assigned_duty",
+];
+// Area/allocation fields that follow whichever work-block wins.
+const AREA_FIELDS = ["final_area", "computed_area", "conflict_claims", "alloc_category", "affinity_flag",
+  "referred_from", "referral_reason", "_prev_final"];
+
+// Progress rank: higher = more advanced work that must not be discarded.
+function progressRank(v) {
+  const out = lc(v && v.call_outcome);
+  if (v && (v.ivol_entered || v.confirmed_at)) return 5;      // confirmed / entered in iVol
+  if (v && (v.ivol_ready || out === "accepted")) return 4;    // accepted
+  if (v && v.call_done) return 3;                             // called and resolved
+  if (out) return 2;                                          // some outcome recorded
+  if (v && v.assigned_caller) return 1;                       // assigned to a caller, not yet called
+  return 0;                                                   // untouched
+}
+const isAccepted = (v) => !!(v && (v.ivol_ready || lc(v.call_outcome) === "accepted"));
+
+// Pure merge of two records. No I/O — this is the unit-tested core.
+// Returns { ok, record?, reason? }. On ok, `record` is the survivor to keep; the loser is dropped.
+function mergeRecords(loser, survivor, opts = {}) {
+  const biIds = opts.biIds instanceof Set ? opts.biIds : new Set((opts.biIds || []).map(String));
+  const loserInBi = biIds.has(String(loser.user_id));
+  const survInBi = biIds.has(String(survivor.user_id));
+
+  // Rule 1: both in BI -> do not merge; BI team resolves upstream.
+  if (loserInBi && survInBi) return { ok: false, reason: "both_in_bi" };
+
+  // Rule 2: both accepted -> the caller must have picked a winner; never silently choose.
+  if (isAccepted(loser) && isAccepted(survivor) && !opts.winner) {
+    return { ok: false, reason: "both_accepted_needs_winner" };
+  }
+
+  // Decide which side's WORK-BLOCK and AREA win.
+  // Explicit winner overrides; else higher progress; ties keep the survivor's.
+  let workWinner;
+  if (opts.winner === "loser") workWinner = loser;
+  else if (opts.winner === "survivor") workWinner = survivor;
+  else workWinner = progressRank(loser) > progressRank(survivor) ? loser : survivor;
+  const workLoser = workWinner === survivor ? loser : survivor;
+
+  // Identity authority: if exactly one side is in BI, that side's contact/JK/age win.
+  const biAuth = loserInBi ? loser : (survInBi ? survivor : null);
+
+  const carried = [];   // for the merge marker
+  const out = { ...survivor };   // survivor identity is the base
+
+  // --- Promotion: rewrite the surviving user_id (moves shard bucket; mergeRegion handles it) ---
+  if (opts.newId != null && String(opts.newId) !== String(out.user_id)) {
+    carried.push(`user_id:${out.user_id}->${opts.newId}`);
+    out.user_id = opts.newId;
+    out.no_bi_account = false;   // it now has a real BI id
+  }
+
+  // --- Contact fields: BI-authoritative if applicable, else fill blanks from loser, never clobber ---
+  for (const f of ["cell_phone", "home_phone", "work_phone", "email"]) {
+    const sv = String(survivor[f] || "").trim();
+    const lv = String(loser[f] || "").trim();
+    if (biAuth) {
+      const av = String(biAuth[f] || "").trim();
+      if (av && av !== sv) { out[f] = biAuth[f]; carried.push(`${f}<=bi:${av}`); }
+      else out[f] = survivor[f] || loser[f] || "";
+    } else if (!sv && lv) {
+      out[f] = loser[f]; carried.push(`${f}<=loser:${lv}`);   // fill blank only
+    }
+  }
+
+  // --- ceremony_jk: BI-authoritative if applicable; else survivor keeps its own ---
+  if (biAuth && String(biAuth.ceremony_jk || "").trim() &&
+      lc(biAuth.ceremony_jk) !== lc(survivor.ceremony_jk)) {
+    out.ceremony_jk = biAuth.ceremony_jk; carried.push(`ceremony_jk<=bi:${biAuth.ceremony_jk}`);
+  }
+
+  // --- age / birthday: BI-authoritative if applicable; else take a non-empty value ---
+  for (const f of ["age", "birthday"]) {
+    if (biAuth && biAuth[f] != null && biAuth[f] !== "" && biAuth[f] !== survivor[f]) {
+      out[f] = biAuth[f]; carried.push(`${f}<=bi`);
+    } else if ((survivor[f] == null || survivor[f] === "") && loser[f] != null && loser[f] !== "") {
+      out[f] = loser[f];
+    }
+  }
+
+  // --- Work-block + area: whichever side won moves as ONE coherent unit ---
+  if (workWinner !== survivor) {
+    for (const f of WORK_FIELDS) out[f] = workWinner[f];
+    for (const f of AREA_FIELDS) out[f] = workWinner[f];
+    carried.push("work_block<=loser");
+  }
+  // A merge must never UN-allocate someone: if the winning side has no final_area but the other side
+  // does, inherit that area (and its allocation context) rather than leaving the survivor area-less.
+  if (!String(out.final_area || "").trim()) {
+    const other = workWinner === survivor ? loser : survivor;
+    if (String(other.final_area || "").trim()) {
+      for (const f of AREA_FIELDS) out[f] = other[f];
+      carried.push(`final_area<=${other === loser ? "loser" : "survivor"}(was-empty)`);
+    }
+  }
+  // conflict_claims: if the merge lands on a single final_area, clear the reconciliation flag.
+  if (String(out.final_area || "").trim()) out.conflict_claims = [];
+
+  // --- leader: OR of both ---
+  const wasLeader = !!(survivor.leader_flag || survivor.leader || loser.leader_flag || loser.leader);
+  out.leader_flag = wasLeader;
+  if ("leader" in out || "leader" in loser) out.leader = wasLeader;
+
+  // --- pref_areas / duty interests: union, so no captured interest is lost ---
+  const unionArr = (a, b) => [...new Set([...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])])];
+  if (Array.isArray(survivor.pref_areas) || Array.isArray(loser.pref_areas)) {
+    out.pref_areas = unionArr(survivor.pref_areas, loser.pref_areas);
+  }
+  out.happy_anywhere = !!(survivor.happy_anywhere || loser.happy_anywhere);
+
+  // --- event_assignments: union by event; candidate_duties within a shared event are unioned ---
+  const evBy = new Map();
+  for (const e of [...(survivor.event_assignments || []), ...(loser.event_assignments || [])]) {
+    if (!e || e.event == null) continue;
+    const prev = evBy.get(e.event);
+    if (!prev) { evBy.set(e.event, { ...e, candidate_duties: [...(e.candidate_duties || [])] }); }
+    else prev.candidate_duties = unionArr(prev.candidate_duties, e.candidate_duties);
+  }
+  if (evBy.size) out.event_assignments = [...evBy.values()];
+
+  // --- potential_duplicate: the dup is now resolved; clear the hint on the survivor ---
+  delete out.potential_duplicate;
+
+  // --- activity_log: union, timestamp-sorted, + a merge marker; merged_from accumulates transitively ---
+  const priorMerged = new Set([
+    ...(Array.isArray(survivor.merged_from) ? survivor.merged_from : []),
+    ...(Array.isArray(loser.merged_from) ? loser.merged_from : []),
+  ].map(String));
+  priorMerged.add(String(loser.user_id));                    // the loser itself
+  if (opts.newId != null) priorMerged.add(String(survivor.user_id));  // survivor's pre-promotion id
+  out.merged_from = [...priorMerged];
+
+  const marker = {
+    ts: new Date().toISOString(), actor: opts.actor || "retireInto", action: "merged",
+    merged_from: String(loser.user_id),
+    loser_state: { area: loser.final_area || null, outcome: loser.call_outcome || null,
+      caller: loser.assigned_caller || null, accepted: isAccepted(loser) },
+    winner: workWinner === survivor ? "survivor" : "loser",
+    carried,
+  };
+  const log = [...(Array.isArray(survivor.activity_log) ? survivor.activity_log : []),
+    ...(Array.isArray(loser.activity_log) ? loser.activity_log : []), marker];
+  log.sort((a, b) => String(a && a.ts || "").localeCompare(String(b && b.ts || "")));
+  out.activity_log = log;
+
+  return { ok: true, record: out };
+}
+
+// I/O wrapper: applies mergeRecords inside a single region merge. Survivor is written to its correct
+// (possibly new) bucket and the loser is removed, atomically per shard ETag. Because survivor and loser
+// are usually in different buckets, mergeRegion writes the survivor's bucket before the loser's, so a
+// mid-write failure leaves a harmless temporary duplicate rather than a lost record.
+async function retireInto(container, region, loserId, survivorId, opts = {}) {
+  let result = { ok: false, reason: "not_found" };
+  await mergeRegion(container, region, (records) => {
+    const loser = records.find(r => String(r.user_id) === String(loserId));
+    const survivor = records.find(r => String(r.user_id) === String(survivorId));
+    if (!loser || !survivor) { result = { ok: false, reason: "not_found" }; return records; }
+    const m = mergeRecords(loser, survivor, opts);
+    if (!m.ok) { result = m; return records; }               // refuse: write nothing
+    result = { ok: true, survivorId: m.record.user_id, mergedFrom: m.record.merged_from };
+    // Keep every record except the two, then append the merged survivor.
+    const kept = records.filter(r => String(r.user_id) !== String(loserId) && String(r.user_id) !== String(survivorId));
+    kept.push(m.record);
+    return kept;
+  });
+  return result;
+}
+
 module.exports = {
   REGIONS, getContainer, readRegion, writeRegion, overwriteRegion, mutateVolunteer, mergeRegion, streamToString,
   reshardRegion, bucketOf, SHARDS,
   readRolesStore, allowedRegionsFor, readConfigJson, readDidars,
+  retireInto, mergeRecords, progressRank,   // mergeRecords + progressRank exported for unit tests
 };
 
 // ---- Config readers (app-config/*.json) ----

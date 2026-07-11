@@ -12,6 +12,7 @@
     {href:'/biupdates.html',   label:'BI updates',       roles:['superadmin','admin','ivoladmin']},
     {href:'/reports.html',     label:'Dashboard',        roles:['superadmin','admin','leadership']},
     {href:'/duties.html',      label:'Duties',           roles:['superadmin','admin','quarterback']},
+    {href:'/duplicates.html',  label:'Duplicates',       roles:['superadmin','admin']},
     {href:'/events.html',      label:'Events',           roles:['superadmin','admin']},
     {href:'/admin.html',       label:'Team & Roles',     roles:['superadmin','admin']},
     {href:'/fileimport.html',  label:'BI import',        roles:['superadmin']},

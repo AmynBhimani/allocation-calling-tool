@@ -404,21 +404,40 @@ module.exports = async function (context, req) {
     const seenIds = new Set();
     const applyTo = (v) => applyMigration(v, { byId, report, seenIds, idInfo, commit, email, didars });
 
+    // A write-in that was migrated on a PRIOR run and has since been merged away by retireInto (into a
+    // real BI account, or into another record) no longer exists under its wi- id — but retireInto left
+    // that id in the survivor's merged_from. Without checking merged_from we would re-create the wi-
+    // record on every run, endlessly resurrecting a duplicate the operator already resolved. So the
+    // "already present" test is: current ids UNION every id ever folded into a surviving record.
+    // NOTE: this only guards wi- record RE-CREATION (the push below). The email/phone/name FOLD paths
+    // upstream are untouched, so stranded-volunteer recovery still runs on every migration.
+    const mergedAwayIds = (records) => {
+      const s = new Set();
+      for (const v of records) for (const id of (Array.isArray(v.merged_from) ? v.merged_from : [])) s.add(String(id));
+      return s;
+    };
+
     for (const region of REGIONS) {
       const newOnes = writeinsByRegion[region] || [];
       if (commit) {
         const out = await mergeRegion(container, region, (existing) => {
           const mapped = existing.map(applyTo);
           const have = new Set(mapped.map(v => String(v.user_id)));
-          for (const w of newOnes) if (!have.has(String(w.user_id))) mapped.push(w);   // idempotent upsert
+          const gone = mergedAwayIds(existing);   // ids already migrated then merged away
+          for (const w of newOnes) {
+            const wid = String(w.user_id);
+            if (!have.has(wid) && !gone.has(wid)) mapped.push(w);   // idempotent upsert, merge-aware
+          }
           return mapped;
         });
         report.byRegion[region] = out.length;
       } else {
-        (recordsByRegion[region] || []).forEach(applyTo);
-        const have = new Set((recordsByRegion[region] || []).map(v => String(v.user_id)));
-        const fresh = newOnes.filter(w => !have.has(String(w.user_id))).length;
-        report.byRegion[region] = (recordsByRegion[region] || []).length + fresh;
+        const existing = recordsByRegion[region] || [];
+        existing.forEach(applyTo);
+        const have = new Set(existing.map(v => String(v.user_id)));
+        const gone = mergedAwayIds(existing);
+        const fresh = newOnes.filter(w => { const wid = String(w.user_id); return !have.has(wid) && !gone.has(wid); }).length;
+        report.byRegion[region] = existing.length + fresh;
       }
     }
     report.reviewIdsNotInWorkspace = [...byId.keys()].filter(id => !seenIds.has(id)).length;

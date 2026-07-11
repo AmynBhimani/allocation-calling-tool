@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duplicates</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .dup-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+  .dup-controls select{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--paper)}
+  .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .sbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--paper)}
+  .sbox .n{font-size:24px;font-weight:600;color:var(--ink);line-height:1.1}
+  .sbox .l{font-size:11.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em;margin-top:3px}
+  .sbox.danger .n{color:#B03A2E} .sbox.warn .n{color:#B26B00} .sbox.ok .n{color:#028090}
+  .cluster{border:1px solid var(--line);border-radius:12px;margin-bottom:14px;background:var(--paper);overflow:hidden}
+  .cluster.danger{border-color:#E7B4AC;box-shadow:0 0 0 1px #F3D9D4 inset}
+  .chead{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .badge{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);font-weight:600}
+  .badge.danger{background:#FBEAE7;border-color:#E7B4AC;color:#B03A2E}
+  .badge.warn{background:#FFF3E0;border-color:#F0C67C;color:#8A5A00}
+  .badge.ok{background:var(--ok-soft,#E9F4F4);border-color:var(--stable,#028090);color:#046}
+  .badge.conf{background:#EEF;border-color:#CCD;color:#334}
+  .badge.reg{background:#F4F4F4;color:#555}
+  .chead .why{font-size:12px;color:var(--mute);margin-left:auto}
+  .dtable{width:100%;border-collapse:collapse;font-size:13px}
+  .dtable th,.dtable td{text-align:left;padding:7px 14px;border-bottom:1px solid #F0F5F6;vertical-align:top}
+  .dtable th{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--mute);background:#FBFDFD}
+  .dtable tr:last-child td{border-bottom:none}
+  .idcell{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .wi{color:#8A5A00;font-style:italic}
+  .acc{color:#046;font-weight:600}
+  .diffarea{color:#B03A2E;font-weight:600}
+  .muted{color:var(--mute);font-size:13.5px}
+  .note{font-size:13px;color:var(--mute);background:#FBFDFD;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:16px}
+  .loading{color:var(--mute);padding:24px;text-align:center}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Duplicates</h1>
+  <span class="sub">Read-only scan · same person, more than one record</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="note">
+    This is a <b>read-only</b> scan. Nothing is changed here. It groups records that look like the same
+    person, most urgent first. <b>Accepted in two areas</b> means someone is double-counted and needs
+    resolving. <b>Needs BI check</b> means the group has two Better&nbsp;Impact accounts — a fresh BI
+    sync decides whether they merge or go to the BI team. Resolution happens on the resolution screen.
+  </div>
+
+  <div class="dup-controls">
+    <select id="regionSel"><option value="">All regions</option></select>
+    <select id="catSel">
+      <option value="">All categories</option>
+      <option value="accepted_multi_area">Accepted in 2+ areas (danger)</option>
+      <option value="needs_bi_check">Needs BI check</option>
+      <option value="mergeable">Mergeable</option>
+    </select>
+    <select id="minSel">
+      <option value="">Any confidence</option>
+      <option value="high">High confidence only</option>
+      <option value="medium">Medium &amp; up</option>
+    </select>
+    <button class="ghost" id="refreshBtn">Refresh</button>
+    <span class="muted" id="scanInfo"></span>
+  </div>
+
+  <div class="summary" id="summary"></div>
+  <div id="clusters"><div class="loading">Scanning…</div></div>
+</main>
+
+<script src="nav.js"></script>
+<script src="duplicates.js"></script>
+</body>
+</html>

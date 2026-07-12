@@ -9,12 +9,9 @@ const { allocate } = require("../sync/allocate");
 const { WESTERN_JKS, REGIONS } = require("../sync/fields");
 const { mergeRegion } = require("./store");
 const { computeCallableStatus } = require("./status");
+const { isTouched } = require("./preserve");
 
-// A record has call state worth preserving if reconciliation/calling has acted on it.
-function isTouched(v) {
-  return (Array.isArray(v.activity_log) && v.activity_log.length > 0) || !!v.assigned_caller || !!v.ivol_entered
-    || v.callable_status === "Leadership - Do Not Allocate" || !!v.released_to_pool;
-}
+// (isTouched now lives in ./preserve so the file import, API sync, and BI refresh share one definition.)
 
 // Build a volunteer record from a normalized BI record + its allocation. Same shape as the API sync.
 function toRecord(r, a) {

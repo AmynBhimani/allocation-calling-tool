@@ -1,21 +1,19 @@
 const { allocate } = require("../sync/allocate");
 const { WESTERN_JKS, REGIONS } = require("../sync/fields");
-const { getContainer, overwriteRegion, mergeRegion } = require("../shared/store");
+const { getContainer, overwriteRegion, mergeRegion, readRegion } = require("../shared/store");
 const { computeCallableStatus } = require("../shared/status");
+const { isTouched } = require("../shared/preserve");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const SNAPSHOT_BLOB = "bi-idset-snapshot.json";
+const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
   if (!h) return null;
   try { return JSON.parse(Buffer.from(h, "base64").toString("utf8")); } catch { return null; }
 }
-// Same preservation rule as the API sync: never lose call/reconciliation state or no-BI-account people.
-function isTouched(v) {
-  return (Array.isArray(v.activity_log) && v.activity_log.length > 0) || !!v.assigned_caller || !!v.ivol_entered
-    || v.callable_status === "Leadership - Do Not Allocate" || !!v.no_bi_account || !!v.released_to_pool;
-}
+// (isTouched now lives in ../shared/preserve — one guard shared by the file import, API sync, and BI refresh.)
 
 module.exports = async function (context, req) {
   try {
@@ -105,11 +103,19 @@ module.exports = async function (context, req) {
       };
     }
 
+    // A dry run simulates the REAL merge against the current live workspace, so the preview shows exactly
+    // what a commit would do — reconciled/called/accepted people keep their status — instead of showing
+    // every row as a raw (Unassigned) import. The simulated result is written to the preview container only.
+    const liveContainer = mode === "commit" ? container : await getContainer(DATA_CONTAINER);
     for (const region of REGIONS) {
       const fresh = byRegion[region];
       let result;
       if (mode === "commit") result = await mergeRegion(container, region, mergeFn(fresh));
-      else { result = fresh; summary.added += fresh.length; await overwriteRegion(container, region, fresh); }
+      else {
+        const live = await readRegion(liveContainer, region);
+        result = mergeFn(fresh)(live.records);
+        await overwriteRegion(container, region, result);
+      }
       summary.byRegion[region] = result.length;
       for (const v of result) {
         if (v.computed_area) summary.byArea[v.computed_area] = (summary.byArea[v.computed_area] || 0) + 1;

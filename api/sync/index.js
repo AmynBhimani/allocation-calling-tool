@@ -3,6 +3,7 @@ const { allocate } = require("./allocate");
 const { normalize, WESTERN_JKS, REGIONS } = require("./fields");
 const { getContainer, overwriteRegion, mergeRegion } = require("../shared/store");
 const { computeCallableStatus } = require("../shared/status");
+const { isTouched } = require("../shared/preserve");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const BI_USER = process.env.BI_API_USER;
@@ -15,11 +16,7 @@ function getPrincipal(req) {
   try { return JSON.parse(Buffer.from(h, "base64").toString("utf8")); } catch { return null; }
 }
 
-// A volunteer is "touched" (call state to preserve) if reconciliation/calling has acted on them.
-function isTouched(v) {
-  return (Array.isArray(v.activity_log) && v.activity_log.length > 0) || !!v.assigned_caller || !!v.ivol_entered
-    || v.callable_status === "Leadership - Do Not Allocate" || !!v.released_to_pool;
-}
+// (isTouched now lives in ../shared/preserve — one guard shared with the file import and BI refresh.)
 
 module.exports = async function (context, req) {
   try {

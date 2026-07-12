@@ -131,25 +131,26 @@ function makeWriteinRecord(a, didars) {
 function applyMigration(v, ctx) {
   const { byId, report, seenIds, idInfo, commit, email, didars } = ctx;
   if (v.released_to_pool) return v;   // deliberately released to the pool; never re-hold from review
-  // Never let a migration disturb anyone already on a caller's list or called/accepted/confirmed —
-  // even if a reviewer has since typed them into an area (which could be a conflict). This prevents
-  // an accepted person from being pulled back into reconciliation. This guard supersedes the
-  // "reviewed referral" reopen logic below for these people.
-  if (callerLocked(v) || v.assigned_caller) {
-    if (byId.has(String(v.user_id))) {
-      seenIds.add(String(v.user_id));   // they have a review entry; count as seen, not "unmatched"
-      report.protectedLocked++;
-      if (report.protectedLockedList.length < 300) {
-        const info = idInfo.get(String(v.user_id)) || {};
-        report.protectedLockedList.push({ user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || info.name || "", region: v.region || info.region || "", area: v.final_area || null });
-      }
+  const e = byId.get(String(v.user_id));
+  if (!e) return v;                   // no review entry for this person; leave them exactly as they are
+  seenIds.add(String(v.user_id));     // has a review entry; count as seen, not "unmatched"
+  const d = decisionFor(e);
+
+  // Never let a migration DISTURB anyone already on a caller's list or called/accepted/confirmed — with
+  // ONE exception: if they have no area yet, fill in the single area a reviewer picked. That only sets
+  // their area (it can't pull an accepted person — who already HAS an area — back into reconciliation),
+  // and it's exactly what a caller needs to work them. A contested (2+ area) review still defers.
+  const hasArea = !!String(v.final_area || "").trim();
+  const fillAreaOnly = !hasArea && !!d.final_area;    // no area here + one reviewed area to apply
+  if ((callerLocked(v) || v.assigned_caller) && !fillAreaOnly) {
+    report.protectedLocked++;
+    if (report.protectedLockedList.length < 300) {
+      const info = idInfo.get(String(v.user_id)) || {};
+      report.protectedLockedList.push({ user_id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || info.name || "", region: v.region || info.region || "", area: v.final_area || null });
     }
     return v;
   }
-  const e = byId.get(String(v.user_id));
-  if (!e) return v;
-  seenIds.add(String(v.user_id));
-  const d = decisionFor(e);
+
   report.matched++;
   if (d.final_area) report.toStable++;
   else if (d.conflict_claims.length >= 2) report.toReconciliation++;

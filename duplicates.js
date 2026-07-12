@@ -59,8 +59,9 @@ async function boot() {
 
   document.getElementById("refreshBtn").onclick = load;
   document.getElementById("regionSel").onchange = load;
-  document.getElementById("catSel").onchange = load;
   document.getElementById("minSel").onchange = load;
+  document.getElementById("catSel").onchange = applyView;    // client-side filter — no re-scan needed
+  document.getElementById("biToggle").onchange = applyView;
   document.getElementById("biRefresh").onclick = refreshBiSnapshot;
   await refreshBiStatus();
   await load(true);
@@ -108,12 +109,12 @@ async function refreshBiSnapshot() {
 
 async function load(firstTime) {
   const region = document.getElementById("regionSel").value;
-  const category = document.getElementById("catSel").value;
   const min = document.getElementById("minSel").value;
   const params = new URLSearchParams();
   if (region) params.set("region", region);
-  if (category) params.set("category", category);
   if (min) params.set("min", min);
+  // Category + BI-check visibility are applied client-side (applyView) so the summary always keeps the
+  // full counts and toggling the BI-check groups in/out doesn't need a re-scan.
 
   document.getElementById("clusters").innerHTML = '<div class="loading">Scanning…</div>';
   document.getElementById("summary").innerHTML = "";
@@ -139,7 +140,29 @@ async function load(firstTime) {
   renderSummary(data.stats);
   document.getElementById("scanInfo").textContent =
     `${data.stats.scanned} records scanned across ${(data.regions || []).length} region(s)`;
-  renderClusters(data.clusters || []);
+  window.__allClusters = data.clusters || [];
+  applyView();
+}
+
+// Category + BI-check visibility are applied here over the full scanned set, so the summary always shows
+// the true counts and the BI-check toggle re-filters instantly. window.__clusters (used by resolve/batch)
+// is the DISPLAYED subset, so its indices always line up with what's on screen. By default the 2+-BI-account
+// ("needs BI check") groups are hidden — they go to the BI team — and the toggle brings them back in.
+function applyView() {
+  const catEl = document.getElementById("catSel");
+  const cat = catEl ? catEl.value : "";
+  const includeBi = document.getElementById("biToggle").checked;
+  let list = window.__allClusters || [];
+  if (cat) {
+    list = list.filter(c => c.category === cat);              // explicit category isolation
+  } else if (!includeBi) {
+    list = list.filter(c => c.category !== "needs_bi_check"); // hide BI-check groups in the "all" view
+  }
+  BATCH.clear();
+  renderClusters(list);
+  const biN = (window.__allClusters || []).filter(c => c.category === "needs_bi_check").length;
+  const badge = document.getElementById("biCount");
+  if (badge) badge.textContent = biN ? `(${biN}${(!cat && !includeBi) ? " hidden" : ""})` : "";
 }
 
 function sbox(n, label, cls) { return `<div class="sbox ${cls || ""}"><div class="n">${n}</div><div class="l">${label}</div></div>`; }
@@ -154,12 +177,13 @@ function renderSummary(s) {
 }
 
 function renderClusters(clusters) {
+  window.__clusters = clusters;   // the DISPLAYED set — indices line up with resolve/batch actions
   const host = document.getElementById("clusters");
   if (!clusters.length) {
-    host.innerHTML = `<div class="loading">No duplicate groups match the current filters. 🎉</div>`;
+    host.innerHTML = `<div class="loading">No duplicate groups to resolve here. 🎉</div>`;
+    renderBatchBar();
     return;
   }
-  window.__clusters = clusters;   // keep for resolve actions
   host.innerHTML = clusters.map((c, i) => clusterHtml(c, i)).join("");
   clusters.forEach((c, i) => wireCluster(c, i));
   renderBatchBar();

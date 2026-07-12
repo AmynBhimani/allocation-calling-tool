@@ -8,6 +8,9 @@
 <style>
   .dup-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
   .dup-controls select{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--paper)}
+  .bitoggle{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink);cursor:pointer;user-select:none}
+  .bitoggle input{margin:0}
+  .bicount{color:var(--mute);font-size:12.5px}
   .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
   .sbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--paper)}
   .sbox .n{font-size:24px;font-weight:600;color:var(--ink);line-height:1.1}
@@ -114,6 +117,9 @@
       <option value="high">High confidence only</option>
       <option value="medium">Medium &amp; up</option>
     </select>
+    <label class="bitoggle" title="Groups with 2+ Better Impact accounts go to the BI team — hidden here by default so you can work the resolvable list">
+      <input type="checkbox" id="biToggle"> Include BI-check groups <span id="biCount" class="bicount"></span>
+    </label>
     <button class="ghost" id="refreshBtn">Refresh</button>
     <span class="muted" id="scanInfo"></span>
   </div>

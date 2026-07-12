@@ -207,67 +207,142 @@
     } catch (e) { banner('Commit failed: ' + e.message, 'err'); COMMIT.disabled = false; }
   });
 
-  // ---- Step 5: mass-accept the migrated team (dry-run to list eligible, then commit selected) ----
-  var MA = { would: [], skipped: {} };
-  var maLoad = document.getElementById('maLoad');
-  var maAccept = document.getElementById('maAccept');
-  var maSelectAll = document.getElementById('maSelectAll');
-  var maRes = document.getElementById('maRes');
+  // ---- Step 5: accept the team from the uploaded Existing Team Members file ----
+  var TEAM = { matched: [], ambiguous: [], notFound: [], counts: {} };
+  var teamPick = document.getElementById('teamPick');
+  var teamFile = document.getElementById('teamFile');
+  var teamFileName = document.getElementById('teamFileName');
+  var teamAccept = document.getElementById('teamAccept');
+  var teamSelectAll = document.getElementById('teamSelectAll');
+  var teamRes = document.getElementById('teamRes');
+  var MATCH_LABEL = { email: 'email', phone: 'phone', name: 'name' };
+  var SKIP_LABEL = { alreadyAccepted: 'already accepted', assignedToCaller: "on a caller's list", inReconciliation: 'in reconciliation', noArea: 'no area yet', leadership: 'leadership' };
 
-  function maUpdateBtn() {
-    var n = MA.would.filter(function (p) { return p._sel; }).length;
-    maAccept.disabled = n === 0;
-    maAccept.textContent = 'Accept selected' + (n ? ' (' + n + ')' : '');
+  // Read the Existing Team Members .xlsx in the browser and pull {first,last,email,phone,jk} per row.
+  function parseTeamFile(file, onRows, onErr) {
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      try {
+        var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+        var sheetName = wb.SheetNames.filter(function (n) { return String(n).toLowerCase().indexOf('team member') >= 0; })[0] || wb.SheetNames[0];
+        var ws = wb.Sheets[sheetName];
+        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+        if (!rows.length) throw new Error('the sheet is empty');
+        var headers = (rows[0] || []).map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+        var col = function (want) { return headers.findIndex(function (h) { return h === want || h.indexOf(want) >= 0; }); };
+        var ix = { first: col('first name'), last: col('last name'), email: col('email'), phone: col('phone'), jk: col('jamatkhana') };
+        if (ix.first < 0 || ix.last < 0 || ix.jk < 0) throw new Error("couldn't find the First Name / Last Name / Jamatkhana columns — is this the Existing Team Members file?");
+        var cell = function (row, i) { return i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : ''; };
+        var out = [];
+        for (var r = 1; r < rows.length; r++) {
+          var row = rows[r]; if (!row) continue;
+          var first = cell(row, ix.first), last = cell(row, ix.last);
+          if (!first && !last) continue;                                   // blank row
+          if ((first + ' ' + last).toLowerCase().indexOf('example') >= 0) continue;   // template sample row
+          out.push({ first: first, last: last, email: cell(row, ix.email), phone: cell(row, ix.phone), jk: cell(row, ix.jk) });
+        }
+        onRows(out);
+      } catch (e) { onErr(e); }
+    };
+    reader.onerror = function () { onErr(new Error('could not read the file')); };
+    reader.readAsArrayBuffer(file);
   }
-  function maRender() {
-    var sk = MA.skipped || {};
-    var skipBits = [];
-    [['alreadyAccepted', 'already accepted'], ['assignedToCaller', "on a caller's list"], ['inReconciliation', 'in reconciliation'], ['noArea', 'no area yet'], ['leadership', 'leadership']].forEach(function (p) {
-      if (sk[p[0]]) skipBits.push(sk[p[0]] + ' ' + p[1]);
-    });
-    var html = '<div class="ok" style="margin-top:0"><b>' + MA.would.length + '</b> eligible to accept without a call.'
-      + (skipBits.length ? ' Left out: ' + skipBits.join(', ') + '.' : '') + '</div>';
-    if (MA.would.length) {
-      var rows = MA.would.map(function (p, i) {
-        return '<tr><td><input type="checkbox" class="ma-chk" data-i="' + i + '"' + (p._sel ? ' checked' : '') + '></td>'
-          + '<td>' + esc(p.name) + '</td><td>' + esc(p.final_area || '—') + '</td><td>' + esc(p.ceremony_jk || '—') + '</td><td>' + esc(p.region) + '</td></tr>';
+
+  teamPick.addEventListener('click', function () { teamFile.click(); });
+  teamFile.addEventListener('change', function () {
+    var f = teamFile.files && teamFile.files[0]; if (!f) return;
+    teamFileName.textContent = f.name;
+    teamSelectAll.style.display = 'none'; teamAccept.style.display = 'none';
+    if (typeof XLSX === 'undefined') { teamRes.style.display = 'block'; teamRes.innerHTML = '<div class="warn">Spreadsheet reader did not load — check your connection and retry.</div>'; return; }
+    teamRes.style.display = 'block'; teamRes.innerHTML = '<div class="ok" style="margin-top:0">Reading the file…</div>';
+    parseTeamFile(f, async function (rows) {
+      if (!rows.length) { teamRes.innerHTML = '<div class="warn">No team members found in the file.</div>'; return; }
+      teamRes.innerHTML = '<div class="ok" style="margin-top:0">Matching ' + rows.length + ' people to the workspace…</div>';
+      try {
+        var d = await call('/api/teammatch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows: rows }) });
+        TEAM.matched = (d.matched || []).map(function (m) { m._sel = false; return m; });
+        TEAM.ambiguous = d.ambiguous || []; TEAM.notFound = d.notFound || []; TEAM.counts = d.counts || {};
+        teamRender();
+      } catch (e) { teamRes.innerHTML = '<div class="warn">Match failed: ' + esc(e.message) + '</div>'; }
+    }, function (err) { teamRes.innerHTML = '<div class="warn">Could not read the file: ' + esc(err.message) + '</div>'; });
+    teamFile.value = '';   // allow re-selecting the same file
+  });
+
+  function teamUpdateBtn() {
+    var n = TEAM.matched.filter(function (m) { return m.eligible && m._sel; }).length;
+    teamAccept.disabled = n === 0;
+    teamAccept.textContent = 'Accept selected' + (n ? ' (' + n + ')' : '');
+  }
+  function teamRender() {
+    var elig = TEAM.matched.filter(function (m) { return m.eligible; });
+    var skip = TEAM.matched.filter(function (m) { return !m.eligible; });
+    var c = TEAM.counts;
+    var html = '<div class="ok" style="margin-top:0"><b>' + elig.length + '</b> eligible to mark Accepted'
+      + (skip.length ? ' · ' + skip.length + ' skipped' : '')
+      + (TEAM.ambiguous.length ? ' · ' + TEAM.ambiguous.length + ' ambiguous' : '')
+      + (TEAM.notFound.length ? ' · ' + TEAM.notFound.length + ' not found' : '')
+      + ' (of ' + (c.rows || 0) + ' in the file).</div>';
+
+    if (elig.length) {
+      var rows = elig.map(function (m) {
+        var i = TEAM.matched.indexOf(m);
+        var mismatch = m.rowName && m.name && m.rowName.toLowerCase() !== m.name.toLowerCase();
+        return '<tr><td><input type="checkbox" class="team-chk" data-i="' + i + '"' + (m._sel ? ' checked' : '') + '></td>'
+          + '<td>' + esc(m.name) + (mismatch ? ' <span style="color:#b26b00">(file: ' + esc(m.rowName) + ')</span>' : '') + '</td>'
+          + '<td>' + esc(m.final_area || '—') + '</td><td>' + esc(m.region) + '</td><td class="small">by ' + esc(MATCH_LABEL[m.matchedBy] || m.matchedBy) + '</td></tr>';
       }).join('');
-      html += '<table style="margin-top:8px"><tr><th></th><th>Name</th><th>Area</th><th>Jamatkhana</th><th>Region</th></tr>' + rows + '</table>';
+      html += '<details class="lst" open><summary>Eligible (' + elig.length + ')</summary>'
+        + '<table><tr><th></th><th>Matched person</th><th>Area</th><th>Region</th><th>Match</th></tr>' + rows + '</table></details>';
     }
-    maRes.innerHTML = html; maRes.style.display = 'block';
-    maRes.querySelectorAll('.ma-chk').forEach(function (chk) {
-      chk.addEventListener('change', function () { MA.would[+chk.dataset.i]._sel = chk.checked; maUpdateBtn(); });
+    if (skip.length) {
+      var srows = skip.map(function (m) {
+        return '<tr><td>' + esc(m.name) + '</td><td>' + esc(m.final_area || '—') + '</td><td>' + esc(m.region) + '</td><td class="small">' + esc(SKIP_LABEL[m.skipReason] || m.skipReason) + '</td></tr>';
+      }).join('');
+      html += '<details class="lst"><summary>Matched but skipped (' + skip.length + ')</summary><div class="small">Already handled or not acceptable without a call.</div>'
+        + '<table><tr><th>Person</th><th>Area</th><th>Region</th><th>Why skipped</th></tr>' + srows + '</table></details>';
+    }
+    if (TEAM.ambiguous.length) {
+      var arows = TEAM.ambiguous.map(function (a) {
+        return '<tr><td>' + esc(a.rowName) + '</td><td class="small">' + esc(a.rowEmail || a.rowPhone || '') + '</td><td class="small">' + a.candidates.length + ': ' + esc(a.candidates.map(function (x) { return x.name + ' (' + x.region + ')'; }).join('; ')) + '</td></tr>';
+      }).join('');
+      html += '<details class="lst"><summary>Ambiguous — resolve manually (' + TEAM.ambiguous.length + ')</summary><div class="small">These rows matched more than one person, so they are not auto-accepted. Resolve the duplicates first (Duplicates screen), then re-upload.</div>'
+        + '<table><tr><th>File row</th><th>Contact</th><th>Matched</th></tr>' + arows + '</table></details>';
+    }
+    if (TEAM.notFound.length) {
+      var nrows = TEAM.notFound.map(function (n) {
+        return '<tr><td>' + esc(n.rowName) + '</td><td class="small">' + esc(n.rowEmail || '') + '</td><td class="small">' + esc(n.rowPhone || '') + '</td><td class="small">' + esc(n.rowJk || '') + '</td></tr>';
+      }).join('');
+      html += '<details class="lst"><summary>Not found here (' + TEAM.notFound.length + ')</summary><div class="small">In the file but not in the workspace — run the transfer above first, or they are not in Better Impact.</div>'
+        + '<table><tr><th>Name</th><th>Email</th><th>Phone</th><th>Jamatkhana</th></tr>' + nrows + '</table></details>';
+    }
+
+    teamRes.innerHTML = html; teamRes.style.display = 'block';
+    teamRes.querySelectorAll('.team-chk').forEach(function (chk) {
+      chk.addEventListener('change', function () { TEAM.matched[+chk.dataset.i]._sel = chk.checked; teamUpdateBtn(); });
     });
-    maSelectAll.style.display = MA.would.length ? '' : 'none';
-    maAccept.style.display = MA.would.length ? '' : 'none';
-    maUpdateBtn();
+    teamSelectAll.style.display = elig.length ? '' : 'none';
+    teamAccept.style.display = elig.length ? '' : 'none';
+    teamUpdateBtn();
   }
 
-  maLoad.addEventListener('click', async function () {
-    maLoad.disabled = true; maLoad.textContent = 'Loading…';
-    try {
-      var d = await call('/api/bulkaccept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dryRun: true }) });
-      MA.would = (d.wouldAccept || []).map(function (p) { p._sel = false; return p; });
-      MA.skipped = d.skipped || {};
-      maRender();
-    } catch (e) { banner('Could not load eligible members: ' + e.message, 'err'); }
-    maLoad.disabled = false; maLoad.textContent = 'Reload eligible team members';
+  teamSelectAll.addEventListener('click', function () {
+    var elig = TEAM.matched.filter(function (m) { return m.eligible; });
+    var allSel = elig.length > 0 && elig.every(function (m) { return m._sel; });
+    elig.forEach(function (m) { m._sel = !allSel; });
+    teamRender();
   });
-  maSelectAll.addEventListener('click', function () {
-    var allSel = MA.would.length > 0 && MA.would.every(function (p) { return p._sel; });
-    MA.would.forEach(function (p) { p._sel = !allSel; });
-    maRender();
-  });
-  maAccept.addEventListener('click', async function () {
-    var sel = MA.would.filter(function (p) { return p._sel; }).map(function (p) { return { user_id: p.user_id, region: p.region }; });
+  teamAccept.addEventListener('click', async function () {
+    var sel = TEAM.matched.filter(function (m) { return m.eligible && m._sel; }).map(function (m) { return { user_id: m.user_id, region: m.region }; });
     if (!sel.length) return;
-    if (!confirm('Accept ' + sel.length + " team member(s) with no call? They'll be marked Accepted and flow to the iVol report like any accept.")) return;
-    maAccept.disabled = true; maAccept.textContent = 'Accepting…';
+    if (!confirm('Mark ' + sel.length + " person(s) from the file as Accepted, with no call? This is the same as a caller marking them Accepted.")) return;
+    teamAccept.disabled = true; teamAccept.textContent = 'Accepting…';
     try {
       var d = await call('/api/bulkaccept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: sel }) });
       var skipTotal = Object.keys(d.skipped || {}).reduce(function (s, k) { return s + (d.skipped[k] || 0); }, 0);
-      banner('Accepted ' + d.acceptedCount + ' team member(s)' + (skipTotal ? ' — ' + skipTotal + ' skipped by the guards' : '') + '.', 'good');
-      maLoad.click();   // reload; accepted ones drop off the eligible list
-    } catch (e) { banner('Accept failed: ' + e.message, 'err'); maAccept.disabled = false; maUpdateBtn(); }
+      banner('Accepted ' + d.acceptedCount + ' person(s) from the file' + (skipTotal ? ' — ' + skipTotal + ' skipped by the guards' : '') + '.', 'good');
+      var acceptedIds = {}; (d.accepted || []).forEach(function (a) { acceptedIds[String(a.user_id)] = true; });
+      TEAM.matched.forEach(function (m) { if (acceptedIds[String(m.user_id)]) { m.eligible = false; m._sel = false; m.skipReason = 'alreadyAccepted'; } });
+      teamRender();
+    } catch (e) { banner('Accept failed: ' + e.message, 'err'); teamAccept.disabled = false; teamUpdateBtn(); }
   });
 })();

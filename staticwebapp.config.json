@@ -226,6 +226,13 @@
       ]
     },
     {
+      "route": "/api/teammatch",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/api/allvolunteers",
       "allowedRoles": [
         "superadmin",

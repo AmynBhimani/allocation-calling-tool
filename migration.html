@@ -91,22 +91,26 @@
   </div>
 
   <div class="card">
-    <div class="step">Step 5 · Mass-accept the team</div>
-    <h2>Accept the migrated team members</h2>
-    <p class="hint">The migration only brings over people selected as part of an existing team. This marks the
-      eligible ones as <b>Accepted</b> without a call, exactly like a caller's Accept — they flow to the iVol
-      report and count everywhere. The usual guards still apply: anyone already accepted, <b>on a caller's
-      list</b>, still in reconciliation, with no area, or flagged leadership is left out (and shown below).
-      Nothing is selected by default — load, review, then accept.</p>
+    <div class="step">Step 5 · Accept the team from the file</div>
+    <h2>Mark called-outside-the-system people as Accepted</h2>
+    <p class="hint">Upload the <b>same Existing Team Members file you used in the review tool</b>. Its people were
+      called outside the system — this matches each one to their record here (by email, then phone, using the
+      name to disambiguate shared contacts) and marks the eligible ones <b>Accepted</b>, exactly like a
+      caller's Accept. <b>Only people in the file are touched</b>, so your affinity volunteers (who still need
+      calling) are never affected. Run the transfer above first so the people exist here. Nothing commits
+      until you review and accept.</p>
     <div class="row">
-      <button class="btn ghost2" id="maLoad">Load eligible team members</button>
-      <button class="btn ghost2" id="maSelectAll" style="display:none">Select all / none</button>
-      <button class="btn commit" id="maAccept" style="display:none" disabled>Accept selected</button>
+      <input type="file" id="teamFile" accept=".xlsx,.xls" style="display:none">
+      <button class="btn ghost2" id="teamPick">Choose team file…</button>
+      <span class="muted" id="teamFileName"></span>
+      <button class="btn ghost2" id="teamSelectAll" style="display:none">Select all / none</button>
+      <button class="btn commit" id="teamAccept" style="display:none" disabled>Accept selected</button>
     </div>
-    <div class="resbox" id="maRes"></div>
+    <div class="resbox" id="teamRes"></div>
   </div>
 </main>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="nav.js"></script>
 <script src="migration.js"></script>
 </body>

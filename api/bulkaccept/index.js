@@ -8,7 +8,7 @@
 // Guards (skip, each reported so nothing is silent): leadership, already-accepted, no final area,
 // in-reconciliation, ON A CALLER'S LIST (assigned_caller set — left to that caller), and out-of-region.
 const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
-const { LEADERSHIP } = require("../shared/status");
+const { acceptGuard } = require("../shared/accept");
 const { lastOutcome } = require("../shared/rollup");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -18,19 +18,9 @@ function getPrincipal(req) {
   if (!h) return null;
   try { return JSON.parse(Buffer.from(h, "base64").toString("utf8")); } catch { return null; }
 }
-
-// Which guard (if any) blocks a no-call accept. null => eligible. Order: most-definitive reason first.
-function acceptGuard(v) {
-  if (v.callable_status === LEADERSHIP) return "leadership";
-  if (!!v.ivol_ready || v.call_outcome === "Accepted" || lastOutcome(v) === "Accepted") return "alreadyAccepted";
-  if (!v.final_area) return "noArea";
-  const claims = Array.isArray(v.conflict_claims) ? v.conflict_claims : [];
-  if (v.callable_status === "In reconciliation" || claims.length >= 2) return "inReconciliation";
-  if (v.assigned_caller) return "assignedToCaller";   // already on a caller's list — leave them to the caller
-  return null;
-}
+// (acceptGuard now lives in ../shared/accept — shared with the team-file accept.)
 const nm = (v) => ((v.first || "") + " " + (v.last || "")).trim() || ("#" + v.user_id);
-const emptySkip = () => ({ leadership: 0, alreadyAccepted: 0, noArea: 0, inReconciliation: 0, assignedToCaller: 0, outOfRegion: 0, notFound: 0, error: 0 });
+const emptySkip = () => ({ leadership: 0, alreadyAccepted: 0, noArea: 0, inReconciliation: 0, assignedToCaller: 0, notFromReview: 0, outOfRegion: 0, notFound: 0, error: 0 });
 
 module.exports = async function (context, req) {
   try {
@@ -43,6 +33,12 @@ module.exports = async function (context, req) {
     const body = req.body || {};
     const dryRun = body.dryRun === true || req.query.dry === "1";
     const items = Array.isArray(body.items) ? body.items : [];
+    // Scope the migration mass-accept to ONLY people the review migration brought in: never_reviewed===false
+    // is the codebase's marker for "given an area by the review transfer" (release.js / alloc.js key on it).
+    // This excludes anyone who got an area another way — e.g. allocated by the allocation tool but not yet
+    // called — so they are never auto-accepted without a call. The All Volunteers bulk-accept omits this flag.
+    const fromReviewOnly = body.fromReviewOnly === true;
+    const inMigration = (v) => !fromReviewOnly || v.never_reviewed === false;
 
     const allowed = isSuper ? null : allowedRegionsFor(await readRolesStore(), email);
     const inScope = (region) => isSuper || (allowed && allowed.includes(region));
@@ -64,12 +60,12 @@ module.exports = async function (context, req) {
           if (!inScope(region)) { skipped.outOfRegion += byRegion[region].length; continue; }
           const { records } = await readRegion(container, region);
           const map = new Map(records.map(v => [String(v.user_id), v]));
-          for (const id of byRegion[region]) { const v = map.get(id); if (!v) { skipped.notFound++; continue; } consider(v, region); }
+          for (const id of byRegion[region]) { const v = map.get(id); if (!v) { skipped.notFound++; continue; } if (!inMigration(v)) { skipped.notFromReview++; continue; } consider(v, region); }
         }
       } else {
         for (const region of scopeRegions) {
           const { records } = await readRegion(container, region);
-          for (const v of records) consider(v, region);
+          for (const v of records) { if (!inMigration(v)) continue; consider(v, region); }
         }
       }
       wouldAccept.sort((a, b) => String(a.final_area || "").localeCompare(String(b.final_area || "")) || String(a.name).localeCompare(String(b.name)));
@@ -88,6 +84,7 @@ module.exports = async function (context, req) {
       if (!user_id || !REGIONS.includes(region)) { skipped.error++; continue; }
       if (!inScope(region)) { skipped.outOfRegion++; continue; }
       const result = await mutateVolunteer(container, region, user_id, (v) => {
+        if (!inMigration(v)) return { skip: true, reason: "notFromReview" };
         const g = acceptGuard(v);
         if (g) return { skip: true, reason: g };
         v.activity_log = v.activity_log || [];

@@ -8,7 +8,7 @@
 const AREA_PRIORITY = [
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
   "Seniors & Mobility", "Food Services", "Layout & Logistics",
-  "Registration & Access", "Medical Services"
+  "Registration & Access", "Medical Services", "Environmental Sustainability"
 ];
 
 function regionOf(jk) {

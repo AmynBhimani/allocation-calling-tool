@@ -14,6 +14,7 @@ const WESTERN_JKS = new Set([
 ]);
 
 const AREA_KEYS = {
+  "Environmental Sustainability": "environmental sustainability",
   "Food Services": "food service and refreshments",
   "Layout & Logistics": "layout, installation and logistics",
   "Medical Services": "medical services",

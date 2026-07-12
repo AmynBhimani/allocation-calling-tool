@@ -4,6 +4,7 @@ const { getContainer, overwriteRegion, mergeRegion } = require("../shared/store"
 const { computeCallableStatus } = require("../shared/status");
 
 const CONN = process.env.RESPONSES_STORAGE;
+const SNAPSHOT_BLOB = "bi-idset-snapshot.json";
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -119,6 +120,19 @@ module.exports = async function (context, req) {
     summary.note = mode === "dry"
       ? "DRY RUN — wrote to tool-data-dryrun. Review the counts, then run Commit."
       : "COMMIT — wrote to tool-data with call-state preservation.";
+
+    // The uploaded file IS a live-BI membership snapshot — every row is a real Better Impact account, and
+    // an account can only be in the tool because it came from an import. So on commit we write the file's
+    // user_ids as the id-set the both-in-BI merge guard reads. This lets duplicate resolution and the BI
+    // Account Resolutions screen work off the import when the live API pull is unavailable. (Dry run is a
+    // preview — it must not touch the real snapshot.) A re-import refreshes it after BI-side merges.
+    if (mode === "commit") {
+      const ids = Array.from(new Set(incoming.map(r => (r && r.user_id != null) ? String(r.user_id) : "").filter(Boolean)));
+      const snap = JSON.stringify({ fetchedAt: new Date().toISOString(), ids, biTotal: ids.length, source: "import" });
+      await container.getBlockBlobClient(SNAPSHOT_BLOB).upload(snap, Buffer.byteLength(snap), { overwrite: true });
+      summary.idSetWritten = ids.length;
+    }
+
     context.res = { body: summary };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };

@@ -113,7 +113,7 @@ async function mutateVolunteer(container, region, user_id, mutator, { retries = 
   const name = SHARDS === 1 ? legacyName(region) : shardName(region, bucketOf(user_id, SHARDS));
   for (let attempt = 0; attempt <= retries; attempt++) {
     const { records, etag } = await readBlob(container, name);
-    const v = records.find(x => x.user_id === user_id);
+    const v = records.find(x => String(x.user_id) === String(user_id));   // compare by value: BI ids are numbers, write-in ids strings
     if (!v) return { ok: false, notFound: true };
     const extra = mutator(v, records);
     try {
@@ -324,7 +324,10 @@ function mergeRecords(loser, survivor, opts = {}) {
   ].map(String));
   priorMerged.add(String(loser.user_id));                    // the loser itself
   if (opts.newId != null) priorMerged.add(String(survivor.user_id));  // survivor's pre-promotion id
-  out.merged_from = [...priorMerged];
+  // The surviving id is never "merged away" — exclude it. This matters when a promotion rewrites the id to
+  // a folded loser's id: that id is now the survivor and must not linger in merged_from, where a later
+  // sync would read it as gone and skip the (real, promoted) account.
+  out.merged_from = [...priorMerged].filter(id => id !== String(out.user_id));
 
   const marker = {
     ts: new Date().toISOString(), actor: opts.actor || "retireInto", action: "merged",

@@ -114,19 +114,31 @@ module.exports = async function (context, req) {
     const winnerFor = (lid) => keepAcceptanceOf != null
       ? (String(lid) === keepAcceptanceOf ? "loser" : "survivor")
       : body.winner;
+    // Promotion: if the operator kept a WRITE-IN as survivor but exactly one real Better Impact (numeric)
+    // account is among the losers, the merged person must carry the REAL BI id, not the wi- placeholder.
+    // Promote the survivor to that id (retireInto rewrites it and re-buckets). Only for a single numeric
+    // loser — 2+ BI accounts is the both-in-BI case the BI team resolves. Fold the promotion loser first
+    // so the id is rewritten before any other folds run, then chain the rest onto the promoted survivor.
+    let promoteTo = null;
+    if (isWritein(survivorId)) {
+      const numericLosers = loserIds.filter(id => !isWritein(id));
+      if (numericLosers.length === 1) promoteTo = String(numericLosers[0]);
+    }
+    const newIdFor = (lid) => (promoteTo && String(lid) === promoteTo) ? promoteTo : undefined;
+    const orderedLosers = promoteTo ? [promoteTo, ...loserIds.filter(id => String(id) !== promoteTo)] : loserIds;
     const results = [];
     if (!commit) {
       // DRY RUN: simulate sequentially against an in-memory copy so multi-loser folds are realistic.
       let workingSurvivor = { ...survivor };
-      for (const lid of loserIds) {
+      for (const lid of orderedLosers) {
         const loser = byId.get(lid);
-        const m = mergeRecords(loser, workingSurvivor, { ...opts, winner: winnerFor(lid) });
+        const m = mergeRecords(loser, workingSurvivor, { ...opts, winner: winnerFor(lid), newId: newIdFor(lid) });
         results.push({ loserId: lid, ok: m.ok, reason: m.reason || null,
           bothInBi: m.reason === "both_in_bi", needsWinner: m.reason === "both_accepted_needs_winner" });
         if (m.ok) workingSurvivor = m.record;   // chain: next loser folds into the growing survivor
       }
       context.res = { body: {
-        mode: "dry-run", region, survivorId, loserIds,
+        mode: "dry-run", region, survivorId, loserIds, promotedTo: promoteTo,
         biSnapshot: snap ? { ageMinutes: snapAgeMin, fresh: snapFresh, count: biIds.size } : null,
         numericIdCount: numericIds.length, liveInBiCount: liveInBi.length,
         setAsideForBiTeam: bothLivePairs.length > 0,
@@ -146,13 +158,16 @@ module.exports = async function (context, req) {
       return;
     }
     // Perform folds one at a time. Each retireInto is its own atomic region merge; if one refuses
-    // (both_in_bi / needs winner), we record it and continue with the rest.
-    for (const lid of loserIds) {
-      const r = await retireInto(container, region, lid, survivorId, { ...opts, winner: winnerFor(lid) });
+    // (both_in_bi / needs winner), we record it and continue with the rest. The promotion fold (if any)
+    // runs first and rewrites the survivor's id; subsequent folds chain onto the new id.
+    let curSurvivor = survivorId;
+    for (const lid of orderedLosers) {
+      const r = await retireInto(container, region, lid, curSurvivor, { ...opts, winner: winnerFor(lid), newId: newIdFor(lid) });
       results.push({ loserId: lid, ...r, bothInBi: r.reason === "both_in_bi", needsWinner: r.reason === "both_accepted_needs_winner" });
+      if (r.ok && r.survivorId) curSurvivor = String(r.survivorId);   // follow the promotion
     }
     context.res = { body: {
-      mode: "commit", region, survivorId,
+      mode: "commit", region, survivorId: curSurvivor, promotedTo: promoteTo,
       merged: results.filter(r => r.ok).length,
       refused: results.filter(r => !r.ok).length,
       results,

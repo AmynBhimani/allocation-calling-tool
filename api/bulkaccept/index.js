@@ -76,13 +76,13 @@ module.exports = async function (context, req) {
     // ---- COMMIT: accept the provided items. ----
     if (!items.length) { context.res = { status: 400, body: { error: "No people selected." } }; return; }
     if (items.length > 2000) { context.res = { status: 400, body: { error: "Too many at once (max 2000). Narrow the selection." } }; return; }
-    const accepted = [], skipped = emptySkip();
+    const accepted = [], skipped = emptySkip(), skippedItems = [];
     const now = new Date().toISOString();
     for (const it of items) {
       const user_id = it && it.user_id != null ? String(it.user_id) : "";
       const region = it && it.region ? String(it.region) : "";
-      if (!user_id || !REGIONS.includes(region)) { skipped.error++; continue; }
-      if (!inScope(region)) { skipped.outOfRegion++; continue; }
+      if (!user_id || !REGIONS.includes(region)) { skipped.error++; skippedItems.push({ user_id, region, reason: "error" }); continue; }
+      if (!inScope(region)) { skipped.outOfRegion++; skippedItems.push({ user_id, region, reason: "outOfRegion" }); continue; }
       const result = await mutateVolunteer(container, region, user_id, (v) => {
         if (!inMigration(v)) return { skip: true, reason: "notFromReview" };
         const g = acceptGuard(v);
@@ -91,12 +91,12 @@ module.exports = async function (context, req) {
         v.activity_log.push({ ts: now, actor: email, action: "outcome", outcome: "Accepted", bulk: true, note: "Bulk-accepted by an admin (pre-formed team; no call needed)." });
         v.call_outcome = "Accepted"; v.call_done = true; v.ivol_ready = true;
       });
-      if (result.notFound) { skipped.notFound++; continue; }
-      if (result.extra && result.extra.skip) { skipped[result.extra.reason] = (skipped[result.extra.reason] || 0) + 1; continue; }
-      if (!result.ok) { skipped.error++; continue; }
+      if (result.notFound) { skipped.notFound++; skippedItems.push({ user_id, region, reason: "notFound" }); continue; }
+      if (result.extra && result.extra.skip) { skipped[result.extra.reason] = (skipped[result.extra.reason] || 0) + 1; skippedItems.push({ user_id, region, reason: result.extra.reason }); continue; }
+      if (!result.ok) { skipped.error++; skippedItems.push({ user_id, region, reason: "error" }); continue; }
       accepted.push({ user_id, region });
     }
-    context.res = { body: { ok: true, acceptedCount: accepted.length, accepted: accepted.slice(0, 2000), skipped } };
+    context.res = { body: { ok: true, acceptedCount: accepted.length, accepted: accepted.slice(0, 2000), skipped, skippedItems: skippedItems.slice(0, 2000) } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }

@@ -326,6 +326,7 @@ async function doResolve(i, commit) {
   const refused = (dry.results || []).filter(r => !r.ok);
   const bothInBi = refused.some(r => r.bothInBi);
   let summary = `Would keep ${esc(String(survivorId))} and merge ${willMerge} record(s).`;
+  if (dry.promotedTo) summary += ` The write-in will take the real Better Impact id ${esc(String(dry.promotedTo))}.`;
   if (base.keepAcceptanceOf) summary += " " + consequenceLine(c, base.keepAcceptanceOf, dry);
   if (bothInBi) summary += ` ${refused.filter(r => r.bothInBi).length} can't merge — both are live in Better Impact (resolve those in BI, then re-scan).`;
   const needsWinner = refused.some(r => r.needsWinner);
@@ -349,7 +350,8 @@ async function doResolve(i, commit) {
   } catch (e) { show("err", "Merge failed: " + esc(e.message)); return; }
   if (res.error) { show("err", esc(res.error)); return; }
 
-  show("ok", `Done — merged ${res.merged} record(s) into ${esc(String(survivorId))}.${res.refused ? " " + res.refused + " left for the BI team." : ""} Re-scanning…`);
+  const finalId = res.survivorId || survivorId;
+  show("ok", `Done — merged ${res.merged} record(s) into ${esc(String(finalId))}${res.promotedTo ? ` (write-in promoted to Better Impact id ${esc(String(res.promotedTo))})` : ""}.${res.refused ? " " + res.refused + " left for the BI team." : ""} Re-scanning…`);
   const root = document.getElementById("cl-" + i);
   if (root) { root.style.opacity = "0.5"; root.querySelectorAll("button").forEach(b => b.disabled = true); }
   setTimeout(load, 1200);

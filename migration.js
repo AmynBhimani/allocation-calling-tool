@@ -216,7 +216,7 @@
   var teamSelectAll = document.getElementById('teamSelectAll');
   var teamRes = document.getElementById('teamRes');
   var MATCH_LABEL = { email: 'email', phone: 'phone', name: 'name' };
-  var SKIP_LABEL = { alreadyAccepted: 'already accepted', assignedToCaller: "on a caller's list", inReconciliation: 'in reconciliation', noArea: 'no area yet', leadership: 'leadership' };
+  var SKIP_LABEL = { alreadyAccepted: 'already accepted', assignedToCaller: "on a caller's list", inReconciliation: 'in reconciliation', noArea: 'no area yet', leadership: 'leadership', notFound: 'not found in workspace', notFromReview: 'not from the review', outOfRegion: 'out of region', error: 'could not process' };
 
   // Read the Existing Team Members .xlsx in the browser and pull {first,last,email,phone,jk} per row.
   function parseTeamFile(file, onRows, onErr) {
@@ -338,10 +338,19 @@
     teamAccept.disabled = true; teamAccept.textContent = 'Accepting…';
     try {
       var d = await call('/api/bulkaccept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: sel }) });
-      var skipTotal = Object.keys(d.skipped || {}).reduce(function (s, k) { return s + (d.skipped[k] || 0); }, 0);
-      banner('Accepted ' + d.acceptedCount + ' person(s) from the file' + (skipTotal ? ' — ' + skipTotal + ' skipped by the guards' : '') + '.', 'good');
       var acceptedIds = {}; (d.accepted || []).forEach(function (a) { acceptedIds[String(a.user_id)] = true; });
-      TEAM.matched.forEach(function (m) { if (acceptedIds[String(m.user_id)]) { m.eligible = false; m._sel = false; m.skipReason = 'alreadyAccepted'; } });
+      var skipById = {}; (d.skippedItems || []).forEach(function (s) { skipById[String(s.user_id)] = s.reason; });
+      // Resolve EVERY person we attempted — accepted or skipped — so none loop back into the eligible list.
+      var stillOpen = 0;
+      sel.forEach(function (s) {
+        var m = TEAM.matched.filter(function (x) { return String(x.user_id) === String(s.user_id); })[0];
+        if (!m) return;
+        m._sel = false;
+        if (acceptedIds[String(m.user_id)]) { m.eligible = false; m.skipReason = 'alreadyAccepted'; }
+        else if (skipById[String(m.user_id)]) { m.eligible = false; m.skipReason = skipById[String(m.user_id)]; }
+        else { stillOpen++; }   // neither accepted nor reported skipped (shouldn't happen) — leave for a retry
+      });
+      banner('Accepted ' + d.acceptedCount + ' of ' + sel.length + ' selected.' + (stillOpen ? ' ' + stillOpen + ' could not be resolved — try again.' : ''), stillOpen ? 'err' : 'good');
       teamRender();
     } catch (e) { banner('Accept failed: ' + e.message, 'err'); teamAccept.disabled = false; teamUpdateBtn(); }
   });

@@ -131,9 +131,21 @@ function makeWriteinRecord(a, didars) {
 function applyMigration(v, ctx) {
   const { byId, report, seenIds, idInfo, commit, email, didars } = ctx;
   if (v.released_to_pool) return v;   // deliberately released to the pool; never re-hold from review
-  const e = byId.get(String(v.user_id));
-  if (!e) return v;                   // no review entry for this person; leave them exactly as they are
-  seenIds.add(String(v.user_id));     // has a review entry; count as seen, not "unmatched"
+  // Match the review decision by this person's current id OR any id merged INTO them. Dedup and the
+  // write-in -> BI promotion can leave a reviewer's area keyed to an id that no longer exists as its own
+  // record; without also checking merged_from, the survivor who absorbed that id would come through the
+  // migration still area-less. Union the areas found under all of this person's ids.
+  const matchIds = [String(v.user_id), ...(Array.isArray(v.merged_from) ? v.merged_from.map(String) : [])];
+  let e = null;
+  for (const mid of matchIds) {
+    const hit = byId.get(mid);
+    if (!hit) continue;
+    if (!e) e = { areas: new Set(), leader: false };
+    for (const a of hit.areas) e.areas.add(a);
+    if (hit.leader) e.leader = true;
+    seenIds.add(mid);                 // this review id maps to a real (surviving) person; not "unmatched"
+  }
+  if (!e) return v;                   // no review entry under any of this person's ids; leave them as-is
   const d = decisionFor(e);
 
   // Never let a migration DISTURB anyone already on a caller's list or called/accepted/confirmed — with

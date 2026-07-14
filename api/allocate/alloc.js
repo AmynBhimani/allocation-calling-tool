@@ -106,7 +106,7 @@ function allocate(records, cfg) {
     const fromReview = (r.never_reviewed === false) || claims > 0;   // review touched (incl. contested)
     const prefAreas = Array.isArray(r.pref_areas) ? r.pref_areas.filter(a => typeof a === "string") : [];
     return {
-      user_id: r.user_id, region: r.region,
+      user_id: r.user_id, region: r.region, email: r.email,
       final_area: r.final_area || null, leader: !!r.leader_flag, claims, fromReview,
       age: directAge != null ? directAge : ageAsOf(r.birthday, asOf),
       isIFF: (r.list === "IFF") || !!r.interfaith,
@@ -318,6 +318,38 @@ function allocate(records, cfg) {
     };
   }
 
+  // ---- Young-volunteer family match (ages 5–13) -------------------------------------------------
+  // After the main allocation, place a held-aside young volunteer with family: the area of their OLDEST
+  // same-email relative who's already been allocated to an area (fall back to any allocated same-email
+  // person if none of the relatives have an age on file). They're only placed if their own age fits that
+  // area's age range — no bypassing the gate — so lowering an area's min in the UI is the lever for
+  // admitting them. No same-email match, or the area doesn't admit their age -> they stay held aside.
+  let youngFamilyPlaced = 0; const youngFamilyByArea = {};
+  if (cfg.youngFamilyMatch !== false) {
+    const YMIN = 5, YMAX = 13;
+    const normEmail = e => String(e == null ? "" : e).trim().toLowerCase();
+    const allocatedByEmail = new Map();                 // built ONCE, so youngsters match adults, not each other
+    for (const r of recs) {
+      if (!r.area) continue;                            // only people who actually landed in an area
+      const em = normEmail(r.email); if (!em) continue;
+      if (!allocatedByEmail.has(em)) allocatedByEmail.set(em, []);
+      allocatedByEmail.get(em).push(r);
+    }
+    for (const r of recs) {
+      if (r.bucket !== "young" || r.age == null || r.age < YMIN || r.age > YMAX) continue;
+      const em = normEmail(r.email); if (!em) continue;
+      const fam = (allocatedByEmail.get(em) || []).filter(x => String(x.user_id) !== String(r.user_id));
+      if (!fam.length) continue;                        // no allocated same-email relative -> stays held aside
+      const withAge = fam.filter(x => x.age != null);
+      const chosen = withAge.length ? withAge.reduce((a, b) => (b.age > a.age ? b : a)) : fam[0];  // oldest, else any
+      const t = tByArea[chosen.area];
+      if (t && eligible(r.age, t)) {                    // only if the young volunteer's age fits that area's range
+        r.bucket = "assigned"; r.area = chosen.area; r.youngFamily = true; r.youngFamilyWith = chosen.user_id;
+        youngFamilyPlaced++; youngFamilyByArea[chosen.area] = (youngFamilyByArea[chosen.area] || 0) + 1;
+      }
+    }
+  }
+
   const matrix = {};
   for (const R of REGIONS) matrix[R] = {};
   for (const r of recs) {
@@ -339,10 +371,11 @@ function allocate(records, cfg) {
 
   return {
     asOf, seed, matrix, affinityTotal, affinityLeaders, contestedTotal, nullAge, distReport,
+    youngFamilyPlaced, youngFamilyByArea,
     mode: { rounds: Math.max(1, Math.min(20, cfg.rounds != null ? (cfg.rounds | 0) : 4)),
             happyFirst: !!cfg.happyFirst, flexOrder: (cfg.flexOrder !== "scarce" ? "below" : "scarce"),
-            overflow: !!cfg.overflow },
-    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age, reason: r.reason || null })),
+            overflow: !!cfg.overflow, youngFamilyMatch: cfg.youngFamilyMatch !== false },
+    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age, youngFamily: !!r.youngFamily, youngFamilyWith: r.youngFamilyWith || null, reason: r.reason || null })),
   };
 }
 

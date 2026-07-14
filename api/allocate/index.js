@@ -61,7 +61,7 @@ module.exports = async function (context, req) {
         // locked people; in incremental mode, also true for anyone who already holds an area.
         const fixed = locked || (incremental && !!v.final_area);
         records.push({
-          user_id: v.user_id, region,
+          user_id: v.user_id, region, email: v.email || null,
           computed_area: v.computed_area || null, final_area: v.final_area || null,
           // A fixed person is treated as "reviewed" so the engine keeps them put (affinity) and counts
           // them toward their area's target, both in preview and at commit.
@@ -77,7 +77,7 @@ module.exports = async function (context, req) {
     const audit = { rawRecords, unique: records.length, duplicateIds: duplicates.length,
       duplicateRows: rawRecords - records.length, writeIns, lockedInPipeline, duplicates: duplicates.slice(0, 300) };
 
-    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder });
+    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder, youngFamilyMatch: body.youngFamilyMatch !== false });
 
     // Region totals + a flat per-region row list for the matrix.
     const totalsByArea = {};
@@ -103,6 +103,7 @@ module.exports = async function (context, req) {
     const lists = {
       iff: listFor(d => d.bucket === "iff"),
       young: listFor(d => d.bucket === "young"),
+      youngFamily: listFor(d => d.youngFamily),          // the 5–13s placed with family this run
       contested: listFor(d => d.bucket === "contested"),
       noAge: listFor(d => d.age == null),                    // everyone missing an age, any bucket
       unassigned: listFor(d => d.bucket === "unassigned"),
@@ -113,6 +114,7 @@ module.exports = async function (context, req) {
       total: records.length, affinityTotal: plan.affinityTotal, affinityLeaders: plan.affinityLeaders,
       contestedTotal: plan.contestedTotal, nullAge: plan.nullAge,
       noAgeHeld: plan.decisions.filter(d => d.bucket === "noage").length,
+      youngFamilyPlaced: plan.youngFamilyPlaced, youngFamilyByArea: plan.youngFamilyByArea,
       matrix: plan.matrix, totalsByArea, distReport: plan.distReport,
       withAge: records.filter(r => (r.age != null && Number.isFinite(Number(r.age))) || r.birthday).length,
       audit, lists, listCap: CAP,
@@ -148,7 +150,7 @@ module.exports = async function (context, req) {
           nv.callable_status = computeCallableStatus(nv);
         }
         nv.activity_log = (nv.activity_log || []).concat([
-          { ts: new Date().toISOString(), actor: email || "allocation", action: "allocation", bucket: d.bucket, area: d.area || null },
+          { ts: new Date().toISOString(), actor: email || "allocation", action: "allocation", bucket: d.bucket, area: d.area || null, youngFamily: !!d.youngFamily },
         ]);
         return nv;
       }));

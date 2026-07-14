@@ -76,7 +76,7 @@ module.exports = async function (context, req) {
 
     const c = await container();
     let events = await readEvents(c);
-    if (events === null) { events = DEFAULT_EVENTS.map(norm); await writeEvents(c, events); } // one-time auto-seed
+    if (!events || events.length === 0) { events = DEFAULT_EVENTS.map(norm); await writeEvents(c, events); } // seed base Didars if config is missing OR empty
 
     if (req.method === "GET") {
       context.res = { body: { events, canManage: canWrite } };

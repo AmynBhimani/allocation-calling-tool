@@ -276,7 +276,11 @@
         regById[e.id] = (e.regions || []).join(", ");
         var o = document.createElement("option"); o.value = e.id; o.textContent = e.name; sel.appendChild(o);
       });
-      function showRegions() { var lab = EL("allocEventRegions"); if (lab) lab.textContent = sel.value ? ("· " + (regById[sel.value] || "no regions yet")) : "· all regions"; }
+      function showRegions() {
+        var lab = EL("allocEventRegions"); if (!lab) return;
+        if (!didars.length) { lab.textContent = "· no events configured — add them on the Events screen"; return; }
+        lab.textContent = sel.value ? ("· " + (regById[sel.value] || "no regions yet")) : "· all regions";
+      }
       sel.addEventListener("change", function () { showRegions(); restoreSettings(); onSettingChanged(); });
       showRegions();
     } catch (e) {}

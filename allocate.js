@@ -248,13 +248,32 @@
     });
     updatePctSum();
   }
+  function currentEvent() { return EL("allocEvent") ? EL("allocEvent").value : ""; }
   function saveSettings() {
-    try { fetch("/api/allocsettings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: currentSettings() }) }); } catch (e) {}
+    try { fetch("/api/allocsettings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: currentSettings(), event: currentEvent() }) }); } catch (e) {}
   }
   async function restoreSettings() {
     try {
-      var r = await fetch("/api/allocsettings"); if (!r.ok) return;
+      var ev = currentEvent();
+      var r = await fetch("/api/allocsettings" + (ev ? "?event=" + encodeURIComponent(ev) : "")); if (!r.ok) return;
       var d = await r.json(); if (d && d.settings) applySettings(d.settings);
+    } catch (e) {}
+  }
+  // Load the Didars into the event picker; selecting one scopes the allocation to its regions and
+  // loads that event’s saved targets. Default stays "All regions" so nothing changes unless chosen.
+  async function loadEvents() {
+    try {
+      var r = await fetch("/api/events"); if (!r.ok) return;
+      var d = await r.json(); var didars = ((d && d.events) || []).filter(function (e) { return !e.parent && e.active !== false; });
+      var sel = EL("allocEvent"); if (!sel) return;
+      var regById = {};
+      didars.forEach(function (e) {
+        regById[e.id] = (e.regions || []).join(", ");
+        var o = document.createElement("option"); o.value = e.id; o.textContent = e.name; sel.appendChild(o);
+      });
+      function showRegions() { var lab = EL("allocEventRegions"); if (lab) lab.textContent = sel.value ? ("· " + (regById[sel.value] || "no regions yet")) : "· all regions"; }
+      sel.addEventListener("change", function () { showRegions(); restoreSettings(); onSettingChanged(); });
+      showRegions();
     } catch (e) {}
   }
 
@@ -266,7 +285,7 @@
     var flexOrder = EL("flexOrder") ? EL("flexOrder").value : "below";
     var allocMode = EL("allocMode") ? EL("allocMode").value : "full";
     var youngFamily = EL("youngFamily") ? !!EL("youngFamily").checked : true;
-    var body = { mode: mode, allocMode: allocMode, seed: seed, rounds: rounds, overflow: overflow, happyFirst: happyFirst, flexOrder: flexOrder, youngFamilyMatch: youngFamily, targets: targetsFromInputs() };
+    var body = { mode: mode, allocMode: allocMode, seed: seed, rounds: rounds, overflow: overflow, happyFirst: happyFirst, flexOrder: flexOrder, youngFamilyMatch: youngFamily, event: currentEvent(), targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");
@@ -300,5 +319,5 @@
     var el = EL(id); if (el) el.addEventListener("change", onSettingChanged);
   });
   buildTargetInputs();
-  restoreSettings();   // reopen with the settings used in the last allocation
+  (async function () { await loadEvents(); await restoreSettings(); })();   // populate events, then that event’s settings
 })();

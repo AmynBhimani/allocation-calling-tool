@@ -33,6 +33,15 @@ module.exports = async function (context, req) {
     // For allocation, "locked" means do-not-touch: real call activity OR simply being on a caller's list.
     const allocLocked = (v) => callerLocked(v) || !!v.assigned_caller;
 
+    // Scope to a single event: a Didar owns a region set, so "allocate this event" = allocate its regions.
+    // No event given -> all regions (backward compatible).
+    const allDidars = await readDidars();
+    const eventId = (body.event && String(body.event)) || "";
+    const didar = eventId ? allDidars.find(d => String(d.id) === eventId) : null;
+    if (eventId && !didar) { context.res = { status: 400, body: { error: "Unknown event." } }; return; }
+    const scopeRegions = didar ? REGIONS.filter(r => (didar.regions || []).indexOf(r) >= 0) : REGIONS;
+    if (!scopeRegions.length) { context.res = { status: 400, body: { error: "That event has no regions configured yet." } }; return; }
+
     // Read all shards and assemble the engine's input records — counting each person ONCE.
     // A user_id can wrongly appear in two shards if their region changed between imports
     // (the old shard keeps a touched copy). We dedupe by user_id and report the conflicts.
@@ -42,7 +51,7 @@ module.exports = async function (context, req) {
     const seenRegion = new Map();     // user_id -> first region it was counted in
     const dupMap = new Map();         // user_id -> [regions...]
     let rawRecords = 0, writeIns = 0, lockedInPipeline = 0;
-    for (const region of REGIONS) {
+    for (const region of scopeRegions) {
       const { records: rs } = await readRegion(container, region);
       recordsByRegion[region] = rs;
       for (const v of rs) {
@@ -77,7 +86,7 @@ module.exports = async function (context, req) {
     const audit = { rawRecords, unique: records.length, duplicateIds: duplicates.length,
       duplicateRows: rawRecords - records.length, writeIns, lockedInPipeline, duplicates: duplicates.slice(0, 300) };
 
-    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder, youngFamilyMatch: body.youngFamilyMatch !== false });
+    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder, youngFamilyMatch: body.youngFamilyMatch !== false, regions: scopeRegions });
 
     // Region totals + a flat per-region row list for the matrix.
     const totalsByArea = {};
@@ -111,6 +120,7 @@ module.exports = async function (context, req) {
 
     const report = {
       mode: commit ? "commit" : "preview", allocMode: incremental ? "incremental" : "full", asOf: plan.asOf, seed: plan.seed,
+      event: didar ? { id: didar.id, name: didar.name, regions: scopeRegions } : null,
       total: records.length, affinityTotal: plan.affinityTotal, affinityLeaders: plan.affinityLeaders,
       contestedTotal: plan.contestedTotal, nullAge: plan.nullAge,
       noAgeHeld: plan.decisions.filter(d => d.bucket === "noage").length,
@@ -131,7 +141,7 @@ module.exports = async function (context, req) {
     // Commit: apply the plan. Affinity records are left untouched.
     const didars = await readDidars();
     const decById = new Map(plan.decisions.map(d => [String(d.user_id), d]));
-    for (const region of REGIONS) {
+    for (const region of scopeRegions) {
       await mergeRegion(container, region, (existing) => existing.map(v => {
         if (allocLocked(v)) return v;   // LIVE guard: never touch anyone called/resolved OR on a caller's list
         const d = decById.get(String(v.user_id));

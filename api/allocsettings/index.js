@@ -17,6 +17,19 @@ function streamToString(s) {
     s.on("end", () => res(Buffer.concat(ch).toString("utf8"))); s.on("error", rej);
   });
 }
+// Settings are stored per event: { events: { [eventId]: settings }, default: settings }. An older flat
+// blob (settings at the top level) is read as the shared `default`, so nothing is lost on upgrade and an
+// event with no saved settings falls back to it.
+function normStore(raw) {
+  if (!raw || typeof raw !== "object") return { events: {}, default: null };
+  if (raw.events && typeof raw.events === "object" && !Array.isArray(raw.events)) return { events: raw.events, default: raw.default || null };
+  return { events: {}, default: raw };   // legacy flat settings become the default
+}
+async function loadStore(b) {
+  if (!(await b.exists())) return { events: {}, default: null };
+  try { return normStore(JSON.parse(await streamToString((await b.download()).readableStreamBody))); }
+  catch { return { events: {}, default: null }; }
+}
 
 module.exports = async function (context, req) {
   try {
@@ -30,19 +43,23 @@ module.exports = async function (context, req) {
     const b = c.getBlockBlobClient(BLOB);
 
     if (req.method === "GET") {
-      if (!(await b.exists())) { context.res = { body: { settings: null } }; return; }
-      try { context.res = { body: { settings: JSON.parse(await streamToString((await b.download()).readableStreamBody)) } }; }
-      catch { context.res = { body: { settings: null } }; }
+      const store = await loadStore(b);
+      const ev = (req.query && req.query.event) || "";
+      const s = ev ? (store.events[ev] || store.default) : store.default;   // event-specific, else the shared default
+      context.res = { body: { settings: s || null, event: ev || null } };
       return;
     }
 
     if (req.method === "POST") {
       const settings = (req.body && req.body.settings) || null;
+      const ev = (req.body && req.body.event) || "";
       if (!settings || typeof settings !== "object") { context.res = { status: 400, body: { error: "No settings supplied." } }; return; }
+      const store = await loadStore(b);
       const rec = { ...settings, savedAt: new Date().toISOString(), savedBy: (principal && principal.userDetails) || "" };
-      const body = JSON.stringify(rec, null, 2);
-      await b.upload(body, Buffer.byteLength(body), { blobHTTPHeaders: { blobContentType: "application/json" } });
-      context.res = { body: { ok: true, savedAt: rec.savedAt } };
+      if (ev) store.events[ev] = rec; else store.default = rec;   // per-event save, or the shared default
+      const body = JSON.stringify(store, null, 2);
+      await b.upload(body, Buffer.byteLength(body), { blobHTTPHeaders: { blobContentType: "application/json" }, overwrite: true });
+      context.res = { body: { ok: true, savedAt: rec.savedAt, event: ev || null } };
       return;
     }
 

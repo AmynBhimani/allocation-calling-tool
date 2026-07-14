@@ -98,6 +98,9 @@ function allocate(records, cfg) {
   const order = fillOrderByPct(targetsDef);
   const tByArea = {}; targetsDef.forEach(t => (tByArea[t.area] = t));
   const rng = mulberry32(seed);
+  // Allocate only the given regions when scoped to an event (a Didar owns a region set); default = all.
+  const regionsUsed = (Array.isArray(cfg.regions) && cfg.regions.length)
+    ? REGIONS.filter(r => cfg.regions.indexOf(r) >= 0) : REGIONS;
 
   // Annotate + initial bucket.
   const recs = records.map(r => {
@@ -113,7 +116,7 @@ function allocate(records, cfg) {
       prefAreas, happyAnywhere: !!r.happy_anywhere,
       bucket: null, area: null,
     };
-  });
+  }).filter(r => regionsUsed.indexOf(r.region) >= 0);   // scoped to the event's regions when cfg.regions set
 
   // Areas that explicitly admit volunteers under 16 (e.g. Environmental at 13+). An under-16
   // person is only released from the "Young" hold if they can actually serve one of these —
@@ -136,7 +139,7 @@ function allocate(records, cfg) {
   }
 
   const distReport = {};
-  for (const R of REGIONS) {
+  for (const R of regionsUsed) {
     const regionRecs = recs.filter(x => x.region === R);
     const reviewFixed = regionRecs.filter(x => x.bucket === "affinity");
     const assignable = regionRecs.filter(x => x.bucket === "pool");
@@ -351,7 +354,7 @@ function allocate(records, cfg) {
   }
 
   const matrix = {};
-  for (const R of REGIONS) matrix[R] = {};
+  for (const R of regionsUsed) matrix[R] = {};
   for (const r of recs) {
     const R = r.region; if (!matrix[R]) matrix[R] = {};
     let key;

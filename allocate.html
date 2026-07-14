@@ -76,6 +76,11 @@
     <div class="step">Step 1 · Run &amp; seed</div>
     <h2>Run the allocation</h2>
     <div class="hint">Review-migration assignments stay put (including Medical &amp; Registration &amp; Access). IFF, no-birthday, and under-16 volunteers are held aside — except under-16s eligible for an area that explicitly admits them (Environmental, 13+). <b>Nobody is ever placed in an area they didn't pick</b> — the only "anywhere" people are those who chose "happy to serve anywhere." Allocation runs in two phases whose order you set with <b>Fill order</b>: <b>pickers</b> (each area topped up from its own pickers over the rounds) and <b>happy-anywhere</b>. The happy phase always seeds the two no-picker areas (Environmental, Memorabilia) to target first, then fills everyone else over the same number of passes. <b>Flex priority</b> sets where the happy people go: <b>furthest below target</b> sends them to whichever area is most behind its goal (so raising an area's % pulls flex straight into it), or <b>scarcest first</b> sends them to the areas with the fewest other candidates. With <b>Fill all</b> on, anyone still unplaced is then pushed into the least-subscribed area they actually selected — <b>allowing overage</b> — so no one is left Unassigned and you can see which areas are oversubscribed (the +over column). More rounds = smoother balancing (4 rounds = 25% slices). The seed makes the draw reproducible.</div>
+    <div class="row" style="margin-top:10px">
+      <span class="small">Event</span>
+      <select id="allocEvent" class="token" style="width:auto"><option value="">All regions</option></select>
+      <span class="small" id="allocEventRegions" style="color:var(--mute)">· all regions</span>
+    </div>
     <div class="row" style="margin-top:8px">
       <span class="small">Mode</span>
       <select id="allocMode" class="token" style="width:auto"><option value="full" selected>Full re-allocation</option><option value="incremental">Incremental (unassigned only)</option></select>

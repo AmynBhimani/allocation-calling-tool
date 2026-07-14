@@ -22,6 +22,7 @@
     { area: "Layout & Logistics", id: "t_lay", pct: 4, min: 19, max: 65, rule: "age 19\u201365" },
     { area: "Memorabilia & Design", id: "t_mem", pct: 2, min: 16, max: null, rule: "min age 16 \u00b7 flex-only" },
     { area: "Registration & Access", id: "t_reg", pct: 0, min: 16, max: null, rule: "set target % & age" },
+    { area: "Medical Services", id: "t_med", pct: 0, min: null, max: null, rule: "cert-driven · medical pros first (% is a goal only)" },
     { area: "Diverse Abilities Support", id: "t_da", pct: 0, min: null, max: null, rule: "set target % & age" }
   ];
 
@@ -29,7 +30,7 @@
     var box = EL("targetCfg");
     box.innerHTML = TARGET_DEFS.map(function (t) {
       return '<div class="trow">'
-        + '<div class="nm">' + esc(t.area) + '</div>'
+        + '<div class="nm">' + esc(t.area) + (t.rule ? ' <span class="trule">' + esc(t.rule) + '</span>' : '') + '</div>'
         + '<div class="tctl">'
           + '<input id="' + t.id + '" type="number" min="0" max="100" step="1" value="' + t.pct + '"><span class="pct">%</span>'
           + '<span class="agelbl">age</span>'

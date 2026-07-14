@@ -34,6 +34,7 @@ const ASSIGN_TARGETS = [
   { area: "Layout & Logistics",           pct: 0.04, min: 19, max: 65 },
   { area: "Memorabilia & Design",         pct: 0.02, min: 16, max: null },
   { area: "Registration & Access",         pct: 0, min: 16, max: null },
+  { area: "Medical Services",              pct: 0, min: null, max: null },
   { area: "Diverse Abilities Support",            pct: 0, min: null, max: null },
 ];
 
@@ -96,7 +97,8 @@ function allocate(records, cfg) {
   const asOf = cfg.asOf || "2026-07-23";
   const seed = (cfg.seed != null ? cfg.seed : 1234567) >>> 0;
   const targetsDef = sanitizeTargets(cfg.targets) || ASSIGN_TARGETS;
-  const order = fillOrderByPct(targetsDef);
+  const orderAll = fillOrderByPct(targetsDef);
+  const order = orderAll.filter(t => t.area !== "Medical Services");   // Medical is cert-driven (medical pass), never %-filled
   const tByArea = {}; targetsDef.forEach(t => (tByArea[t.area] = t));
   const rng = mulberry32(seed);
   // Allocate only the given regions when scoped to an event (a Didar owns a region set); default = all.
@@ -163,6 +165,9 @@ function allocate(records, cfg) {
       need[t.area] = Math.max(0, target[t.area] - (reviewIn[t.area] || 0));  // review already there counts
       placed[t.area] = 0;
     }
+    // Medical first-pass people are already placed in Medical (cert-driven, not %-filled); count them so
+    // the Medical distribution row reflects them against any goal you set.
+    for (const x of regionRecs) if (x.medicalPass) placed[x.area] = (placed[x.area] || 0) + 1;
 
     // ---- Distribution -------------------------------------------------------
     // Preference is a HARD wall: nobody is ever placed in an area they didn't pick; only the
@@ -311,17 +316,18 @@ function allocate(records, cfg) {
     distReport[R] = {
       D, reviewFixed: reviewFixed.length, assignable: assignable.length, rounds,
       flexTotal: assignable.filter(p => p.happyAnywhere).length,
-      targets: order.map(t => {
+      targets: orderAll.map(t => {
         const A = t.area;
+        const certDriven = (A === "Medical Services");   // filled by the medical pass, not pickers/flex
         // Ceiling = the most this area could EVER reach without violating preference:
         // review already there + its own age-eligible pickers + all age-eligible flex people.
-        const pickerCount = assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(A) >= 0 && eligible(p.age, tByArea[A])).length;
-        const flexEligible = assignable.filter(p => p.happyAnywhere && eligible(p.age, tByArea[A])).length;
+        const pickerCount = certDriven ? 0 : assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(A) >= 0 && eligible(p.age, tByArea[A])).length;
+        const flexEligible = certDriven ? 0 : assignable.filter(p => p.happyAnywhere && eligible(p.age, tByArea[A])).length;
         return {
           area: A, pct: t.pct, target: target[A],
           reviewAlready: reviewIn[A] || 0, placed: placed[A],
           final: (reviewIn[A] || 0) + placed[A],
-          ceiling: (reviewIn[A] || 0) + pickerCount + flexEligible,   // pickers + flex, the honest max
+          ceiling: certDriven ? ((reviewIn[A] || 0) + placed[A]) : ((reviewIn[A] || 0) + pickerCount + flexEligible),   // cert-driven: maxes at who is actually in it
           shortBy: Math.max(0, target[A] - ((reviewIn[A] || 0) + placed[A])),
           over: Math.max(0, ((reviewIn[A] || 0) + placed[A]) - target[A]),  // overage when overflow is on
         };

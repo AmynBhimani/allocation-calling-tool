@@ -33,6 +33,7 @@ const ASSIGN_TARGETS = [
   { area: "Food Services",                pct: 0.04, min: 16, max: null },
   { area: "Layout & Logistics",           pct: 0.04, min: 19, max: 65 },
   { area: "Memorabilia & Design",         pct: 0.02, min: 16, max: null },
+  { area: "Registration & Access",         pct: 0, min: 16, max: null },
   { area: "Diverse Abilities Support",            pct: 0, min: null, max: null },
 ];
 
@@ -110,6 +111,7 @@ function allocate(records, cfg) {
     const prefAreas = Array.isArray(r.pref_areas) ? r.pref_areas.filter(a => typeof a === "string") : [];
     return {
       user_id: r.user_id, region: r.region, email: r.email,
+      computed_area: r.computed_area || null,
       final_area: r.final_area || null, leader: !!r.leader_flag, claims, fromReview,
       age: directAge != null ? directAge : ageAsOf(r.birthday, asOf),
       isIFF: (r.list === "IFF") || !!r.interfaith,
@@ -133,6 +135,13 @@ function allocate(records, cfg) {
       continue;
     }
     if (r.isIFF) { r.bucket = "iff"; continue; }          // held aside
+    // Medical Services first pass: healthcare professionals / health-cert holders (flagged at import
+    // as computed_area = "Medical Services") are placed in Medical up front — Medical always wins —
+    // regardless of the no-age/young holds. Reviewed people are handled above, so this only catches the
+    // un-reviewed medical pool that would otherwise be re-allocated into a percentage area.
+    if (cfg.medicalFirst !== false && r.computed_area === "Medical Services") {
+      r.bucket = "assigned"; r.area = "Medical Services"; r.medicalPass = true; continue;
+    }
     if (r.age == null) { r.bucket = "noage"; continue; }  // held aside (no birthday)
     if (r.age < 16 && !youngCanServe(r)) { r.bucket = "young"; continue; }  // under-16 held aside unless an area admits them
     r.bucket = "pool";                                    // assignable
@@ -375,10 +384,11 @@ function allocate(records, cfg) {
   return {
     asOf, seed, matrix, affinityTotal, affinityLeaders, contestedTotal, nullAge, distReport,
     youngFamilyPlaced, youngFamilyByArea,
+    medicalPlaced: recs.filter(r => r.medicalPass).length,
     mode: { rounds: Math.max(1, Math.min(20, cfg.rounds != null ? (cfg.rounds | 0) : 4)),
             happyFirst: !!cfg.happyFirst, flexOrder: (cfg.flexOrder !== "scarce" ? "below" : "scarce"),
-            overflow: !!cfg.overflow, youngFamilyMatch: cfg.youngFamilyMatch !== false },
-    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age, youngFamily: !!r.youngFamily, youngFamilyWith: r.youngFamilyWith || null, reason: r.reason || null })),
+            overflow: !!cfg.overflow, youngFamilyMatch: cfg.youngFamilyMatch !== false, medicalFirst: cfg.medicalFirst !== false },
+    decisions: recs.map(r => ({ user_id: r.user_id, region: r.region, bucket: r.bucket, area: r.area, age: r.age, youngFamily: !!r.youngFamily, youngFamilyWith: r.youngFamilyWith || null, medicalPass: !!r.medicalPass, reason: r.reason || null })),
   };
 }
 

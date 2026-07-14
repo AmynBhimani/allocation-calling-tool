@@ -21,6 +21,7 @@
     { area: "Food Services", id: "t_food", pct: 4, min: 16, max: null, rule: "min age 16" },
     { area: "Layout & Logistics", id: "t_lay", pct: 4, min: 19, max: 65, rule: "age 19\u201365" },
     { area: "Memorabilia & Design", id: "t_mem", pct: 2, min: 16, max: null, rule: "min age 16 \u00b7 flex-only" },
+    { area: "Registration & Access", id: "t_reg", pct: 0, min: 16, max: null, rule: "set target % & age" },
     { area: "Diverse Abilities Support", id: "t_da", pct: 0, min: null, max: null, rule: "set target % & age" }
   ];
 
@@ -161,6 +162,7 @@
       + '<div class="kpi"><div class="n">' + (d.contestedTotal || 0).toLocaleString() + '</div><div class="l">In reconciliation (claimed, left alone)</div></div>'
       + (d.nullAge ? '<div class="kpi flag"><div class="n">' + d.nullAge.toLocaleString() + '</div><div class="l">missing an age (' + (d.noAgeHeld || 0).toLocaleString() + ' held · rest already placed)</div></div>' : "")
       + (d.youngFamilyPlaced ? '<div class="kpi"><div class="n">' + d.youngFamilyPlaced.toLocaleString() + '</div><div class="l">young (5–13) placed with family by email</div></div>' : "")
+      + (d.medicalPlaced ? '<div class="kpi"><div class="n">' + d.medicalPlaced.toLocaleString() + '</div><div class="l">medical professionals placed in Medical Services</div></div>' : "")
       + "</div>";
 
     var a = d.audit || {};
@@ -225,6 +227,7 @@
       seed: EL("seed") ? EL("seed").value : "", rounds: EL("rounds") ? EL("rounds").value : "",
       overflow: EL("overflow") ? EL("overflow").checked : true,
       youngFamily: EL("youngFamily") ? EL("youngFamily").checked : true,
+      medicalFirst: EL("medicalFirst") ? EL("medicalFirst").checked : true,
       phaseOrder: EL("phaseOrder") ? EL("phaseOrder").value : "",
       flexOrder: EL("flexOrder") ? EL("flexOrder").value : "",
       allocMode: EL("allocMode") ? EL("allocMode").value : "",
@@ -237,6 +240,7 @@
     if (EL("rounds") && s.rounds != null && s.rounds !== "") EL("rounds").value = s.rounds;
     if (EL("overflow") && typeof s.overflow === "boolean") EL("overflow").checked = s.overflow;
     if (EL("youngFamily") && typeof s.youngFamily === "boolean") EL("youngFamily").checked = s.youngFamily;
+    if (EL("medicalFirst") && typeof s.medicalFirst === "boolean") EL("medicalFirst").checked = s.medicalFirst;
     if (EL("phaseOrder") && s.phaseOrder) EL("phaseOrder").value = s.phaseOrder;
     if (EL("flexOrder") && s.flexOrder) EL("flexOrder").value = s.flexOrder;
     if (EL("allocMode") && s.allocMode) EL("allocMode").value = s.allocMode;
@@ -285,7 +289,8 @@
     var flexOrder = EL("flexOrder") ? EL("flexOrder").value : "below";
     var allocMode = EL("allocMode") ? EL("allocMode").value : "full";
     var youngFamily = EL("youngFamily") ? !!EL("youngFamily").checked : true;
-    var body = { mode: mode, allocMode: allocMode, seed: seed, rounds: rounds, overflow: overflow, happyFirst: happyFirst, flexOrder: flexOrder, youngFamilyMatch: youngFamily, event: currentEvent(), targets: targetsFromInputs() };
+    var medicalFirst = EL("medicalFirst") ? !!EL("medicalFirst").checked : true;
+    var body = { mode: mode, allocMode: allocMode, seed: seed, rounds: rounds, overflow: overflow, happyFirst: happyFirst, flexOrder: flexOrder, youngFamilyMatch: youngFamily, medicalFirst: medicalFirst, event: currentEvent(), targets: targetsFromInputs() };
     var btnP = EL("previewBtn"), btnC = EL("commitBtn");
     btnP.disabled = true; btnC.disabled = true;
     banner(mode === "commit" ? "Committing…" : "Calculating preview…", "");
@@ -315,7 +320,7 @@
   });
   // Re-running a preview is required before commit if settings change.
   EL("seed").addEventListener("input", onSettingChanged);
-  ["allocMode", "rounds", "phaseOrder", "flexOrder", "overflow", "youngFamily"].forEach(function (id) {
+  ["allocMode", "rounds", "phaseOrder", "flexOrder", "overflow", "youngFamily", "medicalFirst"].forEach(function (id) {
     var el = EL(id); if (el) el.addEventListener("change", onSettingChanged);
   });
   buildTargetInputs();

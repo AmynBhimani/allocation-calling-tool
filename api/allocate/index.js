@@ -86,7 +86,7 @@ module.exports = async function (context, req) {
     const audit = { rawRecords, unique: records.length, duplicateIds: duplicates.length,
       duplicateRows: rawRecords - records.length, writeIns, lockedInPipeline, duplicates: duplicates.slice(0, 300) };
 
-    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder, youngFamilyMatch: body.youngFamilyMatch !== false, regions: scopeRegions });
+    const plan = allocate(records, { asOf: AS_OF, seed, targets, rounds, overflow, happyFirst, flexOrder, youngFamilyMatch: body.youngFamilyMatch !== false, medicalFirst: body.medicalFirst !== false, regions: scopeRegions });
 
     // Region totals + a flat per-region row list for the matrix.
     const totalsByArea = {};
@@ -124,7 +124,7 @@ module.exports = async function (context, req) {
       total: records.length, affinityTotal: plan.affinityTotal, affinityLeaders: plan.affinityLeaders,
       contestedTotal: plan.contestedTotal, nullAge: plan.nullAge,
       noAgeHeld: plan.decisions.filter(d => d.bucket === "noage").length,
-      youngFamilyPlaced: plan.youngFamilyPlaced, youngFamilyByArea: plan.youngFamilyByArea,
+      youngFamilyPlaced: plan.youngFamilyPlaced, youngFamilyByArea: plan.youngFamilyByArea, medicalPlaced: plan.medicalPlaced,
       matrix: plan.matrix, totalsByArea, distReport: plan.distReport,
       withAge: records.filter(r => (r.age != null && Number.isFinite(Number(r.age))) || r.birthday).length,
       audit, lists, listCap: CAP,

@@ -94,7 +94,7 @@ module.exports = async function (context, req) {
 
     // Build name/jk lookup so we can return the actual people in each special category.
     const info = new Map();
-    for (const R of REGIONS) for (const v of recordsByRegion[R]) {
+    for (const R of scopeRegions) for (const v of (recordsByRegion[R] || [])) {
       info.set(String(v.user_id), { name: ((v.first || "") + " " + (v.last || "")).trim(), jk: v.ceremony_jk || "", region: R });
     }
     const CAP = 6000;

@@ -134,7 +134,7 @@ module.exports = async function (context, req) {
       report.note = incremental
         ? "Preview only — INCREMENTAL: everyone who already has an area (review, prior allocation, or a caller list) is kept as-is and counted toward the area targets; only the currently-unassigned pool is distributed by the percentages. Overflow toggle still applies."
         : "Preview only — FULL re-allocation of the whole pool. Kept as-is: review (affinity) assignments, anyone called/accepted/confirmed, and anyone on a caller's list. Targets are a goal for the final mix; areas are filled lowest-% first. Re-run with the same seed to commit the identical plan.";
-      context.res = { body: report };
+      context.res = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(report) };
       return;
     }
 
@@ -168,8 +168,9 @@ module.exports = async function (context, req) {
     report.note = incremental
       ? `Incremental allocation committed. Only the unassigned pool was distributed; everyone already holding an area (review, prior allocation, or a caller list) was left untouched. ${lockedInPipeline} volunteer(s) called/accepted or on a caller's list were preserved.`
       : `Allocation committed. Assigned people are Stable with a Didar row; Young Volunteers, IFF and no-age people are held aside; review (affinity) assignments were left untouched. ${lockedInPipeline} volunteer(s) already called/accepted or on a caller's list were left exactly as-is.`;
-    context.res = { body: report };
+    context.res = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(report) };
   } catch (err) {
-    context.res = { status: 500, body: { error: String(err && err.message || err) } };
+    context.log && context.log.error && context.log.error("allocate failed:", (err && err.stack) || err);
+    context.res = { status: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: String((err && err.message) || err) }) };
   }
 };

@@ -426,6 +426,13 @@
       ]
     },
     {
+      "route": "/api/jklist",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "superadmin",

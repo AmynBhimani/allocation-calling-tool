@@ -217,8 +217,15 @@ function mergeRecords(loser, survivor, opts = {}) {
   const loserInBi = biIds.has(String(loser.user_id));
   const survInBi = biIds.has(String(survivor.user_id));
 
-  // Rule 1: both in BI -> do not merge; BI team resolves upstream.
-  if (loserInBi && survInBi) return { ok: false, reason: "both_in_bi" };
+  // Rule 1: both live in BI -> normally refuse; Better Impact is the source of truth for which account
+  // exists, and biupsert re-creates a record for any live BI account it can't find — so folding two live
+  // accounts here would simply be undone by the next refresh.
+  // The one exception: the iVol admin, who is doing the merge in Better Impact, may DECLARE which BI
+  // account they are keeping (opts.biKeep). That is exactly the fact this rule is missing, so naming it
+  // satisfies the rule. A generic "force" flag is still refused: biKeep must name the survivor.
+  if (loserInBi && survInBi) {
+    if (!opts.biKeep || String(opts.biKeep) !== String(survivor.user_id)) return { ok: false, reason: "both_in_bi" };
+  }
 
   // Rule 2: both accepted -> the caller must have picked a winner; never silently choose.
   if (isAccepted(loser) && isAccepted(survivor) && !opts.winner) {

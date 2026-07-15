@@ -14,6 +14,12 @@ function isAcceptedVolunteer(v) {
   return !!v.ivol_ready || lastOutcome(v) === "Accepted";
 }
 
+// Duties a volunteer expressed INTEREST in, captured by callers across events. Deduped, order kept.
+// Distinct from v.assigned_duty, which is the duty they were actually GIVEN (set by a quarterback).
+const dutiesOf = (v) => [...new Set((Array.isArray(v && v.event_assignments) ? v.event_assignments : [])
+  .flatMap(a => (Array.isArray(a && a.candidate_duties) ? a.candidate_duties : []))
+  .map(d => String(d).trim()).filter(Boolean))];
+
 function lastOutcome(v) {
   let o = null;
   for (const e of (v && v.activity_log) || []) {
@@ -78,4 +84,4 @@ function jkGrid(byJk, areasArr) {
   return { rows, colTotals, grand };
 }
 
-module.exports = { lastOutcome, isAcceptedVolunteer, LEADERSHIP_STATUS, blankCounts, rollupRecords, rowsFromByArea, rollupByJk, jkGrid };
+module.exports = { lastOutcome, isAcceptedVolunteer, dutiesOf, LEADERSHIP_STATUS, blankCounts, rollupRecords, rowsFromByArea, rollupByJk, jkGrid };

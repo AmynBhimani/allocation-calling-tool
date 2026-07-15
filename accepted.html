@@ -60,10 +60,14 @@
     <select id="jkSel"><option value="">All Jamatkhanas</option></select>
     <select id="areaSel"><option value="">All areas</option></select>
     <select id="groupSel"><option value="">All groups</option><option value="iff">IFF (Interfaith)</option><option value="seniors">Seniors (&gt;65)</option><option value="young">Young (5&ndash;13)</option><option value="diverse">Diverse Abilities</option></select>
+    <select id="dutySel"><option value="">All duties</option></select>
+    <select id="dutyModeSel" title="Assigned = the duty a quarterback gave them. Of interest = a duty a caller captured on their call. These are different lists — pick the one you mean before emailing."><option value="assigned">Duty assigned</option><option value="interest">Duty of interest</option><option value="either">Assigned or interested</option></select>
     <input id="q" type="search" placeholder="Filter by name…" autocomplete="off">
     <label class="chk"><input type="checkbox" id="notInBi"> Not yet in Better Impact</label>
     <button class="btn ghost2" id="exportBtn">Export CSV</button>
+    <button class="btn ghost2" id="exportEmailBtn" hidden>Export emails</button>
   </div>
+  <div class="count" id="mailStats" style="padding:7px 2px 0"></div>
 
   <div class="av-layout">
     <aside id="detailPanel" class="detailcard empty-state">Click a volunteer to see their contact info, duties of interest, and call history.</aside>

@@ -1,5 +1,5 @@
 let DATA = { volunteers: [] };
-const filters = { region: "", jk: "", area: "", group: "", q: "", notInBi: false };
+const filters = { region: "", jk: "", area: "", group: "", q: "", notInBi: false, duty: "", dutyMode: "assigned" };
 const EL = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -19,7 +19,10 @@ async function boot() {
   });
   EL("q").addEventListener("input", e => { filters.q = e.target.value; render(); });
   EL("notInBi").addEventListener("change", e => { filters.notInBi = e.target.checked; render(); });
+  EL("dutySel").addEventListener("change", e => { filters.duty = e.target.value; render(); });
+  EL("dutyModeSel").addEventListener("change", e => { filters.dutyMode = e.target.value; render(); });
   EL("exportBtn").addEventListener("click", exportCsv);
+  EL("exportEmailBtn").addEventListener("click", exportEmails);
   await load();
 }
 
@@ -44,6 +47,23 @@ function buildDropdowns() {
   EL("jkSel").innerHTML = '<option value="">All Jamatkhanas</option>' + jks.map(j => `<option value="${esc(j)}">${esc(j)}</option>`).join("");
   EL("areaSel").innerHTML = '<option value="">All areas</option>' + areas.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
   EL("regionSel").value = filters.region; EL("jkSel").value = filters.jk; EL("areaSel").value = filters.area;
+
+  // Duty list = every duty that appears in the data, either as an assignment or as a captured interest.
+  const duties = [...new Set([
+    ...DATA.volunteers.map(v => v.assignedDuty).filter(Boolean),
+    ...DATA.volunteers.flatMap(v => v.duties || []),
+  ].map(d => String(d).trim()).filter(Boolean))].sort();
+  EL("dutySel").innerHTML = '<option value="">All duties</option>' + duties.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+  EL("dutySel").value = filters.duty;
+  // Label each mode with how many people it covers, so an empty result is never a mystery.
+  const nAssigned = DATA.volunteers.filter(v => v.assignedDuty).length;
+  const nInterest = DATA.volunteers.filter(v => (v.duties || []).length).length;
+  EL("dutyModeSel").innerHTML =
+      `<option value="assigned">Duty assigned (${nAssigned.toLocaleString()})</option>`
+    + `<option value="interest">Duty of interest (${nInterest.toLocaleString()})</option>`
+    + `<option value="either">Assigned or interested</option>`;
+  EL("dutyModeSel").value = filters.dutyMode;
+  EL("exportEmailBtn").hidden = !DATA.canEmail;
 }
 
 function renderTiles(list) {
@@ -121,7 +141,19 @@ function shown() {
     (!filters.area || v.area === filters.area) &&
     (!filters.group || matchesGroup(v, filters.group)) &&
     (!filters.notInBi || !v.entered) &&
+    (!filters.duty || matchesDuty(v, filters.duty, filters.dutyMode)) &&
     (!q || v.name.toLowerCase().includes(q)));
+}
+
+// Duty match. "assigned" = the duty a quarterback gave them (v.assignedDuty). "interest" = a duty a
+// caller captured (v.duties). Kept apart on purpose: emailing someone about a duty they merely
+// expressed interest in is not the same as emailing the people actually rostered on it.
+function matchesDuty(v, duty, mode) {
+  const isAssigned = String(v.assignedDuty || "") === duty;
+  const isInterest = (v.duties || []).some(d => String(d) === duty);
+  if (mode === "assigned") return isAssigned;
+  if (mode === "interest") return isInterest;
+  return isAssigned || isInterest;
 }
 
 function fmtDate(s) { if (!s) return "—"; const d = new Date(s); return isNaN(d) ? "—" : d.toLocaleDateString(); }
@@ -139,18 +171,71 @@ function render() {
   </tr>`).join("");
   const more = list.length > 2000 ? ` (showing first 2000 — narrow with filters or Export CSV for all)` : "";
   EL("count").textContent = `${list.length.toLocaleString()} of ${DATA.volunteers.length.toLocaleString()} accepted${more}`;
+  renderMailStats(list);
+}
+
+// Normalised for deduping only — the address is exported as entered.
+const emailKey = (v) => String(v.email || "").trim().toLowerCase();
+
+// Families share one email address in this data, so a mailing list has to be per-ADDRESS, not
+// per-person: otherwise a household of three gets three copies of the same email.
+function mailRows(list) {
+  const byEmail = new Map();
+  for (const v of list) {
+    const k = emailKey(v);
+    if (!k) continue;
+    let e = byEmail.get(k);
+    if (!e) { e = { email: String(v.email).trim(), names: [], regions: new Set(), jks: new Set(), areas: new Set(), duties: new Set() }; byEmail.set(k, e); }
+    e.names.push(v.name);
+    if (v.region) e.regions.add(v.region);
+    if (v.jk) e.jks.add(v.jk);
+    if (v.area) e.areas.add(v.area);
+    if (v.assignedDuty) e.duties.add(v.assignedDuty);
+  }
+  return [...byEmail.values()].sort((a, b) => a.email.localeCompare(b.email));
+}
+
+function renderMailStats(list) {
+  const el = EL("mailStats"); if (!el) return;
+  if (!DATA.canEmail) { el.textContent = ""; return; }
+  const withEmail = list.filter(v => emailKey(v)).length;
+  const missing = list.length - withEmail;
+  const unique = mailRows(list).length;
+  el.innerHTML = `${withEmail.toLocaleString()} of ${list.length.toLocaleString()} shown have an email address`
+    + ` \u00b7 <b>${unique.toLocaleString()}</b> unique address${unique === 1 ? "" : "es"} to email`
+    + (unique && unique !== withEmail ? ` <span title="Family members often share one address — the email export sends one row per address, not per person.">(some are shared by more than one volunteer)</span>` : "")
+    + (missing ? ` \u00b7 <b>${missing.toLocaleString()}</b> with no email address on file, not in the export` : "");
+}
+
+// One row per unique address: what a mailing list actually needs.
+function exportEmails() {
+  const rows = mailRows(shown());
+  if (!rows.length) { banner("No email addresses in the current filter.", true); return; }
+  const cols = ["Email", "Volunteers", "Count", "Regions", "Jamatkhanas", "Areas", "Duties assigned"];
+  const esc2 = s => { s = String(s == null ? "" : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [cols.join(",")];
+  for (const r of rows) lines.push([r.email, r.names.join("; "), r.names.length, [...r.regions].join("; "),
+    [...r.jks].join("; "), [...r.areas].join("; "), [...r.duties].join("; ")].map(esc2).join(","));
+  download(lines, `volunteer-emails-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+function download(lines, filename) {
+  const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob); const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 function exportCsv() {
   const list = shown();
-  const cols = ["Name", "Region", "Jamatkhana", "Area", "Age", "In Better Impact", "Accepted", "Duties of Interest"];
+  const cols = ["Name", "Region", "Jamatkhana", "Area", "Age", "In Better Impact", "Accepted", "Duty assigned", "Duties of Interest"]
+    .concat(DATA.canEmail ? ["Email"] : []);
   const esc2 = s => { s = String(s == null ? "" : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const lines = [cols.join(",")];
-  for (const v of list) lines.push([v.name, v.region, v.jk, v.area || "", v.age == null ? "" : v.age, v.entered ? "Yes" : "No", fmtDate(v.acceptedAt), (v.duties || []).join("; ")].map(esc2).join(","));
-  const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob); const a = document.createElement("a");
-  a.href = url; a.download = `accepted-volunteers-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  for (const v of list) lines.push([v.name, v.region, v.jk, v.area || "", v.age == null ? "" : v.age, v.entered ? "Yes" : "No",
+    fmtDate(v.acceptedAt), v.assignedDuty || "", (v.duties || []).join("; ")]
+    .concat(DATA.canEmail ? [v.email || ""] : []).map(esc2).join(","));
+  download(lines, `accepted-volunteers-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 boot();

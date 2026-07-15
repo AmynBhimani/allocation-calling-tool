@@ -2,10 +2,9 @@
 // scoped to what the viewer is allowed to see. Super Admin & Leadership see all; Admin & Duty Team see
 // their event regions; Quarterbacks see only their area×region. Leadership (do-not-allocate) is excluded.
 const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
-const { lastOutcome } = require("../shared/rollup");
+const { isAcceptedVolunteer } = require("../shared/rollup");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
-const LEADERSHIP = "Leadership - Do Not Allocate";
 const clean = (s) => String(s == null ? "" : s).trim();
 
 function getPrincipal(req) {
@@ -75,9 +74,7 @@ module.exports = async function (context, req) {
     for (const region of regions) {
       const { records } = await readRegion(container, region);
       for (const v of records) {
-        if (v.callable_status === LEADERSHIP) continue;                       // not an accepted volunteer
-        const accepted = !!v.ivol_ready || lastOutcome(v) === "Accepted";
-        if (!accepted) continue;
+        if (!isAcceptedVolunteer(v)) continue;   // shared definition (excludes Leadership)
         if (!inUserScope(v)) continue;
         vols.push({
           id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",

@@ -3,6 +3,7 @@
 // checklist (instead of free-text), so a session's JK list is chosen from JKs that actually exist.
 // Super/admin only — this is session setup.
 const { getContainer, readRegion, REGIONS } = require("../shared/store");
+const { isAcceptedVolunteer } = require("../shared/rollup");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 
@@ -11,10 +12,8 @@ function getPrincipal(req) {
   if (!h) return null;
   try { return JSON.parse(Buffer.from(h, "base64").toString("utf8")); } catch { return null; }
 }
-const lc = (s) => String(s == null ? "" : s).toLowerCase();
-// "Accepted" = said yes on the call (or already confirmed / entered in iVol). This is the pool that
-// Phase 2 will actually place into sessions, so the accepted count previews each session's real size.
-const isAccepted = (v) => !!(v && (v.ivol_entered || v.confirmed_at || v.ivol_ready || lc(v.call_outcome) === "accepted"));
+// Accepted uses the shared definition (same as the Accepted Volunteers screen and the session
+// allocation), so the counts shown here match the roster a session will actually get.
 
 module.exports = async function (context, req) {
   try {
@@ -38,7 +37,7 @@ module.exports = async function (context, req) {
         let e = m.get(jk);
         if (!e) { e = { total: 0, accepted: 0 }; m.set(jk, e); }
         e.total++;
-        if (isAccepted(v)) e.accepted++;
+        if (isAcceptedVolunteer(v)) e.accepted++;
       }
     }));
 

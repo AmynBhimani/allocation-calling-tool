@@ -433,6 +433,18 @@
       ]
     },
     {
+      "route": "/api/sessionalloc",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/sessions.html",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": [
         "superadmin",

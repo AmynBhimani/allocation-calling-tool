@@ -369,7 +369,7 @@ async function retireInto(container, region, loserId, survivorId, opts = {}) {
 module.exports = {
   REGIONS, getContainer, readRegion, writeRegion, overwriteRegion, mutateVolunteer, mergeRegion, streamToString,
   reshardRegion, bucketOf, SHARDS,
-  readRolesStore, allowedRegionsFor, readConfigJson, readDidars,
+  readRolesStore, allowedRegionsFor, readConfigJson, readDidars, readSessions,
   retireInto, mergeRecords, progressRank,   // mergeRecords + progressRank exported for unit tests
 };
 
@@ -386,6 +386,17 @@ async function readConfigJson(blobName) {
 }
 
 // Active top-level Didars with their regions — { id, name, regions, active }.
+// Sessions (Mulaqats) under a Didar, with their Jamatkhana lists — the Session -> Ceremony JK mapping
+// set on the Events screen. readDidars() deliberately excludes these (it filters to parent-less events
+// and drops jamatkhanas), so the session allocation reads them here. Active sessions only.
+async function readSessions(parentId) {
+  const o = await readConfigJson("events.json");
+  const arr = Array.isArray(o) ? o : ((o && o.events) || []);
+  return arr.filter(e => e && e.parent && e.active !== false && (parentId == null || String(e.parent) === String(parentId)))
+    .map(e => ({ id: e.id, name: e.name, parent: e.parent,
+      jamatkhanas: Array.isArray(e.jamatkhanas) ? e.jamatkhanas : [], active: e.active !== false }));
+}
+
 async function readDidars() {
   const o = await readConfigJson("events.json");
   const arr = Array.isArray(o) ? o : ((o && o.events) || []);

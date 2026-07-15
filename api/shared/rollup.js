@@ -3,6 +3,17 @@
 
 // Walk the activity log in order: an "outcome" sets the current outcome; a later "reopen" clears it
 // (they changed their mind and are back in the active queue).
+// "Accepted a duty" — the single definition behind the Accepted Volunteers screen, reused by the
+// session allocation so the two can never disagree. iVol-ready, or the last recorded call outcome is
+// Accepted (a later "reopen" clears it — that's why this reads the log, not the call_outcome field).
+// Leadership (do-not-allocate) is never an accepted volunteer.
+const LEADERSHIP_STATUS = "Leadership - Do Not Allocate";
+function isAcceptedVolunteer(v) {
+  if (!v) return false;
+  if (v.callable_status === LEADERSHIP_STATUS) return false;
+  return !!v.ivol_ready || lastOutcome(v) === "Accepted";
+}
+
 function lastOutcome(v) {
   let o = null;
   for (const e of (v && v.activity_log) || []) {
@@ -67,4 +78,4 @@ function jkGrid(byJk, areasArr) {
   return { rows, colTotals, grand };
 }
 
-module.exports = { lastOutcome, blankCounts, rollupRecords, rowsFromByArea, rollupByJk, jkGrid };
+module.exports = { lastOutcome, isAcceptedVolunteer, LEADERSHIP_STATUS, blankCounts, rollupRecords, rowsFromByArea, rollupByJk, jkGrid };

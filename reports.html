@@ -54,6 +54,19 @@
     </div>
     <div class="count" id="jkCount"></div>
   </div>
+
+  <div class="panel" id="sessPanel" style="margin-top:22px" hidden>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <h2 style="font-family:Georgia,serif;color:var(--ink);font-size:17px;margin:0">Session rosters</h2>
+      <button class="btn ghost2" id="exportSessBtn">Export CSV</button>
+    </div>
+    <div id="sessAlert"></div>
+    <div style="overflow-x:auto">
+      <table class="grid" id="sessGrid"><thead id="sessHead"></thead><tbody id="sessRows"></tbody><tfoot id="sessFoot"></tfoot></table>
+    </div>
+    <div class="count" id="sessCount"></div>
+    <p class="sub" style="margin-top:10px">Shows what has been <b>committed</b> on the Session allocation screen — the sessions volunteers are actually in. It doesn't update on its own when a Jamatkhana or a session's mapping changes; the flags above say when a re-run is needed.</p>
+  </div>
 </div>
 
 <script src="nav.js"></script>

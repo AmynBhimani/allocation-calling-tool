@@ -19,26 +19,9 @@
 // ever touched; Didar rows (basis "pending"), support rows and other Didars' rows are left alone.
 // A stale row that already carries an assigned duty is kept and flagged, never silently dropped.
 
-// JK strings come from live data and from the Events checklist (which is built from that same data),
-// so they normally match exactly. Normalising anyway means a stray case/spacing difference can't
-// silently strand a whole Jamatkhana.
-const normJk = (s) => String(s == null ? "" : s).trim().replace(/\s+/g, " ").toLowerCase();
-const clean = (s) => String(s == null ? "" : s).trim();
-
-// Build jk -> [sessionId]. A jk in 2+ sessions is a mapping error (reported, not resolved).
-function buildJkIndex(sessions) {
-  const idx = new Map();
-  for (const s of (sessions || [])) {
-    for (const jk of (s.jamatkhanas || [])) {
-      const k = normJk(jk);
-      if (!k) continue;
-      if (!idx.has(k)) idx.set(k, []);
-      const list = idx.get(k);
-      if (!list.some(x => x.id === s.id)) list.push({ id: s.id, name: s.name, label: clean(jk) });
-    }
-  }
-  return idx;
-}
+// The JK -> session mapping lives in shared/sessions so the dashboard reports with the exact same
+// mapping this allocates with.
+const { normJk, clean, buildJkIndex } = require("../shared/sessions");
 
 // Sync one person's session rows to their target session. Pure; returns the new row array + actions.
 // scope = Set of session ids under the Didar being run (the only rows this pass may manage).
@@ -88,7 +71,7 @@ function planSessions(records, sessions, cfg) {
   const counts = {
     scanned: records.length, accepted: 0, notAccepted: 0,
     placed: 0, noJk: 0, unmappedJk: 0, duplicateJk: 0, noArea: 0,
-    added: 0, kept: 0, refreshed: 0, removed: 0, staleWithDuty: 0,
+    added: 0, kept: 0, refreshed: 0, removed: 0, staleWithDuty: 0, removedNotAccepted: 0,
   };
   const matrix = {};                       // sessionId -> { area -> n }
   for (const s of (sessions || [])) matrix[s.id] = {};
@@ -97,8 +80,22 @@ function planSessions(records, sessions, cfg) {
   const changes = [];                      // { user_id, region, rows } for the commit
   const decisions = [];
 
+  const changedBy = (actions) => actions.some(a => a === "add" || a === "remove" || a === "refresh");
+
   for (const v of records) {
-    if (!isAccepted(v)) { counts.notAccepted++; continue; }
+    if (!isAccepted(v)) {
+      counts.notAccepted++;
+      // Someone who was placed and has SINCE been reopened or declined is no longer accepted, so they
+      // must come off the roster — otherwise a withdrawal would silently leave them in a session
+      // forever. Same rule as everywhere: a row already carrying an assigned duty is kept + flagged.
+      const { rows, actions } = syncRows(v, null, scope);
+      if (actions.length) {
+        tally(actions, counts, v, staleList);
+        counts.removedNotAccepted += actions.filter(a => a === "remove").length;
+        if (changedBy(actions)) changes.push({ user_id: v.user_id, region: v.region, rows });
+      }
+      continue;
+    }
     counts.accepted++;
 
     const area = clean(v.final_area);
@@ -126,14 +123,14 @@ function planSessions(records, sessions, cfg) {
       // Still sync: if they used to map somewhere under this Didar, that stale row must go.
       const { rows, actions } = syncRows(v, null, scope);
       tally(actions, counts, v, staleList);
-      if (actions.length) changes.push({ user_id: v.user_id, region: v.region, rows });
+      if (changedBy(actions)) changes.push({ user_id: v.user_id, region: v.region, rows });
       decisions.push({ user_id: v.user_id, region: v.region, session: null, area, reason: "Jamatkhana not mapped to a session" });
       continue;
     }
 
     const { rows, actions } = syncRows(v, targetId, scope);
     tally(actions, counts, v, staleList);
-    if (actions.some(a => a !== "keep")) changes.push({ user_id: v.user_id, region: v.region, rows });
+    if (changedBy(actions)) changes.push({ user_id: v.user_id, region: v.region, rows });
     counts.placed++;
     matrix[targetId][area] = (matrix[targetId][area] || 0) + 1;
     decisions.push({ user_id: v.user_id, region: v.region, session: targetId, area, reason: null });
@@ -169,4 +166,4 @@ function tally(actions, counts, v, staleList) {
   }
 }
 
-module.exports = { planSessions, syncRows, buildJkIndex, normJk };
+module.exports = { planSessions, syncRows, buildJkIndex, normJk };   // buildJkIndex/normJk re-exported from shared/sessions

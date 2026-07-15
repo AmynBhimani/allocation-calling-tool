@@ -50,24 +50,31 @@
     });
   }
 
+  // Areas down the left, sessions across the top: there are ~11 areas but only a handful of
+  // sessions, so this is the orientation that fits on screen.
   function rosterTable(d) {
     var areas = d.areasPresent || [];
-    var html = '<table class="matrix"><tr><th>Session</th><th class="n">Jamatkhanas</th>'
-      + areas.map(function (a) { return '<th class="n">' + esc(a) + '</th>'; }).join('')
+    var sess = d.sessions || [];
+    if (!sess.length) return '<div class="small">No sessions on this Didar yet.</div>';
+    var html = '<div class="scrollx"><table class="matrix"><tr><th>Area</th>'
+      + sess.map(function (s) {
+          return '<th class="n"><span class="sessname">' + esc(s.name) + '</span>'
+            + '<div class="jkh">' + num(s.jkCount) + ' JK' + (s.jkCount === 1 ? '' : 's') + '</div></th>';
+        }).join('')
       + '<th class="n">Total</th></tr>';
-    var totals = {}, grand = 0;
-    (d.sessions || []).forEach(function (s) {
-      html += '<tr><td><span class="sessname">' + esc(s.name) + '</span></td><td class="n">' + num(s.jkCount) + '</td>'
-        + areas.map(function (a) {
-            var v = (s.byArea || {})[a] || 0; totals[a] = (totals[a] || 0) + v;
-            return '<td class="n">' + (v || '') + '</td>';
-          }).join('')
-        + '<td class="n">' + num(s.total) + '</td></tr>';
-      grand += s.total;
+    areas.forEach(function (a) {
+      var rowTot = 0;
+      var cells = sess.map(function (s) {
+        var v = (s.byArea || {})[a] || 0; rowTot += v;
+        return '<td class="n">' + (v || '') + '</td>';
+      }).join('');
+      html += '<tr><td>' + esc(a) + '</td>' + cells + '<td class="n">' + num(rowTot) + '</td></tr>';
     });
-    html += '<tr class="tot"><td>All sessions</td><td class="n"></td>'
-      + areas.map(function (a) { return '<td class="n">' + num(totals[a]) + '</td>'; }).join('')
-      + '<td class="n">' + num(grand) + '</td></tr></table>';
+    var grand = 0;
+    html += '<tr class="tot"><td>All areas</td>'
+      + sess.map(function (s) { grand += s.total; return '<td class="n">' + num(s.total) + '</td>'; }).join('')
+      + '<td class="n">' + num(grand) + '</td></tr></table></div>';
+    if (!areas.length) html += '<div class="small">Nobody placed yet \u2014 see the flags above.</div>';
     return html;
   }
 

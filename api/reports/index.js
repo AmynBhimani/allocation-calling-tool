@@ -1,5 +1,6 @@
-const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
-const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid } = require("../shared/rollup");
+const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor, readSessions } = require("../shared/store");
+const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid, isAcceptedVolunteer } = require("../shared/rollup");
+const { rollupBySession, sessionGrid, sessionIdSet, sessionHealth } = require("../shared/sessions");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -37,18 +38,34 @@ module.exports = async function (context, req) {
     const regions = scopeRegions.includes(qRegion) ? [qRegion] : scopeRegions;
     const container = await getContainer(DATA_CONTAINER);
 
+    // Sessions (all Didars): the committed session rosters, plus whether that picture is still current.
+    const sessions = await readSessions(null);
+    const sIds = sessionIdSet(sessions);
+
     const acc = { byArea: {}, totals: { assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 } };
     const jkAcc = { byJk: {}, areas: new Set() };
+    const sAcc = { bySession: {}, areas: new Set() };
+    const sHealth = { notInSession: 0, needsRerun: 0 };
     for (const region of regions) {
       const { records } = await readRegion(container, region);
       rollupRecords(records, acc);
       rollupByJk(records, jkAcc);
+      if (sessions.length) {
+        rollupBySession(records, sIds, sAcc);
+        sessionHealth(records, sessions, isAcceptedVolunteer, sHealth);
+      }
     }
     const rows = rowsFromByArea(acc.byArea);
     const totals = acc.totals;
     const jkAreas = [...jkAcc.areas].sort();
     const jk = jkGrid(jkAcc.byJk, jkAreas);
-    context.res = { body: { region: scopeRegions.includes(qRegion) ? qRegion : "All", regions: scopeRegions, rows, totals, jkAreas, jkRows: jk.rows, jkColTotals: jk.colTotals, jkGrand: jk.grand } };
+    // Session grid: area rows x session columns (few sessions, many areas).
+    const sessMeta = sessions.map(s => ({ id: String(s.id), name: s.name }));
+    const sg = sessions.length ? sessionGrid(sAcc.bySession, sessMeta, [...sAcc.areas]) : { rows: [], colTotals: {}, grand: 0 };
+    context.res = { body: { region: scopeRegions.includes(qRegion) ? qRegion : "All", regions: scopeRegions, rows, totals,
+      jkAreas, jkRows: jk.rows, jkColTotals: jk.colTotals, jkGrand: jk.grand,
+      sessions: sessMeta, sessionRows: sg.rows, sessionColTotals: sg.colTotals, sessionGrand: sg.grand,
+      sessionHealth: sHealth } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }

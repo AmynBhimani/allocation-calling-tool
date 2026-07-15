@@ -10,8 +10,9 @@
 //   DASHBOARD_EMAIL_TO            - one or more recipients, comma-separated
 // Optional: ?dry=1 computes and returns the HTML WITHOUT sending (for testing).
 
-const { getContainer, readRegion, REGIONS } = require("../shared/store");
-const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid } = require("../shared/rollup");
+const { getContainer, readRegion, REGIONS, readSessions } = require("../shared/store");
+const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid, isAcceptedVolunteer } = require("../shared/rollup");
+const { rollupBySession, sessionGrid, sessionIdSet, sessionHealth } = require("../shared/sessions");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const COLS = [
@@ -44,12 +45,20 @@ function regionTable(region, rows, totals) {
 async function buildDigest(container) {
   const grand = { byArea: {}, totals: { assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 } };
   const jkAcc = { byJk: {}, areas: new Set() };
+  const sessions = await readSessions(null);              // every session under every Didar
+  const sIds = sessionIdSet(sessions);
+  const sAcc = { bySession: {}, areas: new Set() };
+  const sHealth = { notInSession: 0, needsRerun: 0 };
   const sections = [];
   for (const region of REGIONS) {
     const { records } = await readRegion(container, region);
     const { byArea, totals } = rollupRecords(records);   // fresh per-region tally
     rollupRecords(records, grand);                        // also fold into the grand total
     rollupByJk(records, jkAcc);                           // JK × area grid (all regions)
+    if (sessions.length) {
+      rollupBySession(records, sIds, sAcc);               // committed session rosters
+      sessionHealth(records, sessions, isAcceptedVolunteer, sHealth);
+    }
     sections.push(regionTable(region, rowsFromByArea(byArea), totals));
   }
   const g = grand.totals;
@@ -73,14 +82,39 @@ async function buildDigest(container) {
         <thead style="background:#1f3a5f;color:#fff">${head}</thead><tbody>${rows}${foot}</tbody></table></div>`;
   }
 
+  // Session rosters (area rows x session columns) — committed state, plus a nudge when it's stale.
+  let sessSection = "";
+  if (sessions.length) {
+    const sMeta = sessions.map(s => ({ id: String(s.id), name: s.name }));
+    const sg = sessionGrid(sAcc.bySession, sMeta, [...sAcc.areas]);
+    const alerts = [];
+    if (sHealth.notInSession) alerts.push(`<b>${sHealth.notInSession}</b> accepted volunteer(s) not in a session yet`);
+    if (sHealth.needsRerun) alerts.push(`<b>${sHealth.needsRerun}</b> no longer match their committed session`);
+    const alertHtml = alerts.length
+      ? `<div style="background:#fbefec;border:1px solid #ead2ce;border-radius:8px;padding:9px 12px;font-size:13px;color:#7d4a41;margin:8px 0">${alerts.join(" &nbsp;•&nbsp; ")} — re-run the Session allocation.</div>`
+      : "";
+    let table = `<div style="color:#666;font-size:13px;margin:6px 0">No one has been allocated to a session yet.</div>`;
+    if (sg.rows.length) {
+      const head = `<tr><th align="left">Area</th>${sMeta.map(s => `<th align="right">${esc(s.name)}</th>`).join("")}<th align="right">Total</th></tr>`;
+      const body = sg.rows.map(r => `<tr><td>${esc(r.area)}</td>${sMeta.map(s => `<td align="right">${r.counts[s.id] || 0}</td>`).join("")}<td align="right"><b>${r.total}</b></td></tr>`).join("");
+      const foot = `<tr style="font-weight:bold;border-top:2px solid #1f3a5f"><td>All areas</td>${sMeta.map(s => `<td align="right">${sg.colTotals[s.id] || 0}</td>`).join("")}<td align="right">${sg.grand}</td></tr>`;
+      table = `<div style="overflow-x:auto"><table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px">
+        <thead style="background:#1f3a5f;color:#fff">${head}</thead><tbody>${body}${foot}</tbody></table></div>`;
+    }
+    sessSection = `
+      <h2 style="font-family:Georgia,serif;color:#1f3a5f;margin:26px 0 8px">Session rosters</h2>
+      ${alertHtml}${table}`;
+  }
+
   const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#222;line-height:1.45">
     <h1 style="font-family:Georgia,serif;color:#1f3a5f;font-size:20px;margin:0 0 2px">Volunteer Allocation — Daily Digest</h1>
     <div style="color:#666;font-size:13px">${esc(today)}</div>
     <div style="margin:14px 0 4px;font-size:14px;background:#f4f7fb;border:1px solid #dce5f0;border-radius:8px;padding:10px 12px">
       <b>All regions</b> &nbsp;—&nbsp; ${summary}</div>
     ${sections.join("")}
+    ${sessSection}
     ${jkSection}
-    <p style="color:#999;font-size:12px;margin-top:24px">Assigned = Stable with a duty · Accepted = confirmed / iVol-ready · Call pending = assigned to a caller, not yet completed · Declined = withdrew. Allocations-by-JK counts everyone holding an area. Generated automatically; reply-to is unmonitored.</p>
+    <p style="color:#999;font-size:12px;margin-top:24px">Assigned = Stable with a duty · Accepted = confirmed / iVol-ready · Call pending = assigned to a caller, not yet completed · Declined = withdrew. Allocations-by-JK counts everyone holding an area. Session rosters show what was last committed on the Session allocation screen \u2014 they don't refresh on their own when a Jamatkhana or session mapping changes. Generated automatically; reply-to is unmonitored.</p>
   </body></html>`;
   const subject = `Volunteer Digest — ${today} (All: ${g.assignedDuty} assigned, ${g.accepted} accepted, ${g.callPending} pending)`;
   return { html, subject, grand: g };

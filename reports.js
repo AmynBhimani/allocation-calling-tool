@@ -9,6 +9,7 @@ async function boot(){
   document.getElementById('regionSel').addEventListener('change',e=>load(e.target.value));
   document.getElementById('exportBtn').addEventListener('click',exportCsv);
   var jkb=document.getElementById('exportJkBtn'); if(jkb) jkb.addEventListener('click',exportJkCsv);
+  var sb=document.getElementById('exportSessBtn'); if(sb) sb.addEventListener('click',exportSessCsv);
   await load("");
 }
 
@@ -52,6 +53,30 @@ function render(){
   </tr>`;
   document.getElementById('count').textContent=`${DATA.rows.length} area(s) · region: ${DATA.region}`;
   renderJk();
+  renderSessions();
+}
+
+// Session rosters: area rows x session columns (there are many areas but few sessions).
+function renderSessions(){
+  const panel=document.getElementById('sessPanel'); if(!panel) return;
+  const sess=DATA.sessions||[], rows=DATA.sessionRows||[], col=DATA.sessionColTotals||{}, h=DATA.sessionHealth||{};
+  if(!sess.length){ panel.hidden=true; return; }        // no sessions configured yet — hide entirely
+  panel.hidden=false;
+  const head=document.getElementById('sessHead'), body=document.getElementById('sessRows'), foot=document.getElementById('sessFoot');
+  const alerts=[];
+  if(h.notInSession) alerts.push(`<b>${(h.notInSession).toLocaleString()}</b> accepted volunteer(s) aren\u2019t in a session yet`);
+  if(h.needsRerun) alerts.push(`<b>${(h.needsRerun).toLocaleString()}</b> volunteer(s) no longer match their committed session`);
+  document.getElementById('sessAlert').innerHTML = alerts.length
+    ? `<div style="background:#FBEFEC;border:1px solid #EAD2CE;border-radius:9px;padding:9px 12px;font-size:13px;color:#7d4a41;margin-bottom:10px">${alerts.join(' \u00b7 ')} \u2014 re-run <a href="/sessions.html">Session allocation</a>.</div>`
+    : '';
+  if(!rows.length){
+    head.innerHTML=''; body.innerHTML=`<tr><td><div class="empty">No one has been allocated to a session yet.</div></td></tr>`;
+    foot.innerHTML=''; document.getElementById('sessCount').textContent=''; return;
+  }
+  head.innerHTML=`<tr><th>Area</th>${sess.map(s=>`<th class="num">${s.name}</th>`).join('')}<th class="num">Total</th></tr>`;
+  body.innerHTML=rows.map(r=>`<tr><td><div class="name">${r.area}</div></td>${sess.map(s=>`<td class="num">${(r.counts[s.id]||0)?(r.counts[s.id]).toLocaleString():'\u00b7'}</td>`).join('')}<td class="num"><b>${r.total.toLocaleString()}</b></td></tr>`).join('');
+  foot.innerHTML=`<tr class="totalrow"><td><b>All areas</b></td>${sess.map(s=>`<td class="num"><b>${(col[s.id]||0).toLocaleString()}</b></td>`).join('')}<td class="num"><b>${(DATA.sessionGrand||0).toLocaleString()}</b></td></tr>`;
+  document.getElementById('sessCount').textContent=`${sess.length} session(s) \u00b7 ${rows.length} area(s) \u00b7 region: ${DATA.region}`;
 }
 
 function renderJk(){
@@ -66,6 +91,17 @@ function renderJk(){
   body.innerHTML=rows.map(r=>`<tr><td><div class="name">${r.jk}</div></td>${areas.map(a=>`<td class="num">${(r.counts[a]||0)?(r.counts[a]).toLocaleString():'·'}</td>`).join('')}<td class="num"><b>${r.total.toLocaleString()}</b></td></tr>`).join('');
   foot.innerHTML=`<tr class="totalrow"><td><b>All Jamatkhanas</b></td>${areas.map(a=>`<td class="num"><b>${(col[a]||0).toLocaleString()}</b></td>`).join('')}<td class="num"><b>${(DATA.jkGrand||0).toLocaleString()}</b></td></tr>`;
   document.getElementById('jkCount').textContent=`${rows.length} Jamatkhana(s) · ${areas.length} area(s) · region: ${DATA.region}`;
+}
+
+function exportSessCsv(){
+  const sess=DATA.sessions||[], rows=DATA.sessionRows||[], col=DATA.sessionColTotals||{};
+  const esc=v=>{const s=String(v==null?'':v); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const lines=[['Area',...sess.map(s=>s.name),'Total'].map(esc).join(',')];
+  rows.forEach(r=>lines.push([r.area,...sess.map(s=>r.counts[s.id]||0),r.total].map(esc).join(',')));
+  lines.push(['All areas',...sess.map(s=>col[s.id]||0),(DATA.sessionGrand||0)].map(esc).join(','));
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='session-rosters.csv'; a.click(); URL.revokeObjectURL(a.href);
 }
 
 function exportJkCsv(){

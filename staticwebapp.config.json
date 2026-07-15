@@ -439,6 +439,18 @@
       ]
     },
     {
+      "route": "/api/dutyalloc",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/duty-alloc.html",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
       "route": "/duty-rosters.html",
       "allowedRoles": [
         "superadmin",

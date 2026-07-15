@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duty allocation · Admin</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap{max-width:1100px;margin:0 auto;padding:20px 24px 60px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:22px}
+  .card h2{font-family:Cambria,Georgia,serif;font-size:18px;color:var(--ink);margin:0 0 14px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  .field select{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--paper);min-width:260px}
+  .btn{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:10px 18px;cursor:pointer}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.5;cursor:default}
+  .btn.commit{background:var(--accent)} .btn.commit:hover{filter:brightness(.94)}
+  .small{font-size:12.5px;color:var(--mute)}
+  .sub2{font-family:Cambria,Georgia,serif;font-size:16px;color:var(--ink);margin:22px 0 8px}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:110px}
+  .kpi .n{font-family:Cambria,Georgia,serif;font-size:22px;color:var(--ink)}
+  .kpi .l{font-size:11.5px;color:var(--mute);margin-top:2px}
+  .kpi.flag{border-color:#EAD2CE;background:#FBEFEC}
+  table.matrix{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--paper);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table.matrix th,table.matrix td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+  table.matrix th{background:#F6F7F8;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--mute)}
+  table.matrix td.n,table.matrix th.n{text-align:right}
+  table.matrix tr:last-child td{border-bottom:none}
+  tr.tot td{font-weight:700;background:#FAFBFB}
+  .warn{background:#FBEFEC;border:1px solid #EAD2CE;border-radius:10px;padding:11px 13px;font-size:13px;color:#7d4a41;margin:12px 0}
+  .good{background:#E9F6F1;border:1px solid #BFE3D6;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E6C57;margin:12px 0}
+  details{margin:8px 0} summary{cursor:pointer;font-size:13px;color:var(--teal)}
+  .sessname{font-weight:600;color:var(--ink)}
+  .jkh{font-size:11px;color:var(--mute);font-weight:400;margin-top:2px}
+  .scrollx{overflow-x:auto}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Duty allocation</h1>
+  <span class="sub">Admin</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Allocate duties within a session</h2>
+    <div class="row">
+      <div class="field"><label>Session</label><select id="event"></select></div>
+      <button class="btn" id="runBtn">Preview</button>
+      <button class="btn commit" id="commitBtn" disabled>Commit</button>
+      <span class="small" id="scope"></span>
+    </div>
+    <div class="small" style="margin-top:10px">
+      Everyone in this session gets one duty, against the minimums imported from the area templates.
+      People are given a duty they asked for first (capped at each duty’s minimum, so an unpopular duty can’t starve), then the remaining minimums are filled, then any surplus is spread.
+      <b>Anyone who already has a duty keeps it</b> — re-running only places people who don’t, so the areas’ review work is never disturbed. Leads are chosen by the areas, not here.
+    </div>
+  </div>
+  <div id="out"></div>
+</div>
+
+<script src="nav.js"></script>
+<script src="duty-alloc.js"></script>
+</body>
+</html>

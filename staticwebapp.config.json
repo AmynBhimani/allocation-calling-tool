@@ -439,6 +439,23 @@
       ]
     },
     {
+      "route": "/duty-rosters.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/api/sessionduties",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback",
+        "caller"
+      ]
+    },
+    {
       "route": "/sessions.html",
       "allowedRoles": [
         "superadmin"

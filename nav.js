@@ -20,6 +20,7 @@
     {href:'/migration.html',   label:'Migration',        roles:['superadmin']},
     {href:'/allocate.html',    label:'Allocation',       roles:['superadmin']},
     {href:'/sessions.html',    label:'Sessions',         roles:['superadmin']},
+    {href:'/duty-rosters.html',label:'Duty rosters',     roles:['superadmin','admin']},
     {href:'/api/backup',       label:'Download backup',  roles:['superadmin']}
   ];
   function curPath(){ var p=location.pathname; if(!p||p==='/') p='/index.html'; return p; }

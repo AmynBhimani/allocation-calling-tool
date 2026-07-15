@@ -2,12 +2,8 @@ const { BlobServiceClient } = require("@azure/storage-blob");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
-const AREAS = [
-  "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
-  "Seniors & Mobility", "Food Services", "Layout & Logistics",
-  "Registration & Access", "Medical Services", "Diverse Abilities Support",
-  "Finance & Procurement", "Environmental Sustainability", "Memorabilia & Design", "Jamati Preparation"
-];
+// AREAS + the duplicate rule are shared with the roster import so both apply the same definition.
+const { AREAS, dupOf, norm } = require("../shared/duties");
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -50,17 +46,6 @@ function rolesStore(obj) { return Array.isArray(obj) ? obj : (obj.assignments ||
 function qbAreas(store, email) {
   return [...new Set(store.filter(a => clean(a.email).toLowerCase() === email && clean(a.role) === "quarterback")
     .map(a => clean(a.area)).filter(Boolean))];
-}
-const norm = s => clean(s).toLowerCase();
-// A duty is a likely duplicate of an existing one (same area) when the NAME matches,
-// or the DESCRIPTION matches (when both are non-empty) — catches "Driver" vs "Bus Driver".
-function dupOf(existing, d) {
-  for (const x of existing) {
-    if (clean(x.area) !== clean(d.area)) continue;
-    if (norm(x.name) === norm(d.name)) return { match: x, field: "name" };
-    if (norm(x.description) && norm(x.description) === norm(d.description)) return { match: x, field: "description" };
-  }
-  return null;
 }
 
 module.exports = async function (context, req) {

@@ -38,36 +38,76 @@
     return m;
   }
 
+  var HEADER_ROW = 6;                      // rows 1-5 are the title + instructions
+
+  function downloadBuf(buf, filename) {
+    var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    var url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
+  // Guardrails, not guarantees: Excel only enforces validation on typing, not on paste, so the
+  // importer's parsing stays deliberately forgiving. This just stops the honest mistakes.
+  function dvRemove() {
+    return { type: "list", allowBlank: false, formulae: ['"Keep,Remove"'], showErrorMessage: true,
+      errorStyle: "stop", errorTitle: "Choose from the list", error: "Pick Keep or Remove." };
+  }
+  function dvWhole(what) {
+    return { type: "whole", operator: "greaterThanOrEqual", formulae: [0], allowBlank: true,
+      showErrorMessage: true, errorStyle: "stop", errorTitle: what, error: "Enter a whole number (0 or more)." };
+  }
+  function dvTime() {
+    return { type: "any", showInputMessage: true, promptTitle: "Check-in time", prompt: "24-hour HH:MM \u2014 e.g. 07:30" };
+  }
+
   function buildTemplate(area) {
-    var wb = XLSX.utils.book_new();
+    if (!window.ExcelJS) { banner("The spreadsheet library didn\u2019t load \u2014 check your connection and reload the page.", true); return; }
+    var wb = new ExcelJS.Workbook();
+    wb.creator = "VE Allocation Tool";
     var used = {};
-    var meta = [["Sheet", "SessionId", "SessionName", "Area", "Version"]];
+    var metaRows = [["Sheet", "SessionId", "SessionName", "Area", "Version"]];
+
     DATA.sessions.forEach(function (s) {
       var sn = sheetNameFor(s.name, used);
-      meta.push([sn, s.id, s.name, area, TEMPLATE_VERSION]);
+      metaRows.push([sn, s.id, s.name, area, TEMPLATE_VERSION]);
+      var ws = wb.addWorksheet(sn);
+      ws.columns = [{ width: 32 }, { width: 42 }, { width: 24 }, { width: 17 }, { width: 15 }, { width: 26 }];
+      ws.addRow([area + " \u2014 " + s.name]);
+      ws.addRow(["Fill in one row per duty for THIS session. Each sheet is a different session."]);
+      ws.addRow(["To drop a duty for this session only, choose Remove in the \u201cRemove from this session\u201d column. Minimum required is a floor, not a cap \u2014 more is fine."]);
+      ws.addRow(["Check-in time: 24-hour HH:MM, e.g. 07:30. Add any new duties in the blank rows at the bottom \u2014 don\u2019t delete rows."]);
+      ws.addRow([]);
+      ws.addRow(H.slice());
+      ws.getRow(1).font = { bold: true, size: 13 };
+      ws.getRow(HEADER_ROW).font = { bold: true };
+
       var prior = committed(s.id, area);
-      var rows = [];
-      rows.push([area + " \u2014 " + s.name]);
-      rows.push(["Fill in one row per duty for THIS session. Each sheet is a different session."]);
-      rows.push(["To drop a duty for this session only, put an X in \u201cRemove from this session\u201d. Minimum required is a floor, not a cap \u2014 more is fine."]);
-      rows.push(["Check-in time: 24-hour HH:MM, e.g. 07:30. Add any new duties in the blank rows at the bottom \u2014 don\u2019t delete rows."]);
-      rows.push([]);
-      rows.push(H.slice());
-      dutiesForArea(area).forEach(function (d) {
+      var list = dutiesForArea(area);
+      list.forEach(function (d) {
         var p = prior[norm(d.name)];
-        rows.push([d.name, d.description || "", "", p ? p.min : "", p ? p.leads : "", p ? p.checkIn : ""]);
+        ws.addRow([d.name, d.description || "", "Keep", p ? p.min : null, p ? p.leads : null, p ? p.checkIn : ""]);
       });
-      for (var i = 0; i < 15; i++) rows.push(["", "", "", "", "", ""]);      // room to add new duties
-      var ws = XLSX.utils.aoa_to_sheet(rows);
-      ws["!cols"] = [{ wch: 32 }, { wch: 42 }, { wch: 24 }, { wch: 17 }, { wch: 15 }, { wch: 26 }];
-      XLSX.utils.book_append_sheet(wb, ws, sn);
+      for (var i = 0; i < 15; i++) ws.addRow(["", "", "Keep", null, null, ""]);   // room to add new duties
+
+      var last = HEADER_ROW + list.length + 15;
+      for (var r = HEADER_ROW + 1; r <= last; r++) {
+        ws.getCell(r, 3).dataValidation = dvRemove();
+        ws.getCell(r, 4).dataValidation = dvWhole("Minimum required");
+        ws.getCell(r, 5).dataValidation = dvWhole("Leads required");
+        ws.getCell(r, 6).dataValidation = dvTime();
+      }
+      ws.views = [{ state: "frozen", ySplit: HEADER_ROW }];      // headers stay put while they scroll
     });
-    var mws = XLSX.utils.aoa_to_sheet(meta);
-    XLSX.utils.book_append_sheet(wb, mws, "_meta");
-    // Hidden, not secret: it tells the import which session each sheet is, even if the file is renamed.
-    wb.Workbook = { Sheets: wb.SheetNames.map(function (n) { return n === "_meta" ? { Hidden: 1 } : {}; }) };
+
+    var mws = wb.addWorksheet("_meta");
+    mws.state = "hidden";
+    metaRows.forEach(function (r) { mws.addRow(r); });
+
     var safe = area.replace(/[^A-Za-z0-9 &-]/g, "").trim();
-    XLSX.writeFile(wb, "Duty roster - " + safe + ".xlsx");
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      downloadBuf(buf, "Duty roster - " + safe + ".xlsx");
+    }).catch(function (e) { banner("Couldn\u2019t build the template: " + esc(e.message), true); });
   }
 
   function renderAreas() {

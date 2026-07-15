@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Duty rosters · Admin</title>
 <link rel="stylesheet" href="styles.css">
+<!-- SheetJS reads the returned templates (same as the BI import). ExcelJS writes them: it is the
+     one that can emit real dropdowns / data validation, which SheetJS's build silently ignores. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   .wrap{max-width:1100px;margin:0 auto;padding:20px 24px 60px}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:22px}
@@ -61,7 +64,7 @@
     <h2>1 · Send each process area a template</h2>
     <div class="small" id="sessLine">Loading sessions…</div>
     <div class="small" style="margin-top:8px">Each area gets one workbook with <b>one sheet per session</b>, pre-filled with their current duties.
-      They mark any duty to remove for that session, set the <b>minimum required</b> and <b>leads required</b>, add a <b>check-in time</b>, and type any new duties in the blank rows at the bottom.</div>
+      They pick <b>Keep</b> or <b>Remove</b> from a dropdown for each duty, set the <b>minimum required</b> and <b>leads required</b>, add a <b>check-in time</b>, and type any new duties in the blank rows at the bottom.</div>
     <div class="arealist" id="areas"></div>
   </div>
 

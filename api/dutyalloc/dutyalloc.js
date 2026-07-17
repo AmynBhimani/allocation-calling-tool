@@ -97,6 +97,13 @@ function shuffle(arr, rng) {
 const sessionRow = (v, sessionId) => (Array.isArray(v.event_assignments) ? v.event_assignments : [])
   .find(r => r && String(r.event) === String(sessionId) && r.basis === "session") || null;
 
+// A volunteer's region fixes their Didar and their Jamatkhana fixes their session, so a volunteer has
+// AT MOST ONE session row. Where that invariant is the point — a screen with no session picker — this
+// finds the row without needing to know the id first. Note sessionRow(v, null) does NOT do this: it
+// would compare against the string "null" and match nothing.
+const theSessionRow = (v) => (Array.isArray(v.event_assignments) ? v.event_assignments : [])
+  .find(r => r && r.basis === "session") || null;
+
 // Duties this person expressed interest in, across every event, deduped and order preserved.
 const requestsOf = (v) => [...new Set((Array.isArray(v.event_assignments) ? v.event_assignments : [])
   .flatMap(a => (Array.isArray(a && a.candidate_duties) ? a.candidate_duties : []))
@@ -295,7 +302,7 @@ function planDuties(records, roster, cfg) {
     shortfallTotal: areasOut.reduce((n, a) => n + a.shortfallTotal, 0) };
 }
 
-module.exports = { planDuties, mulberry32, shuffle, requestsOf, sessionRow,
+module.exports = { planDuties, mulberry32, shuffle, requestsOf, sessionRow, theSessionRow,
   expandRoster, leadCheckIn, leadNameFor, isLeadName, ageAsOf, ageOfOn,
   LEAD_PREFIX, LEAD_RE,
   STATE_PENDING, STATE_ALLOCATED, STATE_SUBMITTED, STATE_ENTERED, LOCKED_STATES };

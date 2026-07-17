@@ -36,6 +36,8 @@
   .sessname{font-weight:600;color:var(--ink)}
   .jkh{font-size:11px;color:var(--mute);font-weight:400;margin-top:2px}
   .scrollx{overflow-x:auto}
+  /* verbatim from ivol.html, so the filter bars on the two screens are the same object */
+  .toggle{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--mute);cursor:pointer}
 </style>
 </head>
 <body>
@@ -68,6 +70,16 @@
       until iVol enters their duty &mdash; at which point that volunteer is locked.
     </div>
   </div>
+  <div class="controls" id="filters" hidden>
+    <input type="search" id="q" placeholder="Search name\u2026" aria-label="Search by name">
+    <select id="fRegion"><option value="">All regions</option></select>
+    <select id="fJk"><option value="">All Jamatkhanas</option></select>
+    <select id="fDuty"><option value="">All duties</option></select>
+    <select id="fState"><option value="">All states</option></select>
+    <label class="toggle"><input type="checkbox" id="fMine"> Only ones I can change</label>
+    <span class="small" id="fcount"></span>
+  </div>
+
   <div id="out"></div>
 </div>
 

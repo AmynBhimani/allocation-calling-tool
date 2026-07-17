@@ -41,6 +41,8 @@
     <span class="selcount" id="selcount">0 selected</span>
     <button class="btn" id="markBtn" disabled>Mark entered in BI</button>
     <button class="btn ghost2" id="unmarkBtn" disabled>Undo entered</button>
+    <button class="btn" id="dutyBtn" disabled>Mark duty entered</button>
+    <button class="btn ghost2" id="dutyUndoBtn" hidden disabled>Undo duty entry</button>
     <label class="toggle"><input type="checkbox" id="showAll"> Show already-entered too</label>
     <span class="spacer"></span>
     <button class="btn ghost2" id="exportBtn">Export to Excel</button>
@@ -51,6 +53,14 @@
     <select id="fRegion"><option value="">All regions</option></select>
     <select id="fCommittee"><option value="">All committees</option></select>
     <select id="fJk"><option value="">All Jamatkhanas</option></select>
+    <select id="fDuty"><option value="">All duties</option></select>
+    <select id="fDutyState">
+      <option value="">Any duty status</option>
+      <option value="ready">Ready to enter</option>
+      <option value="entered">Duty entered</option>
+      <option value="waiting">Not submitted yet</option>
+      <option value="none">No duty yet</option>
+    </select>
   </div>
 
   <div class="panel">
@@ -60,7 +70,9 @@
         <th>Volunteer</th>
         <th>Region</th>
         <th>Committee</th>
-        <th>Outcome</th>
+        <th>Duty</th>
+        <th>Check-in</th>
+        <th>Duty status</th>
         <th>Accepted</th>
         <th>In BI</th>
       </tr></thead>

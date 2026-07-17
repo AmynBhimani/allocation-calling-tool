@@ -5,6 +5,9 @@
 // form that loses its changes on a stray reload is worse than a save per row.
 (function () {
   var SESSIONS = [], VIEW = null;
+  // Same filter model as the iVol Input Report, so the two screens behave identically: filtering is
+  // client-side over the loaded lineup, and the JK list narrows to the chosen region.
+  var filters = { q: "", region: "", jk: "", duty: "", state: "", mine: false };
   function EL(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
   function banner(msg, isErr) { var b = EL("banner"); b.hidden = false; b.className = "banner" + (isErr ? " err" : ""); b.innerHTML = msg; }
@@ -46,7 +49,11 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.error) { EL("out").innerHTML = ""; banner(esc(d.error), true); EL("submitBtn").disabled = true; return; }
-        VIEW = d; render(d);
+        VIEW = d;
+        EL("filters").hidden = false;
+        EL("fMine").parentNode.hidden = !d.partial;   // pointless when you can change everyone
+        buildFilterOptions(d);
+        render(d);
         EL("submitBtn").disabled = !d.counts.allocated;
       })
       .catch(function (e) { EL("out").innerHTML = ""; banner("Failed: " + esc(e.message), true); });
@@ -70,6 +77,39 @@
             + esc(x.duty) + gate + "</option>";
         }).join("")
       + "</select>";
+  }
+
+  // "(no duty)" has to be selectable, not just a blank option — finding who still needs placing is
+  // the single most common reason to filter this screen.
+  var NODUTY = "\u2014 none \u2014";
+  function setOpts(id, allLabel, items, cur) {
+    EL(id).innerHTML = '<option value="">' + allLabel + "</option>"
+      + items.map(function (x) { return '<option value="' + esc(x) + '"' + (x === cur ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("");
+  }
+  function buildFilterOptions(d) {
+    var regions = [];
+    (d.people || []).forEach(function (p) { if (regions.indexOf(p.region) < 0) regions.push(p.region); });
+    var jkPool = (d.people || []).filter(function (p) { return !filters.region || p.region === filters.region; });
+    var jks = [];
+    jkPool.forEach(function (p) { if (p.jk && jks.indexOf(p.jk) < 0) jks.push(p.jk); });
+    var duties = (d.duties || []).map(function (x) { return x.duty; });
+    if ((d.people || []).some(function (p) { return !p.duty; })) duties = [NODUTY].concat(duties);
+    setOpts("fRegion", "All regions", regions.sort(), filters.region);
+    setOpts("fJk", "All Jamatkhanas", jks.sort(), filters.jk);
+    setOpts("fDuty", "All duties", duties, filters.duty);
+    setOpts("fState", "All states", ["pending", "allocated", "submitted", "entered"], filters.state);
+    // A region filter is noise on a single-region session, but the cross-region ones need it badly.
+    EL("fRegion").hidden = (d.regions || []).length < 2;
+  }
+  function matches(p) {
+    if (filters.q && p.name.toLowerCase().indexOf(filters.q) < 0) return false;
+    if (filters.region && p.region !== filters.region) return false;
+    if (filters.jk && p.jk !== filters.jk) return false;
+    if (filters.duty === NODUTY) { if (p.duty) return false; }
+    else if (filters.duty && p.duty !== filters.duty) return false;
+    if (filters.state && (p.locked ? "entered" : p.state === "submitted" ? "submitted" : p.duty ? "allocated" : "pending") !== filters.state) return false;
+    if (filters.mine && (!p.canEdit || p.locked)) return false;
+    return true;
   }
 
   function stateChip(p) {
@@ -127,10 +167,12 @@
     }
 
     // ---- the people ----
+    var shown = d.people.filter(matches);
     html += '<div class="sub2">Who\u2019s in it</div><div class="scrollx">'
       + '<table class="matrix"><tr><th>Name</th><th>Jamatkhana</th><th class="n">Age</th>'
       + "<th>Duty</th><th>State</th><th>Asked for</th></tr>"
-      + d.people.map(function (p) {
+      + (shown.length ? "" : '<tr><td colspan="6"><span class="small">Nobody matches these filters.</span></td></tr>')
+      + shown.map(function (p) {
           var wants = (p.wants || []).length ? esc(p.wants.join(", ")) : '<span class="small">\u2014</span>';
           if (p.assigned) wants = '<b>' + esc(p.assigned) + '</b> <span class="small">(given by a caller)</span>'
             + ((p.wants || []).length ? '<br><span class="small">' + esc(p.wants.join(", ")) + "</span>" : "");
@@ -143,6 +185,11 @@
       + esc(d.asOf) + "), which is what every age limit is measured against.</div>";
 
     EL("out").innerHTML = html;
+    // The counts above are the WHOLE lineup on purpose — a filtered "3 short" would be a lie. Say
+    // plainly when the table is showing less than everything.
+    EL("fcount").textContent = shown.length === d.people.length
+      ? num(d.people.length) + " people"
+      : num(shown.length) + " of " + num(d.people.length) + " shown \u2014 counts above are the whole lineup";
     Array.prototype.forEach.call(document.querySelectorAll(".dutysel"), function (sel) {
       sel.addEventListener("change", function () { reassign(sel); });
     });
@@ -187,8 +234,17 @@
       .catch(function (e) { banner("Failed: " + esc(e.message), true); EL("submitBtn").disabled = false; });
   }
 
-  EL("event").addEventListener("change", function () { fillAreas(); EL("out").innerHTML = ""; EL("submitBtn").disabled = true; });
-  EL("area").addEventListener("change", function () { EL("out").innerHTML = ""; EL("submitBtn").disabled = true; });
+  function reFilter() { if (VIEW) { buildFilterOptions(VIEW); render(VIEW); } }
+  EL("q").addEventListener("input", function (e) { filters.q = e.target.value.toLowerCase(); reFilter(); });
+  EL("fRegion").addEventListener("change", function (e) { filters.region = e.target.value; filters.jk = ""; reFilter(); });
+  EL("fJk").addEventListener("change", function (e) { filters.jk = e.target.value; reFilter(); });
+  EL("fDuty").addEventListener("change", function (e) { filters.duty = e.target.value; reFilter(); });
+  EL("fState").addEventListener("change", function (e) { filters.state = e.target.value; reFilter(); });
+  EL("fMine").addEventListener("change", function (e) { filters.mine = e.target.checked; reFilter(); });
+
+  function clearView() { VIEW = null; EL("out").innerHTML = ""; EL("filters").hidden = true; EL("submitBtn").disabled = true; }
+  EL("event").addEventListener("change", function () { fillAreas(); clearView(); });
+  EL("area").addEventListener("change", clearView);
   EL("loadBtn").addEventListener("click", show);
   EL("submitBtn").addEventListener("click", submit);
   load();

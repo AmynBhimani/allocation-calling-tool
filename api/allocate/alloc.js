@@ -118,6 +118,7 @@ function allocate(records, cfg) {
       age: directAge != null ? directAge : ageAsOf(r.birthday, asOf),
       isIFF: (r.list === "IFF") || !!r.interfaith,
       prefAreas, happyAnywhere: !!r.happy_anywhere,
+      declinedAreas: Array.isArray(r.declined_areas) ? r.declined_areas.filter(a => typeof a === "string") : [],
       bucket: null, area: null,
     };
   }).filter(r => regionsUsed.indexOf(r.region) >= 0);   // scoped to the event's regions when cfg.regions set
@@ -126,9 +127,17 @@ function allocate(records, cfg) {
   // person is only released from the "Young" hold if they can actually serve one of these —
   // i.e. they're happy-anywhere (or picked it) and fall in its age window. Everyone else under 16
   // stays held aside as before.
+  // An area this person has actively REFUSED (Accepted screen -> decline+refer, or repool). This is
+  // NOT the same as simply not preferring it: it is a person having said no, and it outranks every
+  // other signal here — their Better Impact picks, happy-anywhere, a Medical cert, a family match.
+  // It cannot be expressed by editing pref_areas, because Better Impact owns that field and rewrites
+  // it on every refresh (see mergeFresh); declined_areas is app-owned and survives. Empty for
+  // everyone who has never declined, so canGo() is a no-op on the entire existing population.
+  const canGo = (p, area) => p.declinedAreas.length === 0 || p.declinedAreas.indexOf(area) < 0;
+
   const subSixteen = targetsDef.filter(t => t.min != null && t.min < 16);
   const youngCanServe = (r) => subSixteen.some(t =>
-    eligible(r.age, t) && (r.happyAnywhere || r.prefAreas.indexOf(t.area) >= 0));
+    eligible(r.age, t) && canGo(r, t.area) && (r.happyAnywhere || r.prefAreas.indexOf(t.area) >= 0));
 
   for (const r of recs) {
     if (r.fromReview) {
@@ -141,7 +150,10 @@ function allocate(records, cfg) {
     // as computed_area = "Medical Services") are placed in Medical up front — Medical always wins —
     // regardless of the no-age/young holds. Reviewed people are handled above, so this only catches the
     // un-reviewed medical pool that would otherwise be re-allocated into a percentage area.
-    if (cfg.medicalFirst !== false && r.computed_area === "Medical Services") {
+    // "Medical always wins" — except over a person who has actually refused Medical. A decline is an
+    // explicit human decision; a cert flag is an import heuristic. They fall through to the normal
+    // pool and are placed by their remaining preferences.
+    if (cfg.medicalFirst !== false && r.computed_area === "Medical Services" && canGo(r, "Medical Services")) {
       r.bucket = "assigned"; r.area = "Medical Services"; r.medicalPass = true; continue;
     }
     if (r.age == null) { r.bucket = "noage"; continue; }  // held aside (no birthday)
@@ -187,14 +199,17 @@ function allocate(records, cfg) {
     const pickersByArea = {};
     for (const t of targetsDef) {
       pickersByArea[t.area] = shuffle(
-        assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(t.area) >= 0 && eligible(p.age, tByArea[t.area])),
+        assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(t.area) >= 0
+          && eligible(p.age, tByArea[t.area]) && canGo(p, t.area)),
         rng
       );
     }
     const flex = shuffle(assignable.filter(p => p.happyAnywhere), rng);
     const remainingPickerSupply = (A) => pickersByArea[A].filter(p => !p.area).length;
-    const eligibleFlexOpen = (A) => flex.filter(x => !x.area && eligible(x.age, tByArea[A]));
-    const fitCount = (p, areas) => areas.reduce((n, t) => n + (eligible(p.age, tByArea[t.area]) ? 1 : 0), 0);
+    // canGo is load-bearing HERE above all: flex placement never consults preferences, so without it
+    // a happy-anywhere volunteer who refused an area gets put straight back into it.
+    const eligibleFlexOpen = (A) => flex.filter(x => !x.area && eligible(x.age, tByArea[A]) && canGo(x, A));
+    const fitCount = (p, areas) => areas.reduce((n, t) => n + (eligible(p.age, tByArea[t.area]) && canGo(p, t.area) ? 1 : 0), 0);
     // Place ONE flex person into A, choosing the one LEAST useful to the other open areas, so
     // dual-use people are saved for the areas that still need them and narrow people land where
     // only they can serve.
@@ -288,9 +303,11 @@ function allocate(records, cfg) {
         let area = null, bestRatio = Infinity, bestPct = Infinity;
         for (const t of order) {
           if (!eligible(p.age, tByArea[t.area])) continue;
-          const selected = p.happyAnywhere || p.prefAreas.indexOf(t.area) >= 0
+          // canGo first: overflow WIDENS the selected set (hospitality -> Seniors/Safety), and a refusal
+          // must not be widened around.
+          const selected = canGo(p, t.area) && (p.happyAnywhere || p.prefAreas.indexOf(t.area) >= 0
             || (t.area === SENIORS && seniorsCross(p))
-            || (t.area === SAFETY && safetyCross(p));
+            || (t.area === SAFETY && safetyCross(p)));
           if (!selected) continue;
           const ratio = placed[t.area] / Math.max(1, target[t.area]);
           if (ratio < bestRatio || (ratio === bestRatio && t.pct < bestPct)) { bestRatio = ratio; bestPct = t.pct; area = t.area; }
@@ -304,10 +321,13 @@ function allocate(records, cfg) {
       if (p.area) continue;
       p.bucket = "unassigned";
       const picks = Array.isArray(p.prefAreas) ? p.prefAreas : [];
-      const validPicks = picks.filter(a => tByArea[a]);            // picks that are real allocation targets
+      const targetPicks = picks.filter(a => tByArea[a]);           // picks that are real allocation targets
+      const validPicks = targetPicks.filter(a => canGo(p, a));     // ...that they haven't refused
       if (!p.happyAnywhere && picks.length === 0) { p.reason = "No area selected"; continue; }
-      if (!p.happyAnywhere && validPicks.length === 0) { p.reason = "Only picked non-target areas (e.g. Medical/Registration)"; continue; }
-      const willing = p.happyAnywhere ? order.map(t => t.area) : validPicks;
+      if (!p.happyAnywhere && targetPicks.length === 0) { p.reason = "Only picked non-target areas (e.g. Medical/Registration)"; continue; }
+      if (!p.happyAnywhere && validPicks.length === 0) { p.reason = "Declined every area they picked"; continue; }
+      const willing = (p.happyAnywhere ? order.map(t => t.area) : validPicks).filter(a => canGo(p, a));
+      if (willing.length === 0) { p.reason = "Declined every area"; continue; }
       const ageOk = willing.filter(a => eligible(p.age, tByArea[a]));
       if (ageOk.length === 0) { p.reason = p.happyAnywhere ? "Age-ineligible for every area" : "Age outside the range of every area they picked"; continue; }
       p.reason = cfg.overflow ? "Picked areas at capacity" : "Picked areas full (overflow off)";
@@ -321,8 +341,8 @@ function allocate(records, cfg) {
         const certDriven = (A === "Medical Services");   // filled by the medical pass, not pickers/flex
         // Ceiling = the most this area could EVER reach without violating preference:
         // review already there + its own age-eligible pickers + all age-eligible flex people.
-        const pickerCount = certDriven ? 0 : assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(A) >= 0 && eligible(p.age, tByArea[A])).length;
-        const flexEligible = certDriven ? 0 : assignable.filter(p => p.happyAnywhere && eligible(p.age, tByArea[A])).length;
+        const pickerCount = certDriven ? 0 : assignable.filter(p => !p.happyAnywhere && p.prefAreas.indexOf(A) >= 0 && eligible(p.age, tByArea[A]) && canGo(p, A)).length;
+        const flexEligible = certDriven ? 0 : assignable.filter(p => p.happyAnywhere && eligible(p.age, tByArea[A]) && canGo(p, A)).length;
         return {
           area: A, pct: t.pct, target: target[A],
           reviewAlready: reviewIn[A] || 0, placed: placed[A],
@@ -361,7 +381,9 @@ function allocate(records, cfg) {
       const withAge = fam.filter(x => x.age != null);
       const chosen = withAge.length ? withAge.reduce((a, b) => (b.age > a.age ? b : a)) : fam[0];  // oldest, else any
       const t = tByArea[chosen.area];
-      if (t && eligible(r.age, t)) {                    // only if the young volunteer's age fits that area's range
+      // A refusal outranks the family match too: being related to someone in an area is not consent
+      // to serve in it.
+      if (t && eligible(r.age, t) && canGo(r, chosen.area)) {     // only if the young volunteer's age fits that area's range
         r.bucket = "assigned"; r.area = chosen.area; r.youngFamily = true; r.youngFamilyWith = chosen.user_id;
         youngFamilyPlaced++; youngFamilyByArea[chosen.area] = (youngFamilyByArea[chosen.area] || 0) + 1;
       }

@@ -3,7 +3,7 @@ const { computeCallableStatus, seedEventAssignments, callerLocked } = require(".
 const { allocate } = require("./alloc");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
-const AS_OF = "2026-07-23";
+const { AS_OF } = require("../shared/eventage");   // shared with the duty allocation: one event date
 const DEFAULT_SEED = 20260723;
 
 function getPrincipal(req) {

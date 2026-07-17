@@ -7,6 +7,7 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { getContainer, readRegion, mergeRegion, REGIONS, readDidars, readSessions } = require("../shared/store");
 const { planDuties } = require("./dutyalloc");
+const { AS_OF } = require("../shared/eventage");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -74,14 +75,18 @@ module.exports = async function (context, req) {
       for (const v of records) all.push(v);
     }
 
+    // Areas: a list, one, or none (= every area in the session). The screen offers all/multiple.
+    const areas = Array.isArray(body.areas) ? body.areas.map(a => String(a).trim()).filter(Boolean)
+      : (body.area ? [String(body.area).trim()] : null);
     const plan = planDuties(all, roster, {
       sessionId, seed: body.seed != null ? Number(body.seed) : 1234567,
-      area: body.area ? String(body.area) : null,
+      areas, asOf: AS_OF,          // event-day age, the SAME reference the area allocation gates on
     });
 
     const report = {
       mode: commit ? "commit" : "preview",
       session: sessionId, sessionName: session.name, regions: scopeRegions,
+      areas_requested: areas, asOf: AS_OF,
       counts: plan.counts, areas: plan.areas, areasWithoutRoster: plan.areasWithoutRoster,
       shortfallTotal: plan.shortfallTotal, changed: plan.changes.length,
       note: commit

@@ -51,15 +51,9 @@ function shuffle(arr, rng) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
-function ageAsOf(birthday, asOf) {
-  if (!birthday) return null;
-  const d = new Date(birthday); if (isNaN(d)) return null;
-  const ref = new Date(asOf);
-  let a = ref.getFullYear() - d.getFullYear();
-  const m = ref.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && ref.getDate() < d.getDate())) a--;
-  return a;
-}
+// Shared with the DUTY allocation on purpose: two gates, one definition of age, so they can never
+// disagree about whether someone is old enough. See api/shared/eventage.js.
+const { ageAsOf } = require("../shared/eventage");
 function eligible(age, t) {
   if (!t) return false;
   // 16 is the floor for everyone UNLESS an area explicitly sets a lower min (e.g. Environmental at 13).

@@ -6,14 +6,31 @@
   function clearBanner() { EL("banner").hidden = true; }
   function num(n) { return (n || 0).toLocaleString(); }
   function current() { return EL("event").value || ""; }
+  function currentArea() { return EL("area").value || ""; }
+
+  // Only areas with an imported roster: there is nothing to allocate against without one, and the
+  // engine would just report them as unrostered. Rebuilt whenever the session changes, keeping the
+  // same area selected if the new session also rosters it.
+  function fillAreas() {
+    var s = SESSIONS.filter(function (x) { return x.id === current(); })[0];
+    var areas = (s && s.areasWithRoster) || [];
+    var keep = currentArea();
+    EL("area").innerHTML = '<option value="">All areas</option>'
+      + areas.map(function (a) {
+          return '<option value="' + esc(a) + '"' + (a === keep ? " selected" : "") + ">" + esc(a) + "</option>";
+        }).join("");
+    EL("area").disabled = !areas.length;
+  }
 
   function showScope() {
     var s = SESSIONS.filter(function (x) { return x.id === current(); })[0];
     if (!s) { EL("scope").textContent = SESSIONS.length ? "" : "No sessions configured \u2014 add them on the Events screen."; return; }
     var n = (s.areasWithRoster || []).length;
-    EL("scope").textContent = n
-      ? n + " area" + (n === 1 ? "" : "s") + " with an imported duty roster"
-      : "No duty roster imported for this session yet \u2014 do that on the Duty rosters screen first.";
+    if (!n) { EL("scope").textContent = "No duty roster imported for this session yet \u2014 do that on the Duty rosters screen first."; return; }
+    var a = currentArea();
+    EL("scope").textContent = a
+      ? "Just " + a + " \u2014 no other area in this session is touched"
+      : n + " area" + (n === 1 ? "" : "s") + " with an imported duty roster";
   }
 
   function load() {
@@ -23,6 +40,7 @@
       EL("event").innerHTML = SESSIONS.length
         ? SESSIONS.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>"; }).join("")
         : '<option value="">(no sessions configured)</option>';
+      fillAreas();
       showScope();
     }).catch(function () { EL("scope").textContent = "Couldn\u2019t load sessions."; });
   }
@@ -31,18 +49,22 @@
     clearBanner();
     var ev = current();
     if (!ev) { banner("Pick a session.", true); return; }
-    if (commit && !confirm("Commit duty allocation for this session? Anyone who already has a duty keeps it.")) return;
+    var area = currentArea();
+    if (commit && !confirm("Commit duty allocation for " + (area || "every area") + " in this session?\n\n"
+      + "Anyone who already has a duty keeps it" + (area ? ", and no other area is touched." : "."))) return;
     EL("runBtn").disabled = true; EL("commitBtn").disabled = true;
     EL("out").innerHTML = '<div class="card"><div class="small">' + (commit ? "Committing" : "Working") + "\u2026</div></div>";
     fetch("/api/dutyalloc", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session: ev, commit: !!commit }) })
+      // An empty list means every area — the endpoint and engine both read it that way.
+      body: JSON.stringify({ session: ev, areas: area ? [area] : [], commit: !!commit }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.error) { EL("out").innerHTML = ""; banner(esc(d.error), true); EL("runBtn").disabled = false; return; }
         LAST = d; render(d);
         EL("runBtn").disabled = false;
         EL("commitBtn").disabled = !!commit;
-        if (commit) banner("Committed. " + num(d.counts.placed) + " volunteer(s) given a duty \u2014 the areas can review their lineups now.", false);
+        if (commit) banner("Committed. " + num(d.counts.placed) + " volunteer(s) given a duty"
+          + (currentArea() ? " in " + esc(currentArea()) : "") + " \u2014 the areas can review their lineups now.", false);
       })
       .catch(function (e) { EL("out").innerHTML = ""; banner("Failed: " + esc(e.message), true); EL("runBtn").disabled = false; });
   }
@@ -112,7 +134,8 @@
     if (cp) EL("whoami").innerHTML = "<b>" + esc(cp.userDetails) + "</b>";
   }).catch(function () {});
 
-  EL("event").addEventListener("change", function () { showScope(); EL("commitBtn").disabled = true; EL("out").innerHTML = ""; });
+  EL("event").addEventListener("change", function () { fillAreas(); showScope(); EL("commitBtn").disabled = true; EL("out").innerHTML = ""; });
+  EL("area").addEventListener("change", function () { showScope(); EL("commitBtn").disabled = true; EL("out").innerHTML = ""; });
   EL("runBtn").addEventListener("click", function () { run(false); });
   EL("commitBtn").addEventListener("click", function () { run(true); });
   load();

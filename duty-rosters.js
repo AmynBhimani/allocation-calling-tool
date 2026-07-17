@@ -306,20 +306,43 @@
 
     (d.summary || []).forEach(function (s) {
       html += '<div class="sub2">' + esc(s.name) + "</div>";
-      html += '<table class="matrix"><tr><th>Area</th><th class="n">Duties</th><th class="n">Minimum total</th><th class="n">Leads</th><th class="n">No check-in time</th></tr>'
+      html += '<table class="matrix"><tr><th>Area</th><th class="n">Duties</th><th class="n">Minimum total</th>'
+        + '<th class="n">Leads (extra)</th><th class="n">People needed</th><th class="n">No check-in time</th></tr>'
         + s.areas.map(function (a) {
             return "<tr><td>" + esc(a.area) + '</td><td class="n">' + num(a.duties) + '</td><td class="n">' + num(a.minTotal)
-              + '</td><td class="n">' + num(a.leadsTotal) + '</td><td class="n">' + (a.noTime ? '<b style="color:#9b5b50">' + num(a.noTime) + "</b>" : "\u2014") + "</td></tr>";
+              + '</td><td class="n">' + num(a.leadsTotal) + '</td><td class="n"><b>' + num(a.peopleNeeded) + "</b>"
+              + '</td><td class="n">' + (a.noTime ? '<b style="color:#9b5b50">' + num(a.noTime) + "</b>" : "\u2014") + "</td></tr>";
           }).join("") + "</table>";
       // Every parsed row, so the check-in times can be eyeballed before committing.
       s.areas.forEach(function (a) {
-        html += '<details><summary>' + esc(a.area) + " \u2014 " + num(a.duties) + " duties</summary>"
-          + '<table class="matrix"><tr><th>Duty</th><th class="n">Minimum</th><th class="n">Leads</th><th>Check-in</th></tr>'
+        var derived = a.derived || [];
+        html += '<details><summary>' + esc(a.area) + " \u2014 " + num(a.duties) + " duties"
+          + (derived.length ? " + " + num(derived.length) + " lead" + (derived.length === 1 ? "" : "s") : "")
+          + ", " + num(a.peopleNeeded) + " people</summary>"
+          + '<table class="matrix"><tr><th>Duty</th><th class="n">Minimum</th><th class="n">Leads</th>'
+          + '<th class="n">Min age</th><th>Check-in</th></tr>'
           + a.rows.map(function (r) {
               return "<tr><td>" + esc(r.duty) + (r.isNew ? '<span class="newpill">new</span>' : "")
-                + '</td><td class="n">' + num(r.min) + '</td><td class="n">' + num(r.leads) + "</td><td>"
+                + '</td><td class="n">' + num(r.min) + '</td><td class="n">' + num(r.leads)
+                + '</td><td class="n">' + (r.minAge ? num(r.minAge) + "+" : '<span class="small">any</span>') + "</td><td>"
                 + (r.checkIn ? esc(r.checkIn) : '<span style="color:#9b5b50">not set</span>') + "</td></tr>";
-            }).join("") + "</table></details>";
+            }).join("")
+          // The lead duties the ENGINE will generate from the Leads column, derived by its own
+          // function rather than re-implemented here. Shown at import because this is where
+          // "leads 2" quietly becomes two MORE people to find — better seen now than discovered
+          // on the allocation report.
+          + derived.map(function (r) {
+              return '<tr style="color:#6b7280"><td>' + esc(r.duty) + '<span class="small"> \u2014 created from '
+                + esc(r.leadOf) + "\u2019s leads</span></td>"
+                + '<td class="n">' + num(r.min) + '</td><td class="n">\u2014</td><td class="n">'
+                + (r.minAge ? num(r.minAge) + "+" : '<span class="small">any</span>') + "</td><td>"
+                + (r.checkIn ? esc(r.checkIn) : '<span class="small">\u2014</span>') + "</td></tr>";
+            }).join("")
+          + "</table>"
+          + (derived.length ? '<div class="small">Lead duties are created automatically and are <b>extra people</b>, '
+              + "checking in an hour before their duty. The areas pick who fills them on the review screen \u2014 "
+              + "the allocation leaves them empty.</div>" : "")
+          + "</details>";
       });
     });
 

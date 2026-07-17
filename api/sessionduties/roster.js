@@ -14,7 +14,7 @@
 const { clean, norm, dupOf, findDuty } = require("../shared/duties");
 // The ENGINE owns lead-duty derivation; the import only has to agree with it about the reserved name
 // and about what a Leads count implies. Importing rather than re-deriving makes drift impossible.
-const { isLeadName, leadNameFor, LEAD_PREFIX } = require("../dutyalloc/dutyalloc");
+const { isLeadName, leadNameFor, expandRoster, LEAD_PREFIX } = require("../dutyalloc/dutyalloc");
 
 const pad2 = (n) => (n < 10 ? "0" : "") + n;
 
@@ -274,13 +274,22 @@ function planRoster(files, catalog, sessions, opts) {
     const areas = Object.keys(byArea).sort();
     return {
       id: sid, name: s.name,
-      areas: areas.map(a => ({
-        area: a, duties: byArea[a].length,
-        minTotal: byArea[a].reduce((n, r) => n + r.min, 0),
-        leadsTotal: byArea[a].reduce((n, r) => n + r.leads, 0),
-        noTime: byArea[a].filter(r => !r.checkIn).length,
-        rows: byArea[a],
-      })),
+      areas: areas.map(a => {
+        const minTotal = byArea[a].reduce((n, r) => n + r.min, 0);
+        const leadsTotal = byArea[a].reduce((n, r) => n + r.leads, 0);
+        return {
+          area: a, duties: byArea[a].length, minTotal, leadsTotal,
+          // Leads are ADDITIONAL people, so this is what the area actually has to staff. Computed
+          // here rather than left for the screen to add up, because getting it wrong understates
+          // every area by its lead count.
+          peopleNeeded: minTotal + leadsTotal,
+          noTime: byArea[a].filter(r => !r.checkIn).length,
+          rows: byArea[a],
+          // The lead duties the ENGINE will generate from these rows. Derived by the engine's own
+          // function, not re-implemented, so the preview cannot promise something else.
+          derived: expandRoster(byArea[a]).filter(x => x.isLead),
+        };
+      }),
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
 

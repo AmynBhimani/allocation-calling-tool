@@ -55,6 +55,7 @@ async function load(firstTime) {
   renderSummary(data.stats);
   document.getElementById("scanInfo").textContent = `${data.stats.groups} group(s) across ${(data.regions || []).length} region(s)`;
   renderGroups(data.groups || []);
+  renderDeclarations(data.declarations || []);
   document.getElementById("exportBtn").disabled = !(data.groups || []).length;
 }
 
@@ -70,7 +71,7 @@ function renderGroups(groups) {
   const host = document.getElementById("groups");
   if (!groups.length) { host.innerHTML = `<div class="loading">No duplicate live-BI accounts found. 🎉</div>`; return; }
   host.innerHTML = groups.map((g, i) => groupHtml(g, i)).join("");
-  if (!CAN_RESOLVE) { host.querySelectorAll(".resolve").forEach(el => el.remove()); return; }
+  if (!CAN_RESOLVE) { host.querySelectorAll(".resolve, .sep").forEach(el => el.remove()); return; }
   host.querySelectorAll(".keepRadio").forEach(r => r.addEventListener("change", () => {
     const i = r.dataset.g;
     host.querySelector(`.rprev[data-g="${i}"]`).disabled = false;
@@ -79,6 +80,73 @@ function renderGroups(groups) {
   }));
   host.querySelectorAll(".rprev").forEach(b => b.addEventListener("click", () => resolve(+b.dataset.g, false)));
   host.querySelectorAll(".rgo").forEach(b => b.addEventListener("click", () => resolve(+b.dataset.g, true)));
+  host.querySelectorAll(".ssep").forEach(b => b.addEventListener("click", () => markSeparate(+b.dataset.g)));
+}
+
+// "Not the same person" — the opposite of a merge, and the only honest answer when the scan pairs a
+// father and son. Pairwise; recorded server-side in its own blob so a BI refresh can't undo it.
+async function markSeparate(i) {
+  const g = (LAST.groups || [])[i]; if (!g) return;
+  const host = document.getElementById("groups");
+  const sel = host.querySelector(`.spair[data-g="${i}"]`);
+  let a, b;
+  if (sel) { const v = String(sel.value || "").split("|"); a = v[0]; b = v[1]; }
+  else if (g.members.length >= 2) { a = String(g.members[0].user_id); b = String(g.members[1].user_id); }
+  if (!a || !b) return;
+  const nameOf = (id) => { const m = g.members.find(x => String(x.user_id) === String(id)); return (m && m.name) || id; };
+  if (!confirm(`Mark these as two different people?\n\n  ${nameOf(a)} (${a})\n  ${nameOf(b)} (${b})\n\nThey'll stop being offered as a duplicate here and on the Duplicates screen. You can undo it from "Kept separate" at the bottom of this page.`)) return;
+  const noteEl = host.querySelector(`.snote[data-g="${i}"]`);
+  const out = document.getElementById("sout-" + i);
+  out.innerHTML = `<div class="rmsg">Saving…</div>`;
+  try {
+    const r = await fetch("/api/biresolutions", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "distinct", region: g.region, a, b, note: (noteEl && noteEl.value) || "" }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    out.innerHTML = `<div class="rok">${esc(d.note || "Marked as separate.")}</div>`;
+    await load();                       // the group should now be gone (or split, if it had 3+)
+  } catch (err) {
+    out.innerHTML = `<div class="rwarn">Could not save: ${esc(err.message)}</div>`;
+  }
+}
+
+async function undoSeparate(a, b) {
+  if (!confirm(`Undo this?\n\n${a} and ${b} will be offered as a possible duplicate again.`)) return;
+  try {
+    const r = await fetch("/api/biresolutions", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "undistinct", a, b }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    await load();
+  } catch (err) {
+    alert("Could not undo: " + err.message);
+  }
+}
+
+// Without somewhere to see these, a mis-click would be invisible and effectively permanent.
+function renderDeclarations(decls) {
+  const host = document.getElementById("decls");
+  if (!host) return;
+  decls = decls || [];
+  const info = document.getElementById("declInfo");
+  if (info) info.textContent = decls.length ? `${decls.length} pair(s) confirmed as different people` : "";
+  if (!decls.length) {
+    host.innerHTML = `<div class="loading">None yet. If the scan pairs two people who aren\u2019t the same person, mark them separate above.</div>`;
+    return;
+  }
+  const rows = decls.map(d => `<tr>
+    <td><span class="badge reg">${esc(d.region || "—")}</span></td>
+    <td class="idcell">${esc(String(d.a))} \u2194 ${esc(String(d.b))}</td>
+    <td>${esc((d.names || [])[0] || "—")} <span class="muted">/</span> ${esc((d.names || [])[1] || "—")}</td>
+    <td>${esc(d.note || "—")}</td>
+    <td class="muted">${esc(d.actor || "—")}</td>
+    <td class="muted">${esc(String(d.ts || "").slice(0, 10))}</td>
+    <td>${CAN_RESOLVE ? `<button class="btn-ghost dundo" data-a="${esc(String(d.a))}" data-b="${esc(String(d.b))}">Undo</button>` : ""}</td>
+  </tr>`).join("");
+  host.innerHTML = `<table class="dtable">
+    <thead><tr><th>Region</th><th>BI Accounts</th><th>Names</th><th>Why</th><th>Confirmed by</th><th>When</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+  host.querySelectorAll(".dundo").forEach(b => b.addEventListener("click", () => undoSeparate(b.dataset.a, b.dataset.b)));
 }
 
 // Fold the other profiles into the one the iVol admin is keeping. The kept BI id is sent as the
@@ -145,6 +213,18 @@ function groupHtml(g, i) {
       <td class="muted">${esc(m.email || m.cell_phone || "—")}</td>
     </tr>`;
   }).join("");
+  // Distinctness is pairwise: in a 3+ cluster, "these are all different people" is wrong the moment
+  // two of them really are the same. With exactly two accounts there is only one pair, so the button
+  // alone says which; beyond that the admin has to name the two.
+  const pairs = [];
+  for (let x = 0; x < g.members.length; x++)
+    for (let y = x + 1; y < g.members.length; y++) pairs.push([g.members[x], g.members[y]]);
+  const pairCtl = pairs.length > 1
+    ? `<select class="spair" data-g="${i}" title="Which two are different people?">` +
+      pairs.map(([m, n]) => `<option value="${esc(String(m.user_id))}|${esc(String(n.user_id))}">` +
+        `${esc(m.name || String(m.user_id))} (${esc(String(m.user_id))}) \u2194 ${esc(n.name || String(n.user_id))} (${esc(String(n.user_id))})</option>`).join("") +
+      `</select>`
+    : "";
   return `<div class="group ${danger ? "danger" : ""}">
     <div class="ghead">${badges}<span class="why">${why ? "matched on " + esc(why) : ""}</span></div>
     <table class="dtable">
@@ -163,6 +243,15 @@ function groupHtml(g, i) {
         </select>
       </div>
       <div class="rout" id="rout-${i}"></div>
+    </div>
+    <div class="sep" data-s="${i}">
+      <div class="smsg">Looked in Better Impact and these are two different people? Mark them separate — the scan will stop offering them, here and on the Duplicates screen.</div>
+      <div class="sactions">
+        ${pairCtl}
+        <input class="snote" data-g="${i}" type="text" maxlength="300" placeholder="Why? (optional \u2014 e.g. father and son)">
+        <button class="btn-ghost ssep" data-g="${i}">Not the same person</button>
+      </div>
+      <div class="sout" id="sout-${i}"></div>
     </div>
   </div>`;
 }

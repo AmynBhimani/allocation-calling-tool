@@ -181,7 +181,23 @@ function findDuplicateClusters(records, opts = {}) {
   const uf = new UF(n);
   const signalsByEdge = new Map();   // "i|j" -> signal (i<j)
   const hintsByRecord = new Map();   // i -> [{other, signal}]  non-linking hints (shared contact, diff name)
+  // Pairs a human has declared to be two different people (shared/distinct.js). Keyed by user_id, not
+  // index, because index is an artefact of read order. Suppression has to happen HERE, at the edge,
+  // not on the finished cluster: clusters are union-find, so A-B and B-C collapse into {A,B,C} and
+  // dropping the group would throw away a real B-C duplicate along with the false A-B one. Declining
+  // the union instead lets the cluster split correctly at any size.
+  const declaredDistinct = opts.distinctPairs instanceof Set ? opts.distinctPairs : null;
+  const distinctKey = (i, j) => {
+    const x = String(records[i] && records[i].user_id), y = String(records[j] && records[j].user_id);
+    return x < y ? `${x}|${y}` : `${y}|${x}`;
+  };
   const recordSignal = (i, j, sig) => {
+    // A declaration outranks every heuristic — a human checked Better Impact, the scan only guessed.
+    // Demote to a non-linking hint rather than dropping it: the signal is real and still worth
+    // showing, it just doesn't mean "same person" for this pair.
+    if (declaredDistinct && declaredDistinct.has(distinctKey(i, j))) {
+      sig = { ...sig, signal: sig.signal, confidence: "low", link: false, declaredDistinct: true };
+    }
     if (sig.link === false) {
       // A non-linking hint: surface it on both records but do NOT union.
       (hintsByRecord.get(i) || hintsByRecord.set(i, []).get(i)).push({ other: j, signal: sig.signal });

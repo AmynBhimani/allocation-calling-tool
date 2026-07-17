@@ -41,6 +41,16 @@
   .rout{margin-top:8px}
   .rwarn{background:#FBEFEC;border:1px solid #EAD2CE;border-radius:8px;padding:8px 11px;font-size:12.5px;color:#7d4a41;margin-top:6px}
   .rok{background:#E9F6F1;border:1px solid #BFE3D6;border-radius:8px;padding:8px 11px;font-size:12.5px;color:#1E6C57;margin-top:6px}
+  /* "Not the same person" — new classes only, so nothing on the existing merge row shifts. */
+  .sep{border-top:1px dashed var(--line,#e5e7eb);margin-top:10px;padding-top:10px}
+  .smsg{font-size:12.5px;color:#6b7280;margin-bottom:8px}
+  .sactions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .spair,.snote{font:inherit;font-size:13px;border:1px solid #d1d5db;border-radius:7px;padding:6px 9px;background:#fff}
+  .snote{min-width:230px;flex:1 1 230px}
+  .sout{margin-top:8px}
+  .declbox{margin-top:28px;border-top:1px solid var(--line,#e5e7eb);padding-top:16px}
+  .declhead{display:flex;align-items:baseline;gap:10px}
+  .declhead h2{font-size:15px;margin:0}
 </style>
 </head>
 <body>
@@ -78,6 +88,15 @@
 
   <div class="summary" id="summary"></div>
   <div id="groups"><div class="loading">Loading…</div></div>
+
+  <div class="declbox">
+    <div class="declhead">
+      <h2>Kept separate</h2>
+      <span class="muted" id="declInfo"></span>
+    </div>
+    <p class="note">Pairs the scan matched but a person confirmed are two different people. They stay off the duplicate lists — here and on the Duplicates screen — through every Better Impact refresh, until undone.</p>
+    <div id="decls"></div>
+  </div>
 </main>
 
 <script src="nav.js"></script>

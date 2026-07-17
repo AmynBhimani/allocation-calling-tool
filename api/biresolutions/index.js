@@ -15,6 +15,7 @@
 // Visible to Super Admin, Admin (region-walled), and iVol Admin (the BI team's role).
 const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor, streamToString, retireInto, mergeRecords } = require("../shared/store");
 const { findDuplicateClusters } = require("../shared/dedup");
+const { readDeclarations, pairSet, declare, undeclare } = require("../shared/distinct");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -72,6 +73,50 @@ module.exports = async function (context, req) {
     // ---- Resolve one group in the app (iVol admin mirroring their Better Impact merge) ----
     if (req.method === "POST") {
       const body = req.body || {};
+      const action = String(body.action || "").trim();
+
+      // ---- "Not the same person": the opposite of a merge. The scan matched them, a human checked
+      // Better Impact and found two people. Recorded per PAIR (never per record — distinctness is a
+      // statement about a relationship) in its own blob, so the next BI refresh can't wipe it the way
+      // it would wipe a flag written onto the record. Reversible: undo only makes the pair reappear.
+      if (action === "distinct" || action === "undistinct") {
+        const a = String(body.a || "").trim();
+        const b = String(body.b || "").trim();
+        if (!a || !b) { context.res = { status: 400, body: { error: "Two profiles are required." } }; return; }
+        if (a === b) { context.res = { status: 400, body: { error: "A profile can't be distinct from itself." } }; return; }
+
+        if (action === "undistinct") {
+          const { decls } = await readDeclarations(container);
+          const existing = decls.find(d => (String(d.a) === a && String(d.b) === b) || (String(d.a) === b && String(d.b) === a));
+          // Region-wall the undo against the declaration's own region, since the caller need not send one.
+          if (existing && existing.region && !regions.includes(existing.region)) {
+            context.res = { status: 403, body: { error: "That declaration isn't in your scope." } }; return;
+          }
+          const r = await undeclare(container, { a, b });
+          if (!r.ok) { context.res = { status: 409, body: { error: "Couldn't save — someone else was editing. Please retry." } }; return; }
+          context.res = { body: { ok: true, removed: !!r.removed,
+            note: r.removed ? "These two will show as a possible duplicate again." : "That pair wasn't marked as separate." } };
+          return;
+        }
+
+        const region = String(body.region || "").trim();
+        if (!regions.includes(region)) { context.res = { status: 403, body: { error: "That region isn't in your scope." } }; return; }
+        const { records } = await readRegion(container, region);
+        const ra = records.find(r => String(r.user_id) === a);
+        const rb = records.find(r => String(r.user_id) === b);
+        const missing = [!ra && a, !rb && b].filter(Boolean);
+        if (missing.length) { context.res = { status: 404, body: { error: "Not found in that region: " + missing.join(", ") } }; return; }
+
+        const nameOf = (v) => ((v.first || "") + " " + (v.last || "")).trim() || "(no name)";
+        const r = await declare(container, { a, b, region, actor: email || "biresolutions",
+          note: String(body.note || "").trim().slice(0, 300), names: [nameOf(ra), nameOf(rb)] });
+        if (!r.ok) { context.res = { status: 409, body: { error: "Couldn't save — someone else was editing. Please retry." } }; return; }
+        context.res = { body: { ok: true, added: !!r.added,
+          note: r.added ? "Marked as two different people. They won't be offered as a duplicate again."
+                        : "That pair was already marked as separate." } };
+        return;
+      }
+
       const region = String(body.region || "").trim();
       const survivorId = String(body.survivorId || "").trim();
       const loserIds = [...new Set((Array.isArray(body.loserIds) ? body.loserIds : []).map(String).filter(Boolean))];
@@ -127,10 +172,15 @@ module.exports = async function (context, req) {
     const wantRegion = (req.query.region || "").trim();
     if (wantRegion) regions = regions.filter(r => r === wantRegion);
 
+    // A declared pair is suppressed inside the scan (shared/dedup), not filtered out here — see the
+    // comment there. Read once and reuse for every region: it's one small blob.
+    const { decls } = await readDeclarations(container);
+    const distinctPairs = pairSet(decls);
+
     const groups = [];
     for (const region of regions) {
       const { records } = await readRegion(container, region);
-      const { clusters } = findDuplicateClusters(records);
+      const { clusters } = findDuplicateClusters(records, { distinctPairs });
       for (const c of clusters) {
         // Live-in-BI members = numeric (BI) ids present in the snapshot. 0 or 1 live -> resolvable in the
         // app (fold the orphan), so it is NOT a BI-team case; only 2+ live accounts go to Better Impact.
@@ -155,6 +205,9 @@ module.exports = async function (context, req) {
     context.res = { body: {
       present: true, fetchedAt: snap.fetchedAt, ageMinutes, fresh, biCount: biIds.size, regions,
       groups: groups.slice(0, 2000),
+      // The kept-separate list, region-walled the same way the groups are. Without somewhere to see
+      // these, a mis-click would be invisible and effectively permanent.
+      declarations: decls.filter(d => !d.region || regions.includes(d.region)),
       stats: { groups: groups.length, accounts: groups.reduce((s, g) => s + g.liveCount, 0),
         doubleCounted: groups.filter(g => g.acceptedInMultipleAreas).length },
     } };

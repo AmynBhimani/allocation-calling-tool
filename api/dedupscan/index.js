@@ -18,6 +18,7 @@
 // Superadmin / admin only. Admin is walled to their event regions. Writes nothing, ever.
 const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 const { findDuplicateClusters } = require("../shared/dedup");
+const { readDeclarations, pairSet } = require("../shared/distinct");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -63,10 +64,14 @@ module.exports = async function (context, req) {
     let allClusters = [];
     const perRegion = {};
     let scanned = 0;
+    // Pairs a human has declared to be two different people. Read once, applied to every region, so
+    // this screen and the BI Resolutions screen can never disagree about what is a duplicate.
+    const { decls } = await readDeclarations(container);
+    const distinctPairs = pairSet(decls);
     for (const region of regions) {
       const { records } = await readRegion(container, region);
       scanned += records.length;
-      const { clusters, stats } = findDuplicateClusters(records);
+      const { clusters, stats } = findDuplicateClusters(records, { distinctPairs });
       perRegion[region] = stats;
       for (const c of clusters) { c.region = region; allClusters.push(c); }
     }

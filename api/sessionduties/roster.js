@@ -6,12 +6,15 @@
 // Anything genuinely unreadable is reported per row (file, sheet, row number) — never guessed at.
 //
 // Two outputs, kept separate on purpose:
-//   • roster      — {session: {area: [{duty, min, leads, checkIn}]}}  the per-session requirement
+//   • roster      — {session: {area: [{duty, min, leads, minAge, checkIn}]}}  the per-session requirement
 //   • newDuties   — duties typed at the bottom of a template, to be added to the MASTER catalog
 // "Remove from this session" only drops the duty from THAT session's roster; the master catalog and
 // the other sessions are untouched.
 
 const { clean, norm, dupOf, findDuty } = require("../shared/duties");
+// The ENGINE owns lead-duty derivation; the import only has to agree with it about the reserved name
+// and about what a Leads count implies. Importing rather than re-deriving makes drift impossible.
+const { isLeadName, leadNameFor, LEAD_PREFIX } = require("../dutyalloc/dutyalloc");
 
 const pad2 = (n) => (n < 10 ? "0" : "") + n;
 
@@ -97,11 +100,22 @@ function planRoster(files, catalog, sessions, opts) {
     if (!bySession[area]) {
       const prior = ((current[sid] || {})[area] || []);
       bySession[area] = prior.map(r => ({ duty: clean(r.duty), min: Number(r.min) || 0,
-        leads: Number(r.leads) || 0, checkIn: clean(r.checkIn) }));
+        leads: Number(r.leads) || 0, minAge: Number(r.minAge) > 0 ? Number(r.minAge) : null,
+        checkIn: clean(r.checkIn) }));
     }
     return bySession[area];
   };
   const indexIn = (cell, name) => cell.findIndex(r => norm(r.duty) === norm(name));
+
+  // Everyone a removal would strand: the duty's own holders PLUS the holders of the lead duty it
+  // derives, because removing the parent removes the lead with it.
+  const holdersFor = (sid, area, name) => {
+    const own = (holdersOf(sid, area, name) || []).map(h =>
+      ({ user_id: h.user_id, name: h.name, state: clean(h.state), duty: clean(name) }));
+    const leads = (holdersOf(sid, area, leadNameFor(name)) || []).map(h =>
+      ({ user_id: h.user_id, name: h.name, state: clean(h.state), duty: leadNameFor(name) }));
+    return own.concat(leads);
+  };
 
   // The master catalog and the per-session roster are separate outputs, so a duty name typed into the
   // blank rows goes into the catalog whether or not the team gave it a minimum. Returns true if the
@@ -152,16 +166,29 @@ function planRoster(files, catalog, sessions, opts) {
 
       const sessionName = (sessById.get(sid) || {}).name || sid;
 
+      // "Lead - X" is DERIVED from a duty's Leads required count, never typed. A real duty by that
+      // name would collide with the one the engine generates, so the name is reserved outright.
+      if (isLeadName(name)) {
+        counts.skipped++;
+        problems.push({ where: where(e), duty: name,
+          issue: `\u201c${LEAD_PREFIX}\u2026\u201d is reserved \u2014 lead duties are created automatically from the ` +
+                 `Leads required column. Put the number of leads on the duty itself rather than adding a row for them.` });
+        continue;
+      }
+
       if (parseRemove(e.remove)) {
         // HARD GUARD. A duty someone is already doing cannot be dropped here: the assignment has to be
         // backed out in iVolunteer first, and Phase 4a is gap-fill — it never reclaims a duty someone
         // is holding — so removing it would leave them holding a duty that no longer exists, forever.
         // No declaration overrides this, by decision: there is no version of this the app should do.
-        const who = holdersOf(sid, area, name) || [];
+        //
+        // Removing a duty ALSO removes the lead duty derived from it, so both have to be checked. The
+        // holder index is keyed by the duty as held — a lead is stored as "Lead - Server", so looking
+        // up "Server" alone would miss them and strand exactly the people this guard exists for.
+        const who = holdersFor(sid, area, name);
         if (who.length) {
           blocked.push({ session: sid, sessionName, area, duty: name, where: where(e),
-            holders: who.slice(0, 25).map(h => ({ user_id: h.user_id, name: h.name, state: h.state || "" })),
-            holderCount: who.length });
+            holders: who.slice(0, 25), holderCount: who.length });
           continue;
         }
         counts.removed++;
@@ -175,7 +202,8 @@ function planRoster(files, catalog, sessions, opts) {
       // A pre-filled row the team never filled in is not an instruction. Blank means "I didn't touch
       // this", NOT "roster it at 0" — an explicit 0 is a real floor (a low-priority duty to be filled
       // once everything else is looked after), and only a typed 0 should say so.
-      const untouchedRow = clean(e.min) === "" && clean(e.leads) === "" && clean(e.checkIn) === "";
+      const untouchedRow = clean(e.min) === "" && clean(e.leads) === ""
+        && clean(e.minAge) === "" && clean(e.checkIn) === "";
       if (untouchedRow) {
         counts.untouched++;
         const cell = cellFor(sid, area);
@@ -193,6 +221,7 @@ function planRoster(files, catalog, sessions, opts) {
 
       const min = parseCount(e.min);
       const leads = parseCount(e.leads);
+      const minAge = parseCount(e.minAge);
       const t = parseCheckIn(e.checkIn);
       if (min.error) problems.push({ where: where(e), duty: name, issue: `Minimum required: ${min.error}` });
       if (leads.error) problems.push({ where: where(e), duty: name, issue: `Leads required: ${leads.error}` });
@@ -207,8 +236,29 @@ function planRoster(files, catalog, sessions, opts) {
 
       const cell = cellFor(sid, area);
       const at = indexIn(cell, name);
+
+      // Dropping Leads required to 0 DELETES the derived "Lead - X" duty. It arrives as a value
+      // change rather than a Remove mark, so the "a floor is not a cap, min reductions are fine"
+      // exemption would wave it through and strand whoever is holding it. Same guard, same reason.
+      const priorLeads = at >= 0 ? Number(cell[at].leads) || 0 : 0;
+      const nextLeads = leads.value == null ? 0 : leads.value;
+      if (priorLeads > 0 && nextLeads === 0) {
+        const leadHolders = holdersOf(sid, area, leadNameFor(name)) || [];
+        if (leadHolders.length) {
+          blocked.push({ session: sid, sessionName, area, duty: leadNameFor(name), where: where(e),
+            reason: "leads_to_zero",
+            holders: leadHolders.slice(0, 25).map(h => ({ user_id: h.user_id, name: h.name, state: clean(h.state) })),
+            holderCount: leadHolders.length });
+          continue;                     // the whole row is left alone: its leads are load-bearing
+        }
+      }
+
       const row = { duty: name, min: min.value == null ? 0 : min.value,
-        leads: leads.value == null ? 0 : leads.value, checkIn: t.value || "", isNew: !known };
+        leads: leads.value == null ? 0 : leads.value,
+        // Blank age = no gate, and so does 0 — stored as null either way, so nothing downstream has
+        // to decide whether "minAge: 0" means "no limit" or "everyone qualifies".
+        minAge: minAge.value ? minAge.value : null,
+        checkIn: t.value || "", isNew: !known };
       if (at >= 0) cell[at] = row; else cell.push(row);                  // upsert onto the committed cell
       counts.kept++;
     }

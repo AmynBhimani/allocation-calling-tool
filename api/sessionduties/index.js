@@ -171,7 +171,8 @@ module.exports = async function (context, req) {
       for (const sid of Object.keys(plan.roster)) {
         out.sessions[sid] = out.sessions[sid] || {};
         for (const area of Object.keys(plan.roster[sid])) {
-          const cell = plan.roster[sid][area].map(r => ({ duty: r.duty, min: r.min, leads: r.leads, checkIn: r.checkIn }));
+          const cell = plan.roster[sid][area].map(r => ({ duty: r.duty, min: r.min, leads: r.leads,
+            minAge: r.minAge || null, checkIn: r.checkIn }));
           // An area left with no rows has no roster for that session — carry no empty cell, or the
           // duty screens would read it as "rostered, zero duties" rather than "not rostered".
           if (cell.length) out.sessions[sid][area] = cell;

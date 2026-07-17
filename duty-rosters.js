@@ -1,10 +1,14 @@
 (function () {
   var DATA = { roster: {}, sessions: [], duties: [], areas: [], canManage: false };
   var PARSED = null;                       // files ready to send
-  var TEMPLATE_VERSION = 1;
+  var TEMPLATE_VERSION = 2;   // v2 adds "Minimum age"
   // Header labels — the reader finds these by scanning, so a team can insert a logo or a note above
   // the table without breaking the import.
-  var H = ["Duty", "Description", "Remove from this session", "Minimum required", "Leads required", "Check-in time (HH:MM, 24-hour)"];
+  // Column ORDER is cosmetic — the reader maps by header name, so a v1 template (no "Minimum age")
+  // still imports, and a blank age simply means no age gate. Keep the wording distinct: "Minimum age"
+  // and "Minimum required" both contain "minimum", and colMap() below has to tell them apart.
+  var H = ["Duty", "Description", "Remove from this session", "Minimum required", "Leads required",
+           "Minimum age", "Check-in time (HH:MM, 24-hour)"];
 
   function EL(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
@@ -38,7 +42,7 @@
     return m;
   }
 
-  var HEADER_ROW = 6;                      // rows 1-5 are the title + instructions
+  var HEADER_ROW = 7;                      // rows 1-6 are the title + instructions + a blank
 
   function downloadBuf(buf, filename) {
     var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -72,11 +76,12 @@
       var sn = sheetNameFor(s.name, used);
       metaRows.push([sn, s.id, s.name, area, TEMPLATE_VERSION]);
       var ws = wb.addWorksheet(sn);
-      ws.columns = [{ width: 32 }, { width: 42 }, { width: 24 }, { width: 17 }, { width: 15 }, { width: 26 }];
+      ws.columns = [{ width: 32 }, { width: 42 }, { width: 24 }, { width: 17 }, { width: 15 }, { width: 13 }, { width: 26 }];
       ws.addRow([area + " \u2014 " + s.name]);
       ws.addRow(["Fill in one row per duty for THIS session. Each sheet is a different session."]);
       ws.addRow(["To drop a duty for this session only, choose Remove in the \u201cRemove from this session\u201d column. Minimum required is a floor, not a cap \u2014 more is fine."]);
       ws.addRow(["Check-in time: 24-hour HH:MM, e.g. 07:30. Add any new duties in the blank rows at the bottom \u2014 don\u2019t delete rows."]);
+      ws.addRow(["Minimum age applies to THIS duty only \u2014 use it where a duty needs to be stricter than the area. Leave blank for no age limit. Leads are EXTRA people: \u201cLeads required 2\u201d means 2 more on top of the minimum, and they check in an hour early."]);
       ws.addRow([]);
       ws.addRow(H.slice());
       ws.getRow(1).font = { bold: true, size: 13 };
@@ -86,16 +91,18 @@
       var list = dutiesForArea(area);
       list.forEach(function (d) {
         var p = prior[norm(d.name)];
-        ws.addRow([d.name, d.description || "", "Keep", p ? p.min : null, p ? p.leads : null, p ? p.checkIn : ""]);
+        ws.addRow([d.name, d.description || "", "Keep", p ? p.min : null, p ? p.leads : null,
+                   p && p.minAge ? p.minAge : null, p ? p.checkIn : ""]);
       });
-      for (var i = 0; i < 15; i++) ws.addRow(["", "", "Keep", null, null, ""]);   // room to add new duties
+      for (var i = 0; i < 15; i++) ws.addRow(["", "", "Keep", null, null, null, ""]);   // room to add new duties
 
       var last = HEADER_ROW + list.length + 15;
       for (var r = HEADER_ROW + 1; r <= last; r++) {
         ws.getCell(r, 3).dataValidation = dvRemove();
         ws.getCell(r, 4).dataValidation = dvWhole("Minimum required");
         ws.getCell(r, 5).dataValidation = dvWhole("Leads required");
-        ws.getCell(r, 6).dataValidation = dvTime();
+        ws.getCell(r, 6).dataValidation = dvWhole("Minimum age");
+        ws.getCell(r, 7).dataValidation = dvTime();
       }
       ws.views = [{ state: "frozen", ySplit: HEADER_ROW }];      // headers stay put while they scroll
     });
@@ -142,6 +149,9 @@
       if (s === "duty") m.duty = i;
       else if (s.indexOf("description") >= 0) m.description = i;
       else if (s.indexOf("remove") >= 0) m.remove = i;
+      // "Minimum age" BEFORE "Minimum required": both contain "minimum", and whichever is tested
+      // first wins. Reversed, the age column would silently overwrite the headcount column.
+      else if (s.indexOf("age") >= 0) m.minAge = i;
       else if (s.indexOf("minimum") >= 0) m.min = i;
       else if (s.indexOf("lead") >= 0) m.leads = i;
       else if (s.indexOf("check") >= 0) m.checkIn = i;
@@ -195,6 +205,7 @@
                 remove: m.remove != null ? row[m.remove] : "",
                 min: m.min != null ? row[m.min] : "",
                 leads: m.leads != null ? row[m.leads] : "",
+                minAge: m.minAge != null ? row[m.minAge] : "",     // absent in a v1 template -> no age gate
                 checkIn: m.checkIn != null ? row[m.checkIn] : "",
               });
             }

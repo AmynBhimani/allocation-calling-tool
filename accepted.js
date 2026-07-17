@@ -1,3 +1,7 @@
+const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception & Hospitality",
+  "Seniors & Mobility","Food Services","Layout & Logistics","Registration & Access","Medical Services","Diverse Abilities Support",
+  "Finance & Procurement","Environmental Sustainability","Memorabilia & Design","Jamati Preparation"];
+let CAN_UNDO = false;   // Duty Team / Admin / Super Admin. Quarterbacks + Leadership may look, not act.
 let DATA = { volunteers: [] };
 const filters = { region: "", jk: "", area: "", group: "", q: "", notInBi: false, duty: "", dutyMode: "assigned" };
 const EL = (id) => document.getElementById(id);
@@ -6,7 +10,14 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&
 function banner(msg, isErr) { const b = EL("banner"); b.hidden = false; b.className = "banner" + (isErr ? " err" : ""); b.innerHTML = msg; }
 
 async function boot() {
-  try { const me = await (await fetch("/.auth/me")).json(); const cp = me && me.clientPrincipal; if (cp) EL("whoami").innerHTML = `<b>${esc(cp.userDetails)}</b>`; } catch (e) {}
+  try {
+    const me = await (await fetch("/.auth/me")).json(); const cp = me && me.clientPrincipal;
+    if (cp) {
+      EL("whoami").innerHTML = `<b>${esc(cp.userDetails)}</b>`;
+      const roles = cp.userRoles || [];
+      CAN_UNDO = ["superadmin", "admin", "dutyteam"].some(r => roles.includes(r));
+    }
+  } catch (e) {}
   ["BC", "Prairies", "Edmonton"].forEach(r => { const o = document.createElement("option"); o.value = r; o.textContent = r; EL("regionSel").appendChild(o); });
   EL("regionSel").addEventListener("change", e => { filters.region = e.target.value; render(); });
   EL("jkSel").addEventListener("change", e => { filters.jk = e.target.value; render(); });
@@ -131,7 +142,78 @@ function renderDetail(d) {
       : `<div class="dmuted">No calls logged yet.</div>`}</div>`;
   const panel = EL("detailPanel");
   panel.className = "detailcard";
-  panel.innerHTML = `<h2>${esc(d.name)}</h2><div class="sub2">${esc(d.region)}${d.area ? " · " + esc(d.area) : ""}</div>${contact}${dutiesHtml}${prefHtml}${logHtml}`;
+  panel.innerHTML = `<h2>${esc(d.name)}</h2><div class="sub2">${esc(d.region)}${d.area ? " · " + esc(d.area) : ""}</div>${contact}${dutiesHtml}${prefHtml}${logHtml}${undoHtml(d)}`;
+  if (CAN_UNDO) wireUndo(d);
+}
+
+// Undoing an acceptance. Which ending applies is the volunteer's answer, not ours, so the control
+// asks what they said rather than offering three buttons of equal weight.
+function undoHtml(d) {
+  if (!CAN_UNDO) return "";
+  const opts = AREAS.filter(a => a !== d.area).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+  return `<div class="dsec undo">
+    <h4>Undo acceptance</h4>
+    <div class="dmuted">They said yes, then told you they can\u2019t. Their duty is cleared either way \u2014 what they want decides the rest.</div>
+    <select id="uAction">
+      <option value="">Choose what they said\u2026</option>
+      <option value="withdraw">Withdrew \u2014 not volunteering at all</option>
+      <option value="decline_refer">Would serve, but not in this area \u2014 refer them on</option>
+      <option value="repool">Doesn\u2019t want this area \u2014 back to the pool</option>
+    </select>
+    <select id="uArea" hidden><option value="">Refer to which area?</option>${opts}</select>
+    <input id="uNote" type="text" maxlength="300" placeholder="Note (optional)">
+    <button class="btn-ghost" id="uGo" disabled>Apply</button>
+    <div id="uOut"></div>
+  </div>`;
+}
+
+function wireUndo(d) {
+  const act = EL("uAction"), area = EL("uArea"), go = EL("uGo");
+  if (!act || !area || !go) return;
+  const sync = () => {
+    const a = act.value;
+    area.hidden = a !== "decline_refer";
+    go.disabled = !a || (a === "decline_refer" && !area.value);
+    go.textContent = a === "withdraw" ? "Mark withdrawn"
+      : a === "decline_refer" ? "Refer to another area"
+      : a === "repool" ? "Return to the pool" : "Apply";
+  };
+  act.addEventListener("change", sync);
+  area.addEventListener("change", sync);
+  go.addEventListener("click", () => applyUndo(d));
+  sync();
+}
+
+async function applyUndo(d) {
+  const action = EL("uAction").value;
+  const referral_area = EL("uArea").value;
+  const note = EL("uNote").value;
+  const out = EL("uOut");
+  const area = d.area || "their area";
+  const msg = action === "withdraw"
+    ? `Mark ${d.name} as withdrawn?\n\nThey come off the accepted list and their duty is cleared.`
+    : action === "decline_refer"
+      ? `Refer ${d.name} to ${referral_area}?\n\n${area} is recorded as declined, their duty is cleared, and the receiving area\u2019s quarterback picks them up.`
+      : `Return ${d.name} to the allocation pool?\n\n${area} is cleared and recorded as declined, so the next allocation won\u2019t put them back there. Their duty is cleared.`;
+  if (!confirm(msg)) return;
+  out.innerHTML = `<div class="dmuted">Saving\u2026</div>`;
+  EL("uGo").disabled = true;
+  try {
+    const r = await fetch("/api/accepted", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, user_id: DETAIL_ID, region: d.region, referral_area, note }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    await load();                        // they are off the accepted list now
+    DETAIL_ID = null;
+    const panel = EL("detailPanel");
+    panel.className = "detailcard";
+    panel.innerHTML = `<h2>${esc(d.name)}</h2><div class="uok">No longer on the accepted list. ${esc(j.note || "")}</div>`;
+  } catch (err) {
+    out.innerHTML = `<div class="uerr">Could not save: ${esc(err.message)}</div>`;
+    EL("uGo").disabled = false;
+  }
 }
 function shown() {
   const q = filters.q.trim().toLowerCase();

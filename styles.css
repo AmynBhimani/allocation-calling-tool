@@ -101,6 +101,7 @@
 
   /* No-BI-account badge */
   .badge.b-nobi{background:#FCEAE6;color:#B23A2B;border-color:#F3D2CC}
+  .badge.b-decl{background:#FBEFEC;color:#7d4a41;border-color:#EAD2CE}
   .badge.b-dup{background:#FFF6E5;color:#7A5A12;border-color:#F0D58A}
 
 /* --- additions: management dashboard, BI updates, caller edits --- */

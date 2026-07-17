@@ -36,6 +36,14 @@
   .chip{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);background:var(--wash);color:var(--ink)}
   .dsec.log .e{font-size:12.5px;color:var(--ink);margin-bottom:5px;line-height:1.4}
   .dsec.log .e .t{color:var(--mute)}
+  /* Undo acceptance — new classes only, nothing above is redefined. */
+  .dsec.undo #uAction,.dsec.undo #uArea,.dsec.undo #uNote{font:inherit;font-size:13px;width:100%;
+    border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:7px;background:var(--paper)}
+  .dsec.undo .btn-ghost{background:var(--paper);border:1px solid var(--line);border-radius:8px;
+    padding:7px 12px;font:inherit;font-size:13px;cursor:pointer;margin-top:9px}
+  .dsec.undo .btn-ghost[disabled]{opacity:.45;cursor:not-allowed}
+  .uok{background:#E9F6F1;border:1px solid #BFE3D6;border-radius:8px;padding:8px 11px;font-size:12.5px;color:#1E6C57;margin-top:8px}
+  .uerr{background:#FBEFEC;border:1px solid #EAD2CE;border-radius:8px;padding:8px 11px;font-size:12.5px;color:#7d4a41;margin-top:8px}
   .dmuted{font-size:12.5px;color:var(--mute);font-style:italic}
 </style>
 </head>

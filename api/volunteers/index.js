@@ -38,6 +38,9 @@ function slim(v) {
     computed: v.computed_area, final: v.final_area, status: v.callable_status,
     affinity: !!v.affinity_flag, leader: !!v.leader_flag, new: !!v.never_reviewed,
     no_bi: !!v.no_bi_account, age: ageOf(v), iff: iffOf(v),
+    // Areas this person has actively refused (Accepted screen -> refer / repool). Surfaced so whoever
+    // places them next doesn't put them straight back into an area they already said no to.
+    declined: Array.isArray(v.declined_areas) ? v.declined_areas : [],
     claims: v.conflict_claims || []
   };
 }

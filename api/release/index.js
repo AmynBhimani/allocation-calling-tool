@@ -12,7 +12,8 @@
 // Body: { user_id, region }  OR  { items: [{ user_id, region }, ...] }  (bulk).
 
 const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
-const { computeCallableStatus, callerLocked } = require("../shared/status");
+const { callerLocked } = require("../shared/status");
+const { repool } = require("../shared/repool");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -42,22 +43,6 @@ function emailOf(p) {
   return e ? String(e).toLowerCase() : null;
 }
 
-// Turn a held-aside record back into a pool member. Returns false (no change) if it's already
-// pooled or if a caller is mid-work on them (never yank someone out from under an active call).
-function repool(v, actor) {
-  if (callerLocked(v)) return false;
-  v.activity_log = v.activity_log || [];
-  const from = v.final_area || null;
-  v.final_area = null;
-  v.affinity_flag = false;
-  v.never_reviewed = true;         // re-enters the allocation pool
-  v.conflict_claims = [];
-  v.released_to_pool = true;       // durable: transfer won't re-hold; import preserves it
-  v.event_assignments = [];
-  v.callable_status = computeCallableStatus(v);   // -> Unassigned
-  v.activity_log.push({ ts: new Date().toISOString(), actor: actor || "release", action: "release_to_pool", from });
-  return true;
-}
 
 module.exports = async function (context, req) {
   try {

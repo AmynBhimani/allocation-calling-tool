@@ -175,6 +175,7 @@ function render(){
     if(v.iff) badges.push('<span class="badge b-iff">IFF</span>');
     if(v.new) badges.push('<span class="badge b-new">New</span>');
     if(v.no_bi) badges.push('<span class="badge b-nobi">No BI acct</span>');
+    if(v.declined && v.declined.length) badges.push(`<span class="badge b-decl" title="Said no to: ${v.declined.join(', ')}">Declined ${v.declined.length===1?v.declined[0]:v.declined.length+' areas'}</span>`);
     const computed = v.computed ? `<span class="area-cell">${v.computed}</span>` : '<span class="area-none">no area selected</span>';
     const conflict = (v.claims&&v.claims.length) ? `<div class="conflict">Claimed by: ${v.claims.join(' · ')}</div>` : '';
     const isLead = v.status==="Leadership - Do Not Allocate";

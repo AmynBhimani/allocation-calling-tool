@@ -60,27 +60,44 @@
       <div class="field"><label>Session</label><select id="event"></select></div>
       <div class="field"><label>Area</label><select id="area"></select></div>
       <button class="btn" id="loadBtn">Show lineup</button>
-      <button class="btn commit" id="submitBtn" disabled>Submit lineup</button>
+      <button class="btn commit" id="submitBtn" disabled>Submit lineup to iVol</button>
       <span class="small" id="scope"></span>
     </div>
     <div class="small" style="margin-top:10px">
       Move anyone into a different duty, and pick your leads &mdash; <b>lead duties start empty</b>, because
       who leads is your call, not the allocation&rsquo;s. Ages shown are age on the day of the event.
-      Nothing reaches iVolunteer until you <b>submit</b>; after that you can still change people, right up
-      until iVol enters their duty &mdash; at which point that volunteer is locked.
+      Nobody reaches iVolunteer until you <b>submit the lineup</b>. After that they show as
+      <b>On iVol Lineup</b> and you can still move them &mdash; until iVol assigns the duty, when they
+      become <b>Assigned in iVol</b> and are locked. Filter by <b>Not on lineup yet</b> to see only the
+      people added since you last submitted.
     </div>
   </div>
+  <div id="summaryBox"></div>
+
   <div class="controls" id="filters" hidden>
     <input type="search" id="q" placeholder="Search name\u2026" aria-label="Search by name">
     <select id="fRegion"><option value="">All regions</option></select>
     <select id="fJk"><option value="">All Jamatkhanas</option></select>
+    <select id="groupSel">
+      <option value="">All groups</option>
+      <option value="iff">IFF (Interfaith)</option>
+      <option value="seniors">Seniors (&gt;65)</option>
+      <option value="young">Young (5&ndash;13)</option>
+      <option value="diverse">Diverse Abilities</option>
+    </select>
     <select id="fDuty"><option value="">All duties</option></select>
-    <select id="fState"><option value="">All states</option></select>
+    <select id="fState">
+      <option value="">Any duty status</option>
+      <option value="pending">No duty yet</option>
+      <option value="allocated">Not on lineup yet</option>
+      <option value="submitted">On iVol Lineup</option>
+      <option value="entered">Assigned in iVol</option>
+    </select>
     <label class="toggle"><input type="checkbox" id="fMine"> Only ones I can change</label>
     <span class="small" id="fcount"></span>
   </div>
 
-  <div id="out"></div>
+  <div id="peopleBox"></div>
 </div>
 
 <script src="nav.js"></script>

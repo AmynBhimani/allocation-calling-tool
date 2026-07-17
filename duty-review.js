@@ -7,7 +7,11 @@
   var SESSIONS = [], VIEW = null;
   // Same filter model as the iVol Input Report, so the two screens behave identically: filtering is
   // client-side over the loaded lineup, and the JK list narrows to the chosen region.
-  var filters = { q: "", region: "", jk: "", duty: "", state: "", mine: false };
+  var filters = { q: "", region: "", jk: "", group: "", duty: "", state: "", mine: false };
+  // Whether the duties summary is open has to live HERE, not be read back off the DOM: show() paints
+  // a loading state over the box before re-rendering, so by then the <details> is already gone and
+  // any state read from it would always come back "open".
+  var dutiesOpen = true;
   function EL(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
   function banner(msg, isErr) { var b = EL("banner"); b.hidden = false; b.className = "banner" + (isErr ? " err" : ""); b.innerHTML = msg; }
@@ -44,11 +48,15 @@
   function show() {
     clearBanner();
     if (!session() || !area()) return;
-    EL("out").innerHTML = '<div class="card"><div class="small">Loading\u2026</div></div>';
+    // Remember whether the summary was collapsed BEFORE painting over it. Every reassign re-runs
+    // show(), and a summary that springs back open on every change is worse than not collapsing at all.
+    if (EL("dutiesBox")) dutiesOpen = EL("dutiesBox").open;
+    EL("summaryBox").innerHTML = '<div class="card"><div class="small">Loading\u2026</div></div>';
+    EL("peopleBox").innerHTML = "";
     fetch("/api/dutyreview?session=" + encodeURIComponent(session()) + "&area=" + encodeURIComponent(area()))
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.error) { EL("out").innerHTML = ""; banner(esc(d.error), true); EL("submitBtn").disabled = true; return; }
+        if (d.error) { clearView(); banner(esc(d.error), true); return; }
         VIEW = d;
         EL("filters").hidden = false;
         EL("fMine").parentNode.hidden = !d.partial;   // pointless when you can change everyone
@@ -56,14 +64,14 @@
         render(d);
         EL("submitBtn").disabled = !d.counts.allocated;
       })
-      .catch(function (e) { EL("out").innerHTML = ""; banner("Failed: " + esc(e.message), true); });
+      .catch(function (e) { clearView(); banner("Failed: " + esc(e.message), true); });
   }
 
   // One person's duty dropdown. Locked rows and rows outside your regions render as plain text —
   // a disabled control the reader can't explain is worse than no control.
   function dutyCell(p, duties) {
     if (p.locked) {
-      return esc(p.duty) + ' <span class="small">\u2014 in iVolunteer, locked</span>';
+      return esc(p.duty) + ' <span class="small">\u2014 ' + STATE.entered.label + ", locked</span>";
     }
     if (!p.canEdit) {
       return (p.duty ? esc(p.duty) : '<span style="color:#9b5b50">none yet</span>')
@@ -82,6 +90,23 @@
   // "(no duty)" has to be selectable, not just a blank option — finding who still needs placing is
   // the single most common reason to filter this screen.
   var NODUTY = "\u2014 none \u2014";
+
+  // The four states, named for what they MEAN to the person reading them rather than for the value
+  // stored. "submitted" and "entered" are indistinguishable words for two very different situations:
+  // one you can still change, one you cannot. One map, used by the chip, the counters and the filter,
+  // so the three can never tell you different things about the same person.
+  var STATE = {
+    pending:   { label: "No duty yet",       kpi: "no duty yet" },
+    allocated: { label: "Not on lineup yet", kpi: "not on lineup yet" },
+    submitted: { label: "On iVol Lineup",    kpi: "on iVol lineup" },
+    entered:   { label: "Assigned in iVol",  kpi: "assigned in iVol" },
+  };
+  // The state a row is IN, from the data — one place, so the chip and the filter agree by construction.
+  function stateOf(p) {
+    if (p.locked) return "entered";
+    if (p.state === "submitted") return "submitted";
+    return p.duty ? "allocated" : "pending";
+  }
   function setOpts(id, allLabel, items, cur) {
     EL(id).innerHTML = '<option value="">' + allLabel + "</option>"
       + items.map(function (x) { return '<option value="' + esc(x) + '"' + (x === cur ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("");
@@ -97,38 +122,47 @@
     setOpts("fRegion", "All regions", regions.sort(), filters.region);
     setOpts("fJk", "All Jamatkhanas", jks.sort(), filters.jk);
     setOpts("fDuty", "All duties", duties, filters.duty);
-    setOpts("fState", "All states", ["pending", "allocated", "submitted", "entered"], filters.state);
+    // fState's options are fixed and live in the page — the four states never vary by lineup.
     // A region filter is noise on a single-region session, but the cross-region ones need it badly.
     EL("fRegion").hidden = (d.regions || []).length < 2;
   }
+  // Same four groups as every other screen's filter, matched against the labels the server derives.
+  var GROUP_LABEL = { iff: "IFF", seniors: "Seniors", young: "Young", diverse: "Diverse Abilities" };
   function matches(p) {
     if (filters.q && p.name.toLowerCase().indexOf(filters.q) < 0) return false;
     if (filters.region && p.region !== filters.region) return false;
     if (filters.jk && p.jk !== filters.jk) return false;
+    if (filters.group && (p.groups || []).indexOf(GROUP_LABEL[filters.group]) < 0) return false;
     if (filters.duty === NODUTY) { if (p.duty) return false; }
     else if (filters.duty && p.duty !== filters.duty) return false;
-    if (filters.state && (p.locked ? "entered" : p.state === "submitted" ? "submitted" : p.duty ? "allocated" : "pending") !== filters.state) return false;
+    if (filters.state && stateOf(p) !== filters.state) return false;
     if (filters.mine && (!p.canEdit || p.locked)) return false;
     return true;
   }
 
   function stateChip(p) {
-    if (p.locked) return '<span class="small" style="color:#1E6C57">entered</span>';
-    if (p.state === "submitted") return '<span class="small">submitted</span>';
-    if (p.duty) return '<span class="small">allocated</span>';
-    return '<span class="small" style="color:#9b5b50">pending</span>';
+    var st = stateOf(p);
+    // Assigned in iVol is the only one that is a wall, so it is the only one that gets a colour.
+    if (st === "entered") return '<span class="small" style="color:#1E6C57">' + STATE.entered.label + "</span>";
+    if (st === "pending") return '<span class="small" style="color:#9b5b50">' + STATE.pending.label + "</span>";
+    return '<span class="small">' + STATE[st].label + "</span>";
   }
 
-  function render(d) {
+  // Two renders, not one. The summary is rebuilt when a lineup loads; the people table on every
+  // filter change. Keeping them apart is what lets the filter bar sit BETWEEN them without being
+  // destroyed and re-created on each keystroke — which would take the search box's focus with it.
+  function render(d) { renderSummary(d); renderPeople(d); }
+
+  function renderSummary(d) {
     var c = d.counts, html = "";
 
     html += '<div class="card">';
     html += '<div class="kpis">'
       + '<div class="kpi"><div class="n">' + num(c.members) + '</div><div class="l">in this lineup</div></div>'
-      + '<div class="kpi"><div class="n">' + num(c.allocated) + '</div><div class="l">allocated</div></div>'
-      + '<div class="kpi"><div class="n">' + num(c.submitted) + '</div><div class="l">submitted to iVol</div></div>'
-      + '<div class="kpi"><div class="n">' + num(c.entered) + '</div><div class="l">entered &amp; locked</div></div>'
-      + (c.pending ? '<div class="kpi flag"><div class="n">' + num(c.pending) + '</div><div class="l">no duty yet</div></div>' : "")
+      + '<div class="kpi"><div class="n">' + num(c.allocated) + '</div><div class="l">' + STATE.allocated.kpi + "</div></div>"
+      + '<div class="kpi"><div class="n">' + num(c.submitted) + '</div><div class="l">' + STATE.submitted.kpi + "</div></div>"
+      + '<div class="kpi"><div class="n">' + num(c.entered) + '</div><div class="l">' + STATE.entered.kpi + " \u2014 locked</div></div>"
+      + (c.pending ? '<div class="kpi flag"><div class="n">' + num(c.pending) + '</div><div class="l">' + STATE.pending.kpi + "</div></div>" : "")
       + (c.shortfallTotal ? '<div class="kpi flag"><div class="n">' + num(c.shortfallTotal) + '</div><div class="l">places to fill</div></div>' : "")
       + '<div class="kpi' + (c.leadsChosen < c.leadsRequired ? " flag" : "") + '"><div class="n">'
       + num(c.leadsChosen) + " / " + num(c.leadsRequired) + '</div><div class="l">leads chosen</div></div>'
@@ -147,7 +181,13 @@
     html += "</div>";
 
     // ---- the duties ----
-    html += '<div class="sub2">Duties</div><div class="scrollx">'
+    // Collapsible, open by default: it is the first thing you look at and the first thing you want
+    // out of the way once you are working down the list of people.
+    html += '<details id="dutiesBox"' + (dutiesOpen ? " open" : "")
+      + '><summary class="sub2" style="display:list-item;cursor:pointer">'
+      + "Duties \u2014 " + num(d.duties.length) + " on this roster"
+      + (c.shortfallTotal ? ", <b>" + num(c.shortfallTotal) + "</b> place(s) to fill" : ", all filled")
+      + '</summary><div class="scrollx">'
       + '<table class="matrix"><tr><th>Duty</th><th class="n">Have</th><th class="n">Need</th>'
       + '<th class="n">Short</th><th class="n">Min age</th><th>Check-in</th></tr>'
       + d.duties.map(function (x) {
@@ -158,7 +198,7 @@
             + '</td><td class="n">' + (x.minAge ? num(x.minAge) + "+" : '<span class="small">any</span>') + "</td>"
             + "<td>" + (x.checkIn ? esc(x.checkIn) : '<span style="color:#9b5b50">not set</span>') + "</td></tr>";
         }).join("")
-      + "</table></div>";
+      + "</table></div></details>";
 
     if ((d.offRoster || []).length) {
       html += '<div class="warn"><b>Not on the roster any more:</b> '
@@ -166,27 +206,32 @@
         + " \u2014 move these people onto a rostered duty.</div>";
     }
 
-    // ---- the people ----
+    EL("summaryBox").innerHTML = html;
+  }
+
+  function renderPeople(d) {
     var shown = d.people.filter(matches);
-    html += '<div class="sub2">Who\u2019s in it</div><div class="scrollx">'
-      + '<table class="matrix"><tr><th>Name</th><th>Jamatkhana</th><th class="n">Age</th>'
+    EL("peopleBox").innerHTML = '<div class="sub2">Who\u2019s in it</div><div class="scrollx">'
+      + '<table class="matrix"><tr><th>Name</th><th>Jamatkhana</th><th>Group</th><th class="n">Age</th>'
       + "<th>Duty</th><th>State</th><th>Asked for</th></tr>"
-      + (shown.length ? "" : '<tr><td colspan="6"><span class="small">Nobody matches these filters.</span></td></tr>')
+      + (shown.length ? "" : '<tr><td colspan="7"><span class="small">Nobody matches these filters.</span></td></tr>')
       + shown.map(function (p) {
           var wants = (p.wants || []).length ? esc(p.wants.join(", ")) : '<span class="small">\u2014</span>';
           if (p.assigned) wants = '<b>' + esc(p.assigned) + '</b> <span class="small">(given by a caller)</span>'
             + ((p.wants || []).length ? '<br><span class="small">' + esc(p.wants.join(", ")) + "</span>" : "");
+          // Someone can be on more than one list — an IFF senior — so show every one they are on.
+          var groups = (p.groups || []).length ? esc(p.groups.join(", ")) : '<span class="small">General</span>';
           return "<tr><td>" + esc(p.name) + "</td><td>" + (p.jk ? esc(p.jk) : '<span class="small">\u2014</span>')
-            + '</td><td class="n">' + (p.age == null ? '<span class="small" style="color:#9b5b50">no DOB</span>' : num(p.age))
+            + "</td><td>" + groups + "</td>"
+            + '<td class="n">' + (p.age == null ? '<span class="small" style="color:#9b5b50">no DOB</span>' : num(p.age))
             + "</td><td>" + dutyCell(p, d.duties) + "</td><td>" + stateChip(p) + "</td><td>" + wants + "</td></tr>";
         }).join("")
       + "</table></div>"
       + '<div class="small" style="margin-top:6px">Ages are age on the day of the event ('
       + esc(d.asOf) + "), which is what every age limit is measured against.</div>";
 
-    EL("out").innerHTML = html;
-    // The counts above are the WHOLE lineup on purpose — a filtered "3 short" would be a lie. Say
-    // plainly when the table is showing less than everything.
+    // The counts in the summary are the WHOLE lineup on purpose — a filtered "3 short" would be a
+    // lie. Say plainly when the table is showing less than everything.
     EL("fcount").textContent = shown.length === d.people.length
       ? num(d.people.length) + " people"
       : num(shown.length) + " of " + num(d.people.length) + " shown \u2014 counts above are the whole lineup";
@@ -216,11 +261,12 @@
     clearBanner();
     if (!VIEW) return;
     var c = VIEW.counts;
-    var msg = "Submit " + num(c.allocated) + " volunteer(s) to iVolunteer for " + area() + "?";
+    var msg = "Put " + num(c.allocated) + " volunteer(s) on the iVol lineup for " + area() + "?";
     if (c.pending) msg += "\n\n" + num(c.pending) + " have no duty yet and will NOT be submitted.";
     if (c.leadsChosen < c.leadsRequired) msg += "\n\n" + num(c.leadsRequired - c.leadsChosen)
       + " lead(s) are still unpicked. You can submit now and pick them later.";
-    msg += "\n\nYou can keep changing people until iVol enters their duty.";
+    msg += "\n\nYou can still change anyone on the lineup \u2014 until iVol assigns their duty, "
+      + "at which point that person is locked.";
     if (!confirm(msg)) return;
     EL("submitBtn").disabled = true;
     fetch("/api/dutyreview", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -234,15 +280,20 @@
       .catch(function (e) { banner("Failed: " + esc(e.message), true); EL("submitBtn").disabled = false; });
   }
 
-  function reFilter() { if (VIEW) { buildFilterOptions(VIEW); render(VIEW); } }
+  function reFilter() { if (VIEW) renderPeople(VIEW); }
+  function reFilterRegion() { if (VIEW) { buildFilterOptions(VIEW); renderPeople(VIEW); } }
   EL("q").addEventListener("input", function (e) { filters.q = e.target.value.toLowerCase(); reFilter(); });
-  EL("fRegion").addEventListener("change", function (e) { filters.region = e.target.value; filters.jk = ""; reFilter(); });
+  EL("fRegion").addEventListener("change", function (e) { filters.region = e.target.value; filters.jk = ""; reFilterRegion(); });
+  EL("groupSel").addEventListener("change", function (e) { filters.group = e.target.value; reFilter(); });
   EL("fJk").addEventListener("change", function (e) { filters.jk = e.target.value; reFilter(); });
   EL("fDuty").addEventListener("change", function (e) { filters.duty = e.target.value; reFilter(); });
   EL("fState").addEventListener("change", function (e) { filters.state = e.target.value; reFilter(); });
   EL("fMine").addEventListener("change", function (e) { filters.mine = e.target.checked; reFilter(); });
 
-  function clearView() { VIEW = null; EL("out").innerHTML = ""; EL("filters").hidden = true; EL("submitBtn").disabled = true; }
+  function clearView() {
+    VIEW = null; EL("summaryBox").innerHTML = ""; EL("peopleBox").innerHTML = "";
+    EL("filters").hidden = true; EL("submitBtn").disabled = true;
+  }
   EL("event").addEventListener("change", function () { fillAreas(); clearView(); });
   EL("area").addEventListener("change", clearView);
   EL("loadBtn").addEventListener("click", show);

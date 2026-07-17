@@ -25,6 +25,23 @@ const clean = (s) => String(s == null ? "" : s).trim();
 const norm = (s) => clean(s).toLowerCase();
 const nameOf = (v) => ((v.first || "") + " " + (v.last || "")).trim() || "(no name)";
 
+// The five registration lists, as the rest of the app defines them: two stored flags, two age bands,
+// and General for anyone in none of them. Someone can be in more than one (an IFF senior), so this
+// returns a list rather than picking a winner.
+//
+// Derived here rather than in the browser because matchesGroup() is already copy-pasted into four
+// screens (app, quarterback, accepted, all-volunteers) and a fifth copy is a fifth thing to drift.
+// The age used is the EVENT-DAY age — the same number this screen shows — so the Group column and the
+// Age column beside it can never contradict each other.
+function groupsOf(v, age) {
+  const g = [];
+  if (v.iff) g.push("IFF");
+  if (v.diverse) g.push("Diverse Abilities");
+  if (age != null && age > 65) g.push("Seniors");
+  if (age != null && age >= 5 && age <= 13) g.push("Young");
+  return g;
+}
+
 module.exports = async function (context, req) {
   try {
     const hdr = req.headers["x-ms-client-principal"];
@@ -102,11 +119,13 @@ module.exports = async function (context, req) {
           if (!row || clean(row.area) !== area) continue;
           const duty = clean(row.duty);
           if (duty) tally[duty] = (tally[duty] || 0) + 1;
+          const age = ageOfOn(v, AS_OF);
           people.push({
             user_id: v.user_id, name: nameOf(v), region: v.region, jk: clean(v.ceremony_jk),
+            groups: groupsOf(v, age),
             // EVENT-DAY age: the same number every age rule in the app is measured against, so a
             // reviewer never sees "18" beside a 19+ duty the person legitimately holds.
-            age: ageOfOn(v, AS_OF),
+            age,
             duty, state: clean(row.state) || "pending",
             locked: LOCKED_STATES.includes(clean(row.state)),
             canEdit: canEditPerson(area, v.region),

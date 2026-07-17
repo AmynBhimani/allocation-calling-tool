@@ -1,5 +1,5 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
-const { getContainer, readRegion, mutateVolunteer, REGIONS, readDidars } = require("../shared/store");
+const { getContainer, readRegion, mutateVolunteer, REGIONS, readDidars, scopesFor, inScope } = require("../shared/store");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -42,11 +42,6 @@ async function readRoles() {
     return Array.isArray(obj) ? obj : (obj.assignments || []);
   } catch { return []; }
 }
-function scopesFor(store, email, role) {
-  return store.filter(a => clean(a.email).toLowerCase() === email && clean(a.role) === role)
-    .map(a => ({ area: clean(a.area), region: clean(a.region) }));
-}
-const inScope = (scopes, area, region) => scopes.some(s => s.area === area && s.region === region);
 
 // Assignment view: names + status + assigned caller. No contact info (that's the caller's screen).
 function ageOf(v) {

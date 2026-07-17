@@ -376,9 +376,35 @@ async function retireInto(container, region, loserId, survivorId, opts = {}) {
 module.exports = {
   REGIONS, getContainer, readRegion, writeRegion, overwriteRegion, mutateVolunteer, mergeRegion, streamToString,
   reshardRegion, bucketOf, SHARDS,
-  readRolesStore, allowedRegionsFor, readConfigJson, readDidars, readSessions,
+  readRolesStore, allowedRegionsFor, scopesFor, inScope, areasFor, readConfigJson, readDidars, readSessions,
   retireInto, mergeRecords, progressRank,   // mergeRecords + progressRank exported for unit tests
 };
+
+// ---- Role scoping -------------------------------------------------------------------------------
+// roles.json is a flat list of {email, role, area, region} grants, so one person can hold the same
+// role in several area x region cells. allowedRegionsFor() answers "which regions?"; these answer
+// "which area x region cells?" — the finer question a quarterback's permissions turn on.
+//
+// Lived as an identical copy in api/assign and api/roleadmin until the duty review screen needed a
+// third. Same rule in one place: whether someone may touch a lineup is not a thing to reimplement.
+function scopesFor(store, email, role) {
+  const e = String(email || "").toLowerCase().trim();
+  return (store || [])
+    .filter(a => String(a.email || "").toLowerCase().trim() === e && String(a.role || "").trim() === role)
+    .map(a => ({ area: String(a.area || "").trim(), region: String(a.region || "").trim() }));
+}
+
+// An exact cell match, deliberately: a grant names one area in one region.
+function inScope(scopes, area, region) {
+  return (scopes || []).some(s => s.area === area && s.region === region);
+}
+
+// The distinct areas someone holds a role in, across every region. Used where a lineup spans regions
+// (the July 24 Afternoon session covers Prairies AND Edmonton), so seeing the whole thing is decided
+// by area while CHANGING part of it stays decided by area x region.
+function areasFor(scopes) {
+  return [...new Set((scopes || []).map(s => s.area).filter(Boolean))];
+}
 
 // ---- Config readers (app-config/*.json) ----
 async function readConfigJson(blobName) {

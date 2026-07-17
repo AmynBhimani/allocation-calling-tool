@@ -451,6 +451,24 @@
       ]
     },
     {
+      "route": "/api/dutyreview",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback"
+      ]
+    },
+    {
+      "route": "/duty-review.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback"
+      ]
+    },
+    {
       "route": "/duty-rosters.html",
       "allowedRoles": [
         "superadmin",

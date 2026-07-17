@@ -1,4 +1,5 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
+const { scopesFor } = require("../shared/store");   // one definition of "which cells do you hold?"
 
 const CONN = process.env.RESPONSES_STORAGE;
 const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
@@ -67,10 +68,6 @@ function sameEntry(a, b) {
     && clean(a.event) === clean(b.event);
 }
 // The area×region scopes a given email holds for a given role.
-function scopesFor(store, email, role) {
-  return store.filter(a => clean(a.email).toLowerCase() === email && clean(a.role) === role)
-    .map(a => ({ area: clean(a.area), region: clean(a.region) }));
-}
 function scopeHas(scopes, area, region) {
   return scopes.some(s => s.area === area && s.region === region);
 }

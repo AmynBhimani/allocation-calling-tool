@@ -22,6 +22,7 @@
     {href:'/sessions.html',    label:'Sessions',         roles:['superadmin']},
     {href:'/duty-rosters.html',label:'Duty rosters',     roles:['superadmin','admin']},
     {href:'/duty-alloc.html',  label:'Duty allocation',  roles:['superadmin']},
+    {href:'/duty-review.html', label:'Duty review',      roles:['superadmin','admin','dutyteam','quarterback']},
     {href:'/api/backup',       label:'Download backup',  roles:['superadmin']}
   ];
   function curPath(){ var p=location.pathname; if(!p||p==='/') p='/index.html'; return p; }

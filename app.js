@@ -180,10 +180,14 @@ function render(){
     const isLead = v.status==="Leadership - Do Not Allocate";
     const unset = !v.final;
     const needsChoice = (v.status==="In reconciliation" || v.status==="Unassigned" || (v.claims&&v.claims.length)) && !isLead;
-    const preselect = needsChoice ? "" : (v.final||"");
-    const opts = [`<option value="" ${preselect===""&&!isLead?'selected':''}>— choose —</option>`]
+    // Resolve the intended value ONCE, then compare against it — exactly one option may carry
+    // `selected`. A <select> without `multiple` honours the LAST option marked selected, so a
+    // leadership row that also held a final_area used to mark two (the area AND the sentinel) and
+    // silently show leadership — which is how a saved change came back looking rejected.
+    const preselect = isLead ? "__leadership__" : (needsChoice ? "" : (v.final||""));
+    const opts = [`<option value="" ${preselect===""?'selected':''}>— choose —</option>`]
       .concat(AREAS.map(a=>`<option value="${a}" ${preselect===a?'selected':''}>${a}</option>`))
-      .concat([`<option value="__leadership__" ${isLead?'selected':''}>⚑ Leadership – Do Not Allocate</option>`]).join('');
+      .concat([`<option value="__leadership__" ${preselect==="__leadership__"?'selected':''}>⚑ Leadership – Do Not Allocate</option>`]).join('');
     return `<tr data-id="${v.id}" class="${v.status==='In reconciliation'?'recon-row':''}${isLead?' lead-row':''}">
       <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}${v.age!=null?' · age '+v.age:''}</div>${conflict}</td>
       <td class="hide-sm"><span class="sub">${v.jk}</span></td>

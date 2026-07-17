@@ -102,11 +102,23 @@ module.exports = async function (context, req) {
           const fa = body.final_area;
           const hold = fa === "__hold__" || fa === null || fa === "";
           const before = v.final_area;
+          // The Reconcile dropdown is ONE control for two concepts: the areas and the Leadership
+          // sentinel share a single list. So naming a real area for someone on do-not-allocate IS the
+          // decision to take them off it — there is no other way out of leadership on that screen
+          // (op "clear_leadership" exists but no page has ever sent it). Without this, the sticky
+          // branch in computeCallableStatus keeps LEADERSHIP and the write half-lands: final_area set,
+          // status unchanged, HTTP 200, dropdown snaps back — a rejection the user never actually got.
+          // _prev_final goes too, so a later clear_leadership cannot resurrect the area they just left.
+          // Choosing "— choose —" is NOT a way out: leadership with no area is what leadership means.
+          const leavingLeadership = v.callable_status === LEADERSHIP && !hold;
+          if (leavingLeadership) { v.callable_status = "Unassigned"; delete v._prev_final; }
           v.final_area = hold ? null : fa;
           if (!hold) v.conflict_claims = [];                 // confirming an area resolves the contest
           v.callable_status = computeCallableStatus(v);   // confirmed area -> Stable; else claims/Unassigned
           if (v.final_area) v.event_assignments = seedEventAssignments(v, didars);  // pre-seed Didar rows
-          v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "set_final_area", from: before || null, to: v.final_area || null });
+          v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "set_final_area",
+            from: before || null, to: v.final_area || null,
+            ...(leavingLeadership ? { cleared_leadership: true } : {}) });
         }
       });
 

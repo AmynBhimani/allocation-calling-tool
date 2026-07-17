@@ -234,10 +234,15 @@
       body: JSON.stringify({ files: PARSED, commit: !!commit }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.error) { EL("out").innerHTML = ""; banner(esc(d.error), true); EL("previewBtn").disabled = false; return; }
+        if (d.error) {
+          // A refused commit still carries the detail — show WHO is holding each duty, not just a banner.
+          EL("out").innerHTML = d.blocked ? '<div class="card">' + blockedHtml(d) + "</div>" : "";
+          banner(esc(d.error), true); EL("previewBtn").disabled = false; return;
+        }
         render(d);
         EL("previewBtn").disabled = false;
-        EL("commitBtn").disabled = !!commit;
+        // A preview carrying blocked removals must not arm Commit: it would only be refused server-side.
+        EL("commitBtn").disabled = !!commit || !!(d.blockedCount);
         if (commit) { banner("Committed. " + num(d.counts.kept) + " duties rostered\u00b7 " + num(d.catalogAdded || 0) + " new duties added to the catalog.", false); load(); }
       })
       .catch(function (e) { EL("out").innerHTML = ""; banner("Failed: " + esc(e.message), true); EL("previewBtn").disabled = false; });
@@ -250,6 +255,26 @@
       + rows.slice(0, 200).map(function (r) {
           return "<tr><td>" + esc(r.where) + "</td><td>" + esc(r.duty || "\u2014") + "</td><td>" + esc(r.issue) + "</td></tr>";
         }).join("") + "</table></details>";
+  }
+
+  // Duties that could not be removed because volunteers are already doing them. Deliberately loud and
+  // never collapsed into a <details>: it is the one thing on this screen that stops an import dead.
+  function blockedHtml(d) {
+    var b = d.blocked || [];
+    if (!b.length) return "";
+    var html = '<div class="sub2" style="color:#7d4a41">Not removed \u2014 volunteers are already doing these (' + num(b.length) + ")</div>"
+      + '<div class="small" style="margin-bottom:8px">These duties were left exactly as they were; <b>everything else in the file still applies</b>. '
+      + 'An assignment has to be backed out in iVolunteer first \u2014 the app won\u2019t drop a duty out from under someone. '
+      + 'Deal with the volunteers, then mark Remove again on a later upload.</div>'
+      + '<table class="matrix"><tr><th>Session</th><th>Area</th><th>Duty</th><th class="n">Holding it</th><th>Who</th></tr>';
+    b.forEach(function (r) {
+      var shown = r.holders || [];
+      var who = shown.map(function (h) { return esc(h.name) + (h.state ? ' <span class="small">(' + esc(h.state) + ")</span>" : ""); }).join(", ");
+      if ((r.holderCount || 0) > shown.length) who += " \u2026and " + num(r.holderCount - shown.length) + " more";
+      html += "<tr><td>" + esc(r.sessionName) + "</td><td>" + esc(r.area) + "</td><td>" + esc(r.duty)
+        + '</td><td class="n">' + num(r.holderCount) + "</td><td>" + who + "</td></tr>";
+    });
+    return html + "</table>";
   }
 
   function render(d) {
@@ -287,6 +312,7 @@
       });
     });
 
+    html += blockedHtml(d);
     if ((d.newDuties || []).length) {
       html += '<div class="sub2">New duties to add to the catalog</div>'
         + '<table class="matrix"><tr><th>Area</th><th>Duty</th><th>Description</th></tr>'

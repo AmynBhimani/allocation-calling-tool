@@ -11,12 +11,13 @@
 //   2. session-duties.json — {sessions: {sessionId: {area: [{duty,min,leads,checkIn}]}}}, the
 //                           per-session requirement. "Remove" only affects the session it was marked in.
 const { BlobServiceClient } = require("@azure/storage-blob");
-const { readSessions } = require("../shared/store");
-const { AREAS, clean } = require("../shared/duties");
-const { planRoster } = require("./roster");
+const { readSessions, getContainer, readRegion, REGIONS } = require("../shared/store");
+const { AREAS, clean, norm } = require("../shared/duties");
+const { planRoster, parseRemove } = require("./roster");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const CONFIG_CONTAINER = process.env.CONFIG_CONTAINER || "app-config";
+const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const ROSTER_BLOB = "session-duties.json";
 const DUTIES_BLOB = "duties.json";
 
@@ -59,6 +60,31 @@ async function writeJson(c, name, obj) {
 const normStore = (o) => (o && typeof o === "object" && o.sessions && typeof o.sessions === "object")
   ? o : { sessions: {} };
 
+// Who is already DOING each duty: (session, area, duty) -> the people holding it. Read only for a
+// POST — the GET is on every page load and this walks every region. The index is what makes the
+// Remove guard possible at all: the roster blobs alone cannot tell you whether a duty is in use.
+async function buildHolderIndex() {
+  const idx = new Map();
+  const data = await getContainer(DATA_CONTAINER);
+  for (const region of REGIONS) {
+    const { records } = await readRegion(data, region);
+    for (const v of records) {
+      for (const r of (Array.isArray(v.event_assignments) ? v.event_assignments : [])) {
+        if (!r || r.basis !== "session") continue;          // only session rows carry a duty
+        const duty = clean(r.duty); if (!duty) continue;
+        const key = String(r.event) + "|" + clean(r.area) + "|" + norm(duty);
+        if (!idx.has(key)) idx.set(key, []);
+        idx.get(key).push({
+          user_id: v.user_id,
+          name: ((v.first || "") + " " + (v.last || "")).trim() || String(v.user_id),
+          state: clean(r.state),
+        });
+      }
+    }
+  }
+  return idx;
+}
+
 module.exports = async function (context, req) {
   try {
     const principal = getPrincipal(req);
@@ -89,10 +115,19 @@ module.exports = async function (context, req) {
       if (!files.length) { context.res = { status: 400, body: { error: "No template files were read." } }; return; }
       if (!sessions.length) { context.res = { status: 400, body: { error: "No sessions are configured — add them on the Events screen first." } }; return; }
 
-      const plan = planRoster(files, catalog, sessions, { areas: AREAS });
+      // Only pay for the holder index when the files actually ask to remove something. Building it
+      // walks every shard of every region, and the app is live — a normal import (no removals) must
+      // not carry that cost.
+      const hasRemovals = files.some(f => (f.entries || []).some(e => parseRemove(e.remove)));
+      const holderIdx = hasRemovals ? await buildHolderIndex() : new Map();
+      const plan = planRoster(files, catalog, sessions, {
+        areas: AREAS, current: store.sessions,
+        holders: (sid, area, duty) => holderIdx.get(String(sid) + "|" + clean(area) + "|" + norm(duty)) || [],
+      });
       const report = {
         mode: commit ? "commit" : "preview",
         counts: plan.counts, summary: plan.summary, removed: plan.removed,
+        blocked: plan.blocked, blockedCount: plan.blocked.length, untouched: plan.untouched.length,
         problems: plan.problems.slice(0, 500), problemCount: plan.problems.length,
         warnings: plan.warnings.slice(0, 500), warningCount: plan.warnings.length,
         newDuties: plan.newDuties, areasTouched: plan.areasTouched,
@@ -100,6 +135,19 @@ module.exports = async function (context, req) {
           ? "Applied. The per-session duty rosters are saved and any new duties were added to the catalog."
           : "Preview only — nothing saved. Check the parsed check-in times and the new duties below before committing.",
       };
+
+      // A blocked removal stops THAT ROW and nothing else. A file that removes two duties and adds two
+      // more shouldn't be thrown away because one of the removals is held — the other three changes are
+      // legitimate and the team still has to get them in. The held duty is simply left exactly as it
+      // was, and reported loudly.
+      if (plan.blocked.length) {
+        const n = plan.blocked.length;
+        const held = n + " duty removal" + (n === 1 ? " was" : "s were") + " NOT applied \u2014 volunteers are " +
+          "already doing " + (n === 1 ? "it" : "them") + ". Back the assignment out in iVolunteer first; the app " +
+          "won't drop a duty out from under someone. Everything else in " +
+          (commit ? "this import was saved." : "the file is fine.");
+        report.note = commit ? "Applied, with exceptions. " + held : "Preview only — nothing saved. " + held;
+      }
 
       if (!commit) {
         context.res = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(report) };
@@ -116,23 +164,20 @@ module.exports = async function (context, req) {
         report.catalogAdded = plan.newDuties.length;
       } else report.catalogAdded = 0;
 
-      // 2) the per-session roster. Only the session x area cells covered by these files are replaced —
-      //    importing one area's template must never wipe another area's roster.
+      // 2) the per-session roster. planRoster already merged each touched cell ONTO what was committed,
+      //    so only session x area cells these files actually mention move at all, and within a cell only
+      //    the rows that were filled in or marked Remove. Everything else is carried through untouched.
       const out = { sessions: JSON.parse(JSON.stringify(store.sessions || {})) };
       for (const sid of Object.keys(plan.roster)) {
         out.sessions[sid] = out.sessions[sid] || {};
         for (const area of Object.keys(plan.roster[sid])) {
-          out.sessions[sid][area] = plan.roster[sid][area].map(r => ({ duty: r.duty, min: r.min, leads: r.leads, checkIn: r.checkIn }));
+          const cell = plan.roster[sid][area].map(r => ({ duty: r.duty, min: r.min, leads: r.leads, checkIn: r.checkIn }));
+          // An area left with no rows has no roster for that session — carry no empty cell, or the
+          // duty screens would read it as "rostered, zero duties" rather than "not rostered".
+          if (cell.length) out.sessions[sid][area] = cell;
+          else delete out.sessions[sid][area];
         }
-      }
-      // An area whose template listed only removals for a session ends up with no rows: clear the cell.
-      for (const r of plan.removed) {
-        const cell = (out.sessions[r.session] || {})[r.area];
-        if (cell) {
-          const kept = cell.filter(x => clean(x.duty).toLowerCase() !== clean(r.duty).toLowerCase());
-          if (kept.length) out.sessions[r.session][r.area] = kept;
-          else delete out.sessions[r.session][r.area];
-        }
+        if (!Object.keys(out.sessions[sid]).length) delete out.sessions[sid];
       }
       out.updatedAt = new Date().toISOString();
       out.updatedBy = email;

@@ -68,17 +68,57 @@ function hhmm(h, mi, ampm, raw) {
 
 // files: [{ fileName, area, entries: [{ sessionId, sheet, row, duty, description, remove, min, leads, checkIn }] }]
 // catalog: duties.json   sessions: [{id, name}]
+// opts.current: the COMMITTED roster {session: {area: [rows]}} — the base an import merges onto.
+// opts.holders: (session, area, duty) -> [{user_id, name, state}] — who is already doing that duty.
+//
+// MERGE, not replace. A template goes out pre-filled with every duty in the area's master catalog, so
+// a file that replaced its cell wholesale would silently drop anything not in the catalog and quietly
+// resurrect, at min 0, every duty an area had dropped. Instead: a row is only applied if it was
+// actually filled in, and a duty only leaves a session when someone explicitly marks Remove. That is
+// what makes re-uploading the same template safe, and lets an area send back only what changed.
 function planRoster(files, catalog, sessions, opts) {
   opts = opts || {};
   const areasAllowed = opts.areas || [];
+  const current = (opts.current && typeof opts.current === "object") ? opts.current : {};
+  const holdersOf = typeof opts.holders === "function" ? opts.holders : () => [];
   const sessById = new Map((sessions || []).map(s => [String(s.id), s]));
-  const roster = {};                 // sessionId -> area -> [rows]
+  const roster = {};                 // sessionId -> area -> [rows]  (the MERGED result for touched cells)
   const newDuties = [];              // {area, name, description} to add to the master catalog
   const problems = [];               // rows we could not use
   const warnings = [];               // rows we used, but the operator should see
   const removed = [];                // duty dropped from that session
+  const blocked = [];                // Remove refused: someone is already doing it
+  const untouched = [];              // rows left exactly as they were (blank = "I didn't fill this in")
+
+  // Start every touched cell from what is already committed, so anything the file doesn't mention
+  // survives untouched.
+  const cellFor = (sid, area) => {
+    const bySession = roster[sid] || (roster[sid] = {});
+    if (!bySession[area]) {
+      const prior = ((current[sid] || {})[area] || []);
+      bySession[area] = prior.map(r => ({ duty: clean(r.duty), min: Number(r.min) || 0,
+        leads: Number(r.leads) || 0, checkIn: clean(r.checkIn) }));
+    }
+    return bySession[area];
+  };
+  const indexIn = (cell, name) => cell.findIndex(r => norm(r.duty) === norm(name));
+
+  // The master catalog and the per-session roster are separate outputs, so a duty name typed into the
+  // blank rows goes into the catalog whether or not the team gave it a minimum. Returns true if the
+  // duty was already known.
+  function captureNewDuty(area, name, description, whereStr) {
+    if (findDuty(catalog, area, name)) return true;
+    const already = newDuties.find(x => clean(x.area) === area && norm(x.name) === norm(name));
+    if (!already) {
+      const d = { area, name, description: clean(description) };
+      const dup = dupOf(catalog, d);                                  // same rule the Duties screen uses
+      if (dup) warnings.push({ where: whereStr, duty: name, issue: `looks like a duplicate of the existing duty “${dup.match.name}” (same ${dup.field}) — it will still be added as new` });
+      newDuties.push(d); counts.added++;
+    }
+    return false;
+  }
   const seen = new Set();            // sessionId|area|dutyname — catches the same duty twice in a sheet
-  const counts = { files: 0, sheets: 0, rows: 0, kept: 0, removed: 0, added: 0, skipped: 0 };
+  const counts = { files: 0, sheets: 0, rows: 0, kept: 0, removed: 0, added: 0, skipped: 0, untouched: 0, blocked: 0 };
   const sessionsTouched = new Set();
   const areasTouched = new Set();
 
@@ -110,10 +150,45 @@ function planRoster(files, catalog, sessions, opts) {
       }
       seen.add(key);
 
+      const sessionName = (sessById.get(sid) || {}).name || sid;
+
       if (parseRemove(e.remove)) {
+        // HARD GUARD. A duty someone is already doing cannot be dropped here: the assignment has to be
+        // backed out in iVolunteer first, and Phase 4a is gap-fill — it never reclaims a duty someone
+        // is holding — so removing it would leave them holding a duty that no longer exists, forever.
+        // No declaration overrides this, by decision: there is no version of this the app should do.
+        const who = holdersOf(sid, area, name) || [];
+        if (who.length) {
+          blocked.push({ session: sid, sessionName, area, duty: name, where: where(e),
+            holders: who.slice(0, 25).map(h => ({ user_id: h.user_id, name: h.name, state: h.state || "" })),
+            holderCount: who.length });
+          continue;
+        }
         counts.removed++;
-        removed.push({ session: sid, sessionName: (sessById.get(sid) || {}).name || sid, area, duty: name });
+        removed.push({ session: sid, sessionName, area, duty: name });
+        const cell = cellFor(sid, area);
+        const at = indexIn(cell, name);
+        if (at >= 0) cell.splice(at, 1);
         continue;                                                       // dropped from THIS session only
+      }
+
+      // A pre-filled row the team never filled in is not an instruction. Blank means "I didn't touch
+      // this", NOT "roster it at 0" — an explicit 0 is a real floor (a low-priority duty to be filled
+      // once everything else is looked after), and only a typed 0 should say so.
+      const untouchedRow = clean(e.min) === "" && clean(e.leads) === "" && clean(e.checkIn) === "";
+      if (untouchedRow) {
+        counts.untouched++;
+        const cell = cellFor(sid, area);
+        const already = indexIn(cell, name) >= 0;
+        untouched.push({ session: sid, sessionName, area, duty: name, inRoster: already });
+        // The name still goes to the CATALOG — blank values mean "not rostered for this session",
+        // not "this duty doesn't exist". Only the roster half of the row is left alone.
+        const known = captureNewDuty(area, name, e.description, where(e));
+        if (!known) {
+          warnings.push({ where: where(e), duty: name,
+            issue: "added to the catalog, but not rostered for this session \u2014 no minimum, leads or check-in was given" });
+        }
+        continue;
       }
 
       const min = parseCount(e.min);
@@ -125,23 +200,16 @@ function planRoster(files, catalog, sessions, opts) {
       if (min.error || leads.error || t.error) continue;                // don't half-write a row
       if (min.warn) warnings.push({ where: where(e), duty: name, issue: `Minimum required: ${min.warn}` });
       if (leads.warn) warnings.push({ where: where(e), duty: name, issue: `Leads required: ${leads.warn}` });
+      // Reachable only when leads or check-in WAS filled in — a wholly blank row is untouched above.
       if (min.value == null) warnings.push({ where: where(e), duty: name, issue: "no minimum given — recorded as 0" });
 
-      const known = findDuty(catalog, area, name);
-      if (!known) {
-        const d = { area, name, description: clean(e.description) };
-        const already = newDuties.find(x => clean(x.area) === area && norm(x.name) === norm(name));
-        if (!already) {
-          const dup = dupOf(catalog, d);                                // same rule the Duties screen uses
-          if (dup) warnings.push({ where: where(e), duty: name, issue: `looks like a duplicate of the existing duty “${dup.match.name}” (same ${dup.field}) — it will still be added as new` });
-          newDuties.push(d); counts.added++;
-        }
-      }
+      const known = captureNewDuty(area, name, e.description, where(e));
 
-      const bySession = roster[sid] || (roster[sid] = {});
-      const list = bySession[area] || (bySession[area] = []);
-      list.push({ duty: name, min: min.value == null ? 0 : min.value,
-        leads: leads.value == null ? 0 : leads.value, checkIn: t.value || "", isNew: !known });
+      const cell = cellFor(sid, area);
+      const at = indexIn(cell, name);
+      const row = { duty: name, min: min.value == null ? 0 : min.value,
+        leads: leads.value == null ? 0 : leads.value, checkIn: t.value || "", isNew: !known };
+      if (at >= 0) cell[at] = row; else cell.push(row);                  // upsert onto the committed cell
       counts.kept++;
     }
     counts.sheets += sheets.size;
@@ -166,7 +234,8 @@ function planRoster(files, catalog, sessions, opts) {
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
 
-  return { roster, newDuties, problems, warnings, removed, counts, summary,
+  counts.blocked = blocked.length;
+  return { roster, newDuties, problems, warnings, removed, blocked, untouched, counts, summary,
     areasTouched: [...areasTouched].sort(), sessionsTouched: [...sessionsTouched] };
 }
 

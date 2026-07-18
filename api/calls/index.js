@@ -167,6 +167,11 @@ module.exports = async function (context, req) {
       const op = clean(body.op);
       if (!REGIONS.includes(region) || user_id == null) { context.res = { status: 400, body: { error: "Valid region and user_id required." } }; return; }
 
+      // When a volunteer is duplicated (app copy + re-imported BI copy share an id), a caller must act
+      // on THEIR copy — the one assigned to them — not whichever sorts first. This hint tells
+      // mutateVolunteer to prefer it; harmless when there's only one record.
+      const mineFirst = (v) => v.assigned_caller === me;
+
       // Reopen: they changed their mind after the call — return them to the active queue.
       if (op === "reopen") {
         const rr = await mutateVolunteer(container, region, user_id, (v) => {
@@ -177,7 +182,7 @@ module.exports = async function (context, req) {
           v.call_done = false; v.call_outcome = null; v.ivol_ready = false;
           v.confirm_token = null; v.confirm_sent_at = null; v.confirmed_at = null;
           // assigned_caller stays, so it reappears in that caller's active list
-        });
+        }, { prefer: mineFirst });
         if (rr.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
         if (rr.extra && rr.extra.skip) { context.res = { status: 403, body: { error: "That volunteer isn't assigned to you." } }; return; }
         if (!rr.ok) { context.res = { status: 409, body: { error: "Couldn't reopen — please retry." } }; return; }
@@ -203,7 +208,7 @@ module.exports = async function (context, req) {
           const asg = normAssignments(body.event_assignments);
           if (asg) v.event_assignments = asg;
           info = { token, first: v.first, last: v.last, email: v.email || "", area: v.final_area || "" };
-        });
+        }, { prefer: mineFirst });
         if (rr.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
         if (rr.extra && rr.extra.skip) { context.res = { status: 403, body: { error: "That volunteer isn't assigned to you." } }; return; }
         if (!rr.ok) { context.res = { status: 409, body: { error: "Couldn't prepare the email — please retry." } }; return; }
@@ -250,7 +255,7 @@ module.exports = async function (context, req) {
           // No answer / Thinking / Emailed — stays in the active queue
           v.call_done = false;
         }
-      });
+      }, { prefer: mineFirst });
 
       if (result.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
       if (result.extra && result.extra.noEmail) { context.res = { status: 400, body: { error: "Create the accept-link email first, then mark Emailed." } }; return; }

@@ -109,11 +109,17 @@ async function overwriteRegion(container, region, records) {
 // volunteer (1/SHARDS of the data and of the contention), with ETag/transient retry. Note: the
 // mutator's second argument is that shard's records, not the whole region — every current caller
 // only uses the first argument (the volunteer), so this is safe.
-async function mutateVolunteer(container, region, user_id, mutator, { retries = 12 } = {}) {
+async function mutateVolunteer(container, region, user_id, mutator, { retries = 12, prefer = null } = {}) {
   const name = SHARDS === 1 ? legacyName(region) : shardName(region, bucketOf(user_id, SHARDS));
   for (let attempt = 0; attempt <= retries; attempt++) {
     const { records, etag } = await readBlob(container, name);
-    const v = records.find(x => String(x.user_id) === String(user_id));   // compare by value: BI ids are numbers, write-in ids strings
+    // Which record to mutate. Normally there is one per user_id, but a volunteer can be DUPLICATED
+    // (an app copy plus a re-imported BI copy carry the same id, and BI sharding puts both in this same
+    // blob). When the caller supplies `prefer`, act on the copy that satisfies it — for a caller action
+    // that is the copy assigned to THEM, not whichever happens to sort first. Falls back to first match,
+    // so every existing caller (no prefer) behaves exactly as before.
+    const matches = records.filter(x => String(x.user_id) === String(user_id));   // compare by value: BI ids numeric, write-in ids strings
+    const v = (prefer && matches.find(prefer)) || matches[0];
     if (!v) return { ok: false, notFound: true };
     const extra = mutator(v, records);
     try {

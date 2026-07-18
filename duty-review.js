@@ -142,7 +142,16 @@
 
   function stateChip(p) {
     var st = stateOf(p);
-    // Assigned in iVol is the only one that is a wall, so it is the only one that gets a colour.
+    // For a row this person can change AND that has a duty, the state IS a control: a checkbox that
+    // puts them on the iVol lineup or takes them back off. Saved immediately, so a lineup can be
+    // committed a few people at a time, by different reviewers, each seeing what the last one did.
+    // Entered is the wall (locked, no toggle); pending has no duty yet, so nothing to commit.
+    if (p.canEdit && st !== "entered" && p.duty) {
+      var on = (st === "submitted");
+      return '<label class="linetoggle' + (on ? " on" : "") + '">'
+        + '<input type="checkbox" class="linechk" data-id="' + esc(p.user_id) + '" data-region="' + esc(p.region) + '"' + (on ? " checked" : "") + ">"
+        + '<span>' + (on ? STATE.submitted.label : "Add to lineup") + "</span></label>";
+    }
     if (st === "entered") return '<span class="small" style="color:#1E6C57">' + STATE.entered.label + "</span>";
     if (st === "pending") return '<span class="small" style="color:#9b5b50">' + STATE.pending.label + "</span>";
     return '<span class="small">' + STATE[st].label + "</span>";
@@ -238,6 +247,24 @@
     Array.prototype.forEach.call(document.querySelectorAll(".dutysel"), function (sel) {
       sel.addEventListener("change", function () { reassign(sel); });
     });
+    Array.prototype.forEach.call(document.querySelectorAll(".linechk"), function (cb) {
+      cb.addEventListener("change", function () { setLineup(cb); });
+    });
+  }
+
+  function setLineup(cb) {
+    clearBanner();
+    var id = cb.getAttribute("data-id"), region = cb.getAttribute("data-region"), on = cb.checked;
+    cb.disabled = true;
+    fetch("/api/dutyreview", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "set_lineup", session: session(), area: area(), user_id: id, region: region, on: on }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        cb.disabled = false;
+        if (d.error) { banner(esc(d.error), true); show(); return; }
+        show();          // reload: the on-lineup / not-on-lineup counts just changed
+      })
+      .catch(function (e) { cb.disabled = false; banner("Couldn\u2019t save: " + esc(e.message), true); show(); });
   }
 
   function reassign(sel) {

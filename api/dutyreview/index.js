@@ -228,6 +228,41 @@ module.exports = async function (context, req) {
       return;
     }
 
+    if (op === "set_lineup") {
+      // on=true  -> put this ONE person on the lineup   (allocated -> submitted)
+      // on=false -> take them back off it                (submitted -> allocated)
+      // Off is allowed because On iVol Lineup is not locked; Assigned in iVol (entered) is, and stays so.
+      const region = clean(body.region);
+      const on = body.on !== false;                 // default to putting them on
+      if (!scope.includes(region)) { context.res = { status: 400, body: { error: "That region isn't in this session." } }; return; }
+      if (!canEditPerson(area, region)) {
+        context.res = { status: 403, body: { error: `You can only change ${region} volunteers if that region is one of yours.` } };
+        return;
+      }
+      let out = null;
+      const result = await mutateVolunteer(container, region, body.user_id, (v) => {
+        const row = sessionRow(v, sid);
+        if (!row) return { notInSession: true };
+        if (clean(row.area) !== area) return { wrongArea: true };
+        if (LOCKED_STATES.includes(clean(row.state))) return { locked: true };   // entered — cannot toggle
+        if (on && !clean(row.duty)) return { noDuty: true };                      // nothing to commit yet
+        row.state = on ? STATE_SUBMITTED : STATE_ALLOCATED;
+        v.activity_log = v.activity_log || [];
+        v.activity_log.push({ ts: new Date().toISOString(), actor: email,
+          action: on ? "duty_submit" : "duty_unsubmit", session: sid, area, duty: clean(row.duty) });
+        out = { state: row.state, on };
+      });
+      if (result.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
+      const x = result.extra || {};
+      if (x.notInSession) { context.res = { status: 409, body: { error: "They're not in this session \u2014 reload." } }; return; }
+      if (x.wrongArea) { context.res = { status: 409, body: { error: "They're not in this area any more \u2014 reload." } }; return; }
+      if (x.locked) { context.res = { status: 409, body: { error: "They're already Assigned in iVol and locked \u2014 back it out in Better Impact first." } }; return; }
+      if (x.noDuty) { context.res = { status: 409, body: { error: "Give them a duty before adding them to the lineup." } }; return; }
+      if (!result.ok) { context.res = { status: 409, body: { error: "Couldn't save \u2014 please retry." } }; return; }
+      context.res = { body: { ok: true, ...out } };
+      return;
+    }
+
     if (op === "submit") {
       // Submit the ALLOCATED rows and say who was left behind. Blocking on stragglers would mean a
       // late accepter with no duty holds up an entire area's lineup; iVol can start on the rest.

@@ -38,6 +38,11 @@
   .scrollx{overflow-x:auto}
   /* verbatim from ivol.html, so the filter bars on the two screens are the same object */
   .toggle{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--mute);cursor:pointer}
+  /* Per-person "on the iVol lineup" switch, in the State column. On = committed (teal); off = a quiet "Add to lineup" prompt. */
+  .linetoggle{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;padding:3px 9px;border-radius:999px;border:1px solid #d7d2cb;color:var(--mute);white-space:nowrap}
+  .linetoggle input{margin:0;cursor:pointer}
+  .linetoggle.on{background:rgba(2,128,144,.10);border-color:rgba(2,128,144,.35);color:var(--teal,#028090);font-weight:600}
+  .linetoggle:hover{border-color:#b9b3aa}
 </style>
 </head>
 <body>
@@ -60,16 +65,18 @@
       <div class="field"><label>Session</label><select id="event"></select></div>
       <div class="field"><label>Area</label><select id="area"></select></div>
       <button class="btn" id="loadBtn">Show lineup</button>
-      <button class="btn commit" id="submitBtn" disabled>Submit lineup to iVol</button>
+      <button class="btn commit" id="submitBtn" disabled>Add all remaining to lineup</button>
       <span class="small" id="scope"></span>
     </div>
     <div class="small" style="margin-top:10px">
       Move anyone into a different duty, and pick your leads &mdash; <b>lead duties start empty</b>, because
       who leads is your call, not the allocation&rsquo;s. Ages shown are age on the day of the event.
-      Nobody reaches iVolunteer until you <b>submit the lineup</b>. After that they show as
-      <b>On iVol Lineup</b> and you can still move them &mdash; until iVol assigns the duty, when they
-      become <b>Assigned in iVol</b> and are locked. Filter by <b>Not on lineup yet</b> to see only the
-      people added since you last submitted.
+      Add people to the iVol lineup one at a time with the <b>Add to lineup</b> switch in the State
+      column &mdash; each one saves straight away, so you can review in several passes, or split the
+      work across people, and everyone sees what&rsquo;s already been committed. <b>Add all remaining
+      to lineup</b> commits everyone still allocated in one go. Anyone <b>On iVol Lineup</b> can still
+      be moved or taken back off, until iVol assigns their duty and they become <b>Assigned in iVol</b>
+      and locked. Filter by <b>Not on lineup yet</b> to see who still needs a decision.
     </div>
   </div>
   <div id="summaryBox"></div>

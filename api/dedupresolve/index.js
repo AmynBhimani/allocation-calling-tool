@@ -52,6 +52,9 @@ async function readBiSnapshot(container) {
   } catch { return null; }
 }
 const isWritein = (id) => String(id).startsWith("wi-");
+// Accepted, by the same test mergeRecords uses (ivol_ready OR call_outcome === "accepted"). Used only to
+// decide whether a same-id fold needs an explicit winner (both accepted) or can take most-progress.
+const sameProgressAccepted = (v) => !!(v && (v.ivol_ready || String(v.call_outcome).toLowerCase() === "accepted"));
 
 module.exports = async function (context, req) {
   try {
@@ -65,13 +68,17 @@ module.exports = async function (context, req) {
     const region = String(body.region || "");
     const survivorId = body.survivorId != null ? String(body.survivorId) : "";
     const loserIds = Array.isArray(body.loserIds) ? body.loserIds.map(String).filter(id => id && id !== survivorId) : [];
+    // Extra records carrying the SURVIVOR'S OWN id (an app copy + a re-imported BI copy). They can't go
+    // in loserIds — that list drops anything equal to the survivor id — so they arrive as a count of how
+    // many same-id copies to fold. Bounded by how many actually exist, computed once records are loaded.
+    const sameIdWanted = Math.max(0, parseInt(body.sameIdCount, 10) || 0);
     const commit = body.commit === true;
     // When 2+ members accepted, keepAcceptanceOf names the id whose acceptance survives. It resolves the
     // both-accepted refusal by handing each fold an explicit winner: the kept id's fold wins ("loser" side),
     // all others lose ("survivor" side). Absent -> fall back to the cluster-wide body.winner (or none).
     const keepAcceptanceOf = body.keepAcceptanceOf != null ? String(body.keepAcceptanceOf) : null;
     if (!REGIONS.includes(region)) { context.res = { status: 400, body: { error: "Unknown region." } }; return; }
-    if (!survivorId || !loserIds.length) { context.res = { status: 400, body: { error: "Provide survivorId and at least one loserId." } }; return; }
+    if (!survivorId || (!loserIds.length && sameIdWanted < 1)) { context.res = { status: 400, body: { error: "Provide survivorId and at least one loser (or a same-id duplicate to fold)." } }; return; }
 
     const container = await getContainer(DATA_CONTAINER);
 
@@ -82,10 +89,16 @@ module.exports = async function (context, req) {
     if (!survivor) { context.res = { status: 404, body: { error: "Survivor not found in region." } }; return; }
     const missing = loserIds.filter(id => !byId.has(id));
     if (missing.length) { context.res = { status: 404, body: { error: "Loser(s) not found: " + missing.join(", ") } }; return; }
+    // The survivor id may appear on several records; all but one are duplicates to fold. Never fold more
+    // than exist, never fold the survivor's last remaining copy.
+    const sameIdCopies = records.filter(r => String(r.user_id) === survivorId).length - 1;   // extras beyond the survivor
+    const sameIdToFold = Math.min(sameIdWanted, Math.max(0, sameIdCopies));
 
-    // BI membership: how many ids in this cluster are Better-Impact (numeric) accounts?
+    // BI membership: how many DISTINCT Better-Impact (numeric) accounts are in this cluster? Distinct
+    // matters: a duplicate can share ONE BI id across both rows (app copy + re-imported BI copy), which
+    // is a single account duplicated in the app — mergeable here, not a two-live-account BI-team case.
     const clusterIds = [survivorId, ...loserIds];
-    const numericIds = clusterIds.filter(id => !isWritein(id));
+    const numericIds = [...new Set(clusterIds.filter(id => !isWritein(id)))];
     const snap = await readBiSnapshot(container);
     const snapAgeMin = snap ? Math.round((Date.now() - new Date(snap.fetchedAt).getTime()) / 60000) : null;
     const snapFresh = snap && snapAgeMin != null && snapAgeMin <= SNAPSHOT_MAX_AGE_MIN;
@@ -104,7 +117,8 @@ module.exports = async function (context, req) {
     // If the SURVIVOR and any LOSER are both live BI accounts, retireInto will refuse that pair — surface
     // it as "must be resolved in Better Impact" rather than attempting the merge.
     const bothLivePairs = loserIds
-      .filter(id => !isWritein(id) && biIds.has(id) && !isWritein(survivorId) && biIds.has(survivorId));
+      .filter(id => !isWritein(id) && biIds.has(id) && !isWritein(survivorId) && biIds.has(survivorId)
+        && String(id) !== String(survivorId));   // same id as survivor = same account, not a 2nd live one
 
     // Build the plan: fold each loser into the survivor in turn. Dry-run computes the outcome with the
     // pure mergeRecords; commit performs it with retireInto (which persists + re-buckets).
@@ -137,8 +151,22 @@ module.exports = async function (context, req) {
           bothInBi: m.reason === "both_in_bi", needsWinner: m.reason === "both_accepted_needs_winner" });
         if (m.ok) workingSurvivor = m.record;   // chain: next loser folds into the growing survivor
       }
+      // Same-id duplicates: fold the extra copies of the survivor's own id. Each is a distinct record
+      // sharing the id; mergeRecords treats same-id as one account (no both_in_bi) and keeps the winner.
+      const sameIdDupes = records.filter(r => String(r.user_id) === survivorId && r !== survivor).slice(0, sameIdToFold);
+      for (const dup of sameIdDupes) {
+        // Same account, so the surviving id is settled. Which record's WORK-BLOCK survives is decided
+        // by progress (accepted > assigned > ...), not by which copy happened to sort first — pass no
+        // winner and let mergeRecords take the higher-progress side. Only when BOTH copies are accepted
+        // does it need an explicit pick (else it refuses a silent choice); keep the survivor's then.
+        const bothAccepted = sameProgressAccepted(dup) && sameProgressAccepted(workingSurvivor);
+        const m = mergeRecords(dup, workingSurvivor, { ...opts, winner: bothAccepted ? "survivor" : undefined });
+        results.push({ loserId: survivorId + " (same-id copy)", ok: m.ok, reason: m.reason || null,
+          bothInBi: false, needsWinner: m.reason === "both_accepted_needs_winner", sameId: true });
+        if (m.ok) workingSurvivor = m.record;
+      }
       context.res = { body: {
-        mode: "dry-run", region, survivorId, loserIds, promotedTo: promoteTo,
+        mode: "dry-run", region, survivorId, loserIds, promotedTo: promoteTo, sameIdFolds: sameIdToFold,
         biSnapshot: snap ? { ageMinutes: snapAgeMin, fresh: snapFresh, count: biIds.size } : null,
         numericIdCount: numericIds.length, liveInBiCount: liveInBi.length,
         setAsideForBiTeam: bothLivePairs.length > 0,
@@ -166,8 +194,21 @@ module.exports = async function (context, req) {
       results.push({ loserId: lid, ...r, bothInBi: r.reason === "both_in_bi", needsWinner: r.reason === "both_accepted_needs_winner" });
       if (r.ok && r.survivorId) curSurvivor = String(r.survivorId);   // follow the promotion
     }
+    // Fold the same-id duplicates. Each call collapses one extra copy of curSurvivor's id into it;
+    // retireInto locates the pair by array position, so identical ids don't self-merge.
+    for (let k = 0; k < sameIdToFold; k++) {
+      // Decide the winner from progress at each step: read the two live copies of curSurvivor's id and
+      // only force "survivor" if both are accepted; otherwise let retireInto/mergeRecords keep the
+      // higher-progress record, so the accepted copy survives regardless of shard order.
+      const live = (await readRegion(container, region)).records.filter(r => String(r.user_id) === curSurvivor);
+      const bothAccepted = live.length >= 2 && live.slice(0, 2).every(sameProgressAccepted);
+      const r = await retireInto(container, region, curSurvivor, curSurvivor, { ...opts, winner: bothAccepted ? "survivor" : undefined });
+      results.push({ loserId: curSurvivor + " (same-id copy)", ...r, sameId: true,
+        bothInBi: r.reason === "both_in_bi", needsWinner: r.reason === "both_accepted_needs_winner" });
+      if (r.ok && r.survivorId) curSurvivor = String(r.survivorId);
+    }
     context.res = { body: {
-      mode: "commit", region, survivorId: curSurvivor, promotedTo: promoteTo,
+      mode: "commit", region, survivorId: curSurvivor, promotedTo: promoteTo, sameIdFolds: sameIdToFold,
       merged: results.filter(r => r.ok).length,
       refused: results.filter(r => !r.ok).length,
       results,

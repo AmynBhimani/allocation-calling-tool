@@ -294,8 +294,13 @@ function resolvePayload(i) {
   const c = window.__clusters[i];
   const survivorId = selectedSurvivor(i) || defaultSurvivor(c);
   const loserIds = c.members.map(m => String(m.user_id)).filter(id => id !== String(survivorId));
+  // Records that share the survivor's OWN id are duplicates of the same account (app copy + re-imported
+  // BI copy). They can't go in loserIds (that filter drops the survivor id), so send a count of the
+  // extra copies for the endpoint to fold. members includes the survivor, hence the -1.
+  const sameIdCount = c.members.filter(m => String(m.user_id) === String(survivorId)).length - 1;
   const keepAcceptanceOf = computeKeepAcceptance(c, survivorId, selectedAcceptance(i));
   const payload = { region: c.region, survivorId, loserIds };
+  if (sameIdCount > 0) payload.sameIdCount = sameIdCount;
   if (keepAcceptanceOf) payload.keepAcceptanceOf = keepAcceptanceOf;
   return payload;
 }

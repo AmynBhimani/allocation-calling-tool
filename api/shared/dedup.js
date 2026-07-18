@@ -247,7 +247,10 @@ function findDuplicateClusters(records, opts = {}) {
     const areas = new Set(members.map(m => lc(m.final_area)).filter(Boolean));
     const acceptedMembers = members.filter(isAccepted);
     const acceptedAreas = new Set(acceptedMembers.map(m => lc(m.final_area)).filter(Boolean));
-    const numericIds = members.filter(m => !isWritein(m)).map(m => String(m.user_id));
+    // DISTINCT BI ids. Two records can carry the SAME BI id (an app copy plus a re-imported BI copy);
+    // that is ONE Better Impact account duplicated in the app, safe to merge here, not two live
+    // accounts that must be resolved upstream. Counting occurrences would misfile it as needs_bi_check.
+    const numericIds = [...new Set(members.filter(m => !isWritein(m)).map(m => String(m.user_id)))];
     const writeins = members.filter(isWritein);
     // strongest signal + confidences present in this cluster
     const sigs = [];

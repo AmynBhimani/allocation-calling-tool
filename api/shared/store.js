@@ -217,13 +217,17 @@ function mergeRecords(loser, survivor, opts = {}) {
   const loserInBi = biIds.has(String(loser.user_id));
   const survInBi = biIds.has(String(survivor.user_id));
 
-  // Rule 1: both live in BI -> normally refuse; Better Impact is the source of truth for which account
-  // exists, and biupsert re-creates a record for any live BI account it can't find — so folding two live
-  // accounts here would simply be undone by the next refresh.
-  // The one exception: the iVol admin, who is doing the merge in Better Impact, may DECLARE which BI
-  // account they are keeping (opts.biKeep). That is exactly the fact this rule is missing, so naming it
-  // satisfies the rule. A generic "force" flag is still refused: biKeep must name the survivor.
-  if (loserInBi && survInBi) {
+  // Rule 1: two DIFFERENT live BI accounts -> normally refuse; Better Impact is the source of truth for
+  // which account exists, and biupsert re-creates a record for any live BI account it can't find — so
+  // folding two live accounts here would simply be undone by the next refresh.
+  // But two records carrying the SAME BI id are not two accounts: they are ONE Better Impact account
+  // duplicated inside the app (the app copy plus a re-imported BI copy). Merging them is exactly right,
+  // and the surviving id is that same BI id — no refusal, nothing for the BI team to resolve.
+  // The one exception for genuinely different accounts: the iVol admin, doing the merge in Better Impact,
+  // may DECLARE which they are keeping (opts.biKeep). Naming it supplies the fact this rule is missing.
+  // A generic "force" flag is still refused: biKeep must name the survivor.
+  const sameBiId = String(loser.user_id) === String(survivor.user_id);
+  if (loserInBi && survInBi && !sameBiId) {
     if (!opts.biKeep || String(opts.biKeep) !== String(survivor.user_id)) return { ok: false, reason: "both_in_bi" };
   }
 
@@ -359,14 +363,25 @@ function mergeRecords(loser, survivor, opts = {}) {
 async function retireInto(container, region, loserId, survivorId, opts = {}) {
   let result = { ok: false, reason: "not_found" };
   await mergeRegion(container, region, (records) => {
-    const loser = records.find(r => String(r.user_id) === String(loserId));
-    const survivor = records.find(r => String(r.user_id) === String(survivorId));
-    if (!loser || !survivor) { result = { ok: false, reason: "not_found" }; return records; }
+    // Find by ARRAY POSITION, not by id value. A duplicate can carry the SAME BI id on both records
+    // (the app copy plus a re-imported BI copy), and a find-by-id would return the same record twice
+    // and merge it with itself, silently dropping the other. Positions keep the two distinct.
+    let li = records.findIndex(r => String(r.user_id) === String(loserId));
+    let si = records.findIndex(r => String(r.user_id) === String(survivorId));
+    // Same id on both sides: the two findIndex calls land on the same row. Take the survivor as the
+    // first match and the loser as the NEXT record sharing that id.
+    if (li === si && li >= 0) {
+      const dup = records.findIndex((r, k) => k !== si && String(r.user_id) === String(survivorId));
+      if (dup < 0) { result = { ok: false, reason: "not_found" }; return records; }
+      li = dup;
+    }
+    if (li < 0 || si < 0) { result = { ok: false, reason: "not_found" }; return records; }
+    const loser = records[li], survivor = records[si];
     const m = mergeRecords(loser, survivor, opts);
     if (!m.ok) { result = m; return records; }               // refuse: write nothing
     result = { ok: true, survivorId: m.record.user_id, mergedFrom: m.record.merged_from };
-    // Keep every record except the two, then append the merged survivor.
-    const kept = records.filter(r => String(r.user_id) !== String(loserId) && String(r.user_id) !== String(survivorId));
+    // Keep every record except those two POSITIONS, then append the merged survivor.
+    const kept = records.filter((r, k) => k !== li && k !== si);
     kept.push(m.record);
     return kept;
   });

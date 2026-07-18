@@ -129,7 +129,25 @@
 .compose .cbtn { padding: 6px 12px; }
 
 /* --- shared top nav --- */
-.navlinks { display: contents; }
+/* Nav: pills flowed directly in the header via display:contents until the menu outgrew one row.
+   Now it's its own wrapping flex row so dropdown groups can be positioned elements. */
+.navlinks{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.navgroup{position:relative;display:inline-flex}
+.navtoggle{display:inline-flex;align-items:center;gap:6px}
+.navtoggle .caret{font-size:10px;opacity:.75;transition:transform .12s ease}
+/* The group we're currently inside gets the same teal treatment as an active pill. */
+.navgroup.here>.navtoggle{color:var(--teal,#028090);font-weight:700;background:rgba(255,255,255,.16)}
+.navmenu{position:absolute;top:calc(100% + 6px);left:0;z-index:50;min-width:190px;
+  background:#fff;border:1px solid rgba(0,0,0,.12);border-radius:10px;padding:6px;
+  box-shadow:0 10px 30px rgba(0,0,0,.18);display:none;flex-direction:column;gap:2px}
+/* Open on hover for pointer devices, and on .open (click/touch/keyboard) everywhere. */
+@media (hover:hover){ .navgroup:hover>.navmenu{display:flex} .navgroup:hover>.navtoggle .caret{transform:rotate(180deg)} }
+.navgroup.open>.navmenu{display:flex}
+.navgroup.open>.navtoggle .caret{transform:rotate(180deg)}
+.navmenu .navitem{font:inherit;font-size:13px;color:var(--ink,#0b132b);text-decoration:none;
+  padding:7px 12px;border-radius:7px;white-space:nowrap}
+.navmenu .navitem:hover{background:rgba(2,128,144,.10)}
+.navmenu .navitem.active{color:var(--teal,#028090);font-weight:700;background:rgba(2,128,144,.10)}
 .userbox .ghost.active { color: var(--teal, #028090); font-weight: 700; }
 
 /* --- caller: rich email preview --- */

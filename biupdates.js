@@ -40,7 +40,11 @@ function render(){
     if(v.changes){
       what=Object.entries(v.changes).map(([f,c])=>`<div class="chg"><b>${FIELD_LABEL[f]||f}:</b> <span class="from">${esc(c.from||'(blank)')}</span> → <span class="to">${esc(c.to||'(blank)')}</span></div>`).join('');
     }
-    if(v.reopen) what+=`<div class="chg reopen">⚑ Reopened after BI entry — please revert/correct in BI</div>`;
+    if(v.reopen){
+      what += v.correctionReason==='recat'
+        ? `<div class="chg reopen">⚑ Area changed to <b>${esc(v.committee)}</b> — update this person's committee in BI</div>`
+        : `<div class="chg reopen">⚑ Reopened after BI entry — please revert/correct in BI</div>`;
+    }
     return `<tr>
       <td class="cbcol"><input type="checkbox" class="rowcb" data-id="${v.id}" data-region="${v.region}" ${checked}></td>
       <td><div class="name">${v.first} ${v.last}</div><div class="sub">#${v.id}${v.username?' · '+v.username:''} · ${v.jk}</div></td>

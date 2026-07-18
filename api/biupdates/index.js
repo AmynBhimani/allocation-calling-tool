@@ -25,7 +25,11 @@ function row(v) {
     id: v.user_id, first: v.first, last: v.last, region: v.region, jk: v.ceremony_jk,
     committee: v.final_area || "—", username: v.username || "",
     changes: hasContact(v) ? v.contact_changes : null,   // { field: {from,to} }
-    reopen: !!v.bi_correction_needed                      // was entered in BI, then reopened
+    reopen: !!v.bi_correction_needed,                     // needs a BI fix
+    // WHY it needs fixing. "recat" = area was recategorised, so the committee in BI is wrong and must
+    // be CHANGED (not reverted). Anything else is the old reopen: the person was reopened after entry.
+    correctionReason: v.bi_correction_needed ? (v.bi_correction_reason === "area_recategorized" ? "recat" : "reopen") : null,
+    committee: v.final_area || "\u2014"
   };
 }
 

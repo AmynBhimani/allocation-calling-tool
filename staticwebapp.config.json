@@ -460,6 +460,18 @@
       ]
     },
     {
+      "route": "/api/migrateduties",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
+      "route": "/duties-migrate.html",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
       "route": "/duty-review.html",
       "allowedRoles": [
         "superadmin",

@@ -273,10 +273,11 @@
   function blockedHtml(d) {
     var b = d.blocked || [];
     if (!b.length) return "";
-    var html = '<div class="sub2" style="color:#7d4a41">Not removed \u2014 volunteers are already doing these (' + num(b.length) + ")</div>"
+    var html = '<div class="sub2" style="color:#7d4a41">Not removed \u2014 already assigned in iVolunteer ('
+      + num(b.length) + ")</div>"
       + '<div class="small" style="margin-bottom:8px">These duties were left exactly as they were; <b>everything else in the file still applies</b>. '
-      + 'An assignment has to be backed out in iVolunteer first \u2014 the app won\u2019t drop a duty out from under someone. '
-      + 'Deal with the volunteers, then mark Remove again on a later upload.</div>'
+      + 'Better Impact is already holding these shifts, so they have to be backed out there first \u2014 the app '
+      + 'won\u2019t leave the two out of step. Deal with those volunteers, then mark Remove again on a later upload.</div>'
       + '<table class="matrix"><tr><th>Session</th><th>Area</th><th>Duty</th><th class="n">Holding it</th><th>Who</th></tr>';
     b.forEach(function (r) {
       var shown = r.holders || [];

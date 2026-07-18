@@ -11,7 +11,8 @@
 //   2. session-duties.json — {sessions: {sessionId: {area: [{duty,min,leads,checkIn}]}}}, the
 //                           per-session requirement. "Remove" only affects the session it was marked in.
 const { BlobServiceClient } = require("@azure/storage-blob");
-const { readSessions, getContainer, readRegion, REGIONS } = require("../shared/store");
+const { readSessions, getContainer, readRegion, mutateVolunteer, REGIONS } = require("../shared/store");
+const { sessionRow, LOCKED_STATES } = require("../dutyalloc/dutyalloc");
 const { AREAS, clean, norm } = require("../shared/duties");
 const { planRoster, parseRemove } = require("./roster");
 
@@ -75,7 +76,7 @@ async function buildHolderIndex() {
         const key = String(r.event) + "|" + clean(r.area) + "|" + norm(duty);
         if (!idx.has(key)) idx.set(key, []);
         idx.get(key).push({
-          user_id: v.user_id,
+          user_id: v.user_id, region,          // region is how the commit reaches them to clear it
           name: ((v.first || "") + " " + (v.last || "")).trim() || String(v.user_id),
           state: clean(r.state),
         });
@@ -140,13 +141,22 @@ module.exports = async function (context, req) {
       // more shouldn't be thrown away because one of the removals is held — the other three changes are
       // legitimate and the team still has to get them in. The held duty is simply left exactly as it
       // was, and reported loudly.
+      const noteBits = [];
+      if (plan.counts.cleared) {
+        noteBits.push(plan.counts.cleared + " volunteer(s) " + (commit ? "were moved off" : "will be moved off")
+          + " duties this file removes \u2014 they now have no duty. Re-run the duty allocation to place them "
+          + "on another duty they asked for, or in the pool.");
+      }
       if (plan.blocked.length) {
         const n = plan.blocked.length;
-        const held = n + " duty removal" + (n === 1 ? " was" : "s were") + " NOT applied \u2014 volunteers are " +
-          "already doing " + (n === 1 ? "it" : "them") + ". Back the assignment out in iVolunteer first; the app " +
-          "won't drop a duty out from under someone. Everything else in " +
-          (commit ? "this import was saved." : "the file is fine.");
-        report.note = commit ? "Applied, with exceptions. " + held : "Preview only — nothing saved. " + held;
+        noteBits.push(n + " duty removal" + (n === 1 ? " was" : "s were") + " NOT applied \u2014 "
+          + (n === 1 ? "a volunteer is" : "volunteers are") + " already assigned in iVolunteer for "
+          + (n === 1 ? "it" : "them") + ". Back that out in iVolunteer first; the app won't drop a duty "
+          + "Better Impact is already holding. Everything else in "
+          + (commit ? "this import was saved." : "the file is fine."));
+      }
+      if (noteBits.length) {
+        report.note = (commit ? "Applied. " : "Preview only — nothing saved. ") + noteBits.join(" ");
       }
 
       if (!commit) {
@@ -184,6 +194,38 @@ module.exports = async function (context, req) {
       out.updatedBy = email;
       await writeJson(c, ROSTER_BLOB, out);
       report.roster = out.sessions;
+
+      // 3) Clear anyone who was on a duty this import removed. Removed means gone: the duty is off the
+      //    roster, so leaving them on it would strand them holding something that no longer exists —
+      //    which is precisely what the old refusal existed to prevent. Pending puts them back within
+      //    reach of the next allocation, which will place them on another duty they asked for, or in
+      //    the pool. The roster is written FIRST: if this loop dies half way, the survivors are people
+      //    holding a duty that is gone, which the review screen shows as off-roster and a re-run fixes.
+      //    The reverse order would leave the roster claiming a duty nobody is on.
+      let cleared = 0, clearSkipped = 0;
+      const toClear = plan.removed.reduce((n, r) => n + (r.clearing || []).length, 0);
+      // `c` above is the CONFIG container; the volunteers live in the data one. Only opened if there
+      // is actually somebody to move.
+      const dataC = toClear ? await getContainer(DATA_CONTAINER) : null;
+      for (const rem of plan.removed) {
+        for (const h of (rem.clearing || [])) {
+          if (!h.region) { clearSkipped++; continue; }
+          const res = await mutateVolunteer(dataC, h.region, h.user_id, (v) => {
+            const row = sessionRow(v, rem.session);
+            // They may have been moved between the preview and this commit. Only clear the duty this
+            // import actually removed — never whatever they hold now.
+            if (!row || norm(row.duty) !== norm(h.duty)) return { skip: true };
+            if (LOCKED_STATES.includes(clean(row.state))) return { skip: true };
+            row.duty = ""; row.state = "pending";
+            v.activity_log = v.activity_log || [];
+            v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "duty_cleared",
+              reason: "duty_removed_from_roster", session: rem.session, area: rem.area, duty: h.duty });
+          });
+          if (res.ok && !(res.extra || {}).skip) cleared++; else clearSkipped++;
+        }
+      }
+      report.cleared = cleared;
+      report.clearSkipped = clearSkipped;
       context.res = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(report) };
       return;
     }

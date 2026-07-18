@@ -14,7 +14,7 @@
 const { clean, norm, dupOf, findDuty } = require("../shared/duties");
 // The ENGINE owns lead-duty derivation; the import only has to agree with it about the reserved name
 // and about what a Leads count implies. Importing rather than re-deriving makes drift impossible.
-const { isLeadName, leadNameFor, expandRoster, LEAD_PREFIX } = require("../dutyalloc/dutyalloc");
+const { isLeadName, leadNameFor, expandRoster, LEAD_PREFIX, LOCKED_STATES } = require("../dutyalloc/dutyalloc");
 
 const pad2 = (n) => (n < 10 ? "0" : "") + n;
 
@@ -111,9 +111,9 @@ function planRoster(files, catalog, sessions, opts) {
   // derives, because removing the parent removes the lead with it.
   const holdersFor = (sid, area, name) => {
     const own = (holdersOf(sid, area, name) || []).map(h =>
-      ({ user_id: h.user_id, name: h.name, state: clean(h.state), duty: clean(name) }));
+      ({ user_id: h.user_id, region: h.region, name: h.name, state: clean(h.state), duty: clean(name) }));
     const leads = (holdersOf(sid, area, leadNameFor(name)) || []).map(h =>
-      ({ user_id: h.user_id, name: h.name, state: clean(h.state), duty: leadNameFor(name) }));
+      ({ user_id: h.user_id, region: h.region, name: h.name, state: clean(h.state), duty: leadNameFor(name) }));
     return own.concat(leads);
   };
 
@@ -132,7 +132,8 @@ function planRoster(files, catalog, sessions, opts) {
     return false;
   }
   const seen = new Set();            // sessionId|area|dutyname — catches the same duty twice in a sheet
-  const counts = { files: 0, sheets: 0, rows: 0, kept: 0, removed: 0, added: 0, skipped: 0, untouched: 0, blocked: 0 };
+  const counts = { files: 0, sheets: 0, rows: 0, kept: 0, removed: 0, cleared: 0, added: 0,
+    skipped: 0, untouched: 0, blocked: 0 };
   const sessionsTouched = new Set();
   const areasTouched = new Set();
 
@@ -177,22 +178,34 @@ function planRoster(files, catalog, sessions, opts) {
       }
 
       if (parseRemove(e.remove)) {
-        // HARD GUARD. A duty someone is already doing cannot be dropped here: the assignment has to be
-        // backed out in iVolunteer first, and Phase 4a is gap-fill — it never reclaims a duty someone
-        // is holding — so removing it would leave them holding a duty that no longer exists, forever.
-        // No declaration overrides this, by decision: there is no version of this the app should do.
+        // Removed means GONE: nobody is allocated to it, nobody can be moved onto it, and an interest
+        // in it counts for nothing — the allocator only ever sees rostered duties, so someone who
+        // wanted this one lands on another duty they asked for, or in the general pool.
+        //
+        // Which leaves the people already on it. This guard used to refuse the removal outright, on
+        // the grounds that gap-fill never reclaims a duty and they would be left holding one that no
+        // longer exists. Clearing them removes that premise: back to pending, and the next allocation
+        // places them exactly as if they had never been on it.
+        //
+        // Assigned in iVol is the one real wall. Better Impact holds that shift, and clearing it here
+        // would put the two out of step — the fix has to start there. One such holder blocks the ROW,
+        // not the file, so the rest of the import still lands.
         //
         // Removing a duty ALSO removes the lead duty derived from it, so both have to be checked. The
         // holder index is keyed by the duty as held — a lead is stored as "Lead - Server", so looking
         // up "Server" alone would miss them and strand exactly the people this guard exists for.
         const who = holdersFor(sid, area, name);
-        if (who.length) {
-          blocked.push({ session: sid, sessionName, area, duty: name, where: where(e),
-            holders: who.slice(0, 25), holderCount: who.length });
+        const inIvol = who.filter(h => LOCKED_STATES.includes(clean(h.state)));
+        if (inIvol.length) {
+          blocked.push({ session: sid, sessionName, area, duty: name, where: where(e), reason: "in_ivol",
+            holders: inIvol.slice(0, 25), holderCount: inIvol.length });
           continue;
         }
         counts.removed++;
-        removed.push({ session: sid, sessionName, area, duty: name });
+        counts.cleared += who.length;
+        // The commit clears these; the preview lists them. Whoever drops a duty sees exactly who it
+        // moves before anything is written.
+        removed.push({ session: sid, sessionName, area, duty: name, clearing: who });
         const cell = cellFor(sid, area);
         const at = indexIn(cell, name);
         if (at >= 0) cell.splice(at, 1);

@@ -460,6 +460,13 @@
       ]
     },
     {
+      "route": "/api/dutyemail",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/api/migrateduties",
       "allowedRoles": [
         "superadmin"

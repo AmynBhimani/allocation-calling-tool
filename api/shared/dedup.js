@@ -179,36 +179,39 @@ const isWritein = (v) => !!(v && (v.no_bi_account || String(v.user_id).startsWit
 function findDuplicateClusters(records, opts = {}) {
   const n = records.length;
   const uf = new UF(n);
-  const signalsByEdge = new Map();   // "i|j" -> signal (i<j)
+  const signalsByEdge = new Map();   // "i|j" (i<j) -> strongest linking signal for that pair
   const hintsByRecord = new Map();   // i -> [{other, signal}]  non-linking hints (shared contact, diff name)
+  const comp = Array.from({ length: n }, (_, i) => [i]);   // member indices per UF root (valid only at roots)
+  const rank = { high: 3, medium: 2, low: 1 };
   // Pairs a human has declared to be two different people (shared/distinct.js). Keyed by user_id, not
-  // index, because index is an artefact of read order. Suppression has to happen HERE, at the edge,
-  // not on the finished cluster: clusters are union-find, so A-B and B-C collapse into {A,B,C} and
-  // dropping the group would throw away a real B-C duplicate along with the false A-B one. Declining
-  // the union instead lets the cluster split correctly at any size.
+  // index, because index is an artefact of read order. A declaration is AUTHORITATIVE — a human checked
+  // Better Impact; the scan only guessed — so it is enforced as a CANNOT-LINK constraint on the whole
+  // component, not merely on the one direct edge. Suppressing only the direct edge left the pair grouped
+  // whenever a third record bridged them: A-C and B-C pull A and B back into one cluster through
+  // union-find, so the declared pair kept reappearing (the BI Resolutions "declared distinct but still
+  // shown together" report). The constrained union below refuses any merge that would put a
+  // declared-distinct pair in one component, so the pair is kept apart at any cluster size.
   const declaredDistinct = opts.distinctPairs instanceof Set ? opts.distinctPairs : null;
   const distinctKey = (i, j) => {
     const x = String(records[i] && records[i].user_id), y = String(records[j] && records[j].user_id);
     return x < y ? `${x}|${y}` : `${y}|${x}`;
   };
-  const recordSignal = (i, j, sig) => {
-    // A declaration outranks every heuristic — a human checked Better Impact, the scan only guessed.
-    // Demote to a non-linking hint rather than dropping it: the signal is real and still worth
-    // showing, it just doesn't mean "same person" for this pair.
-    if (declaredDistinct && declaredDistinct.has(distinctKey(i, j))) {
-      sig = { ...sig, signal: sig.signal, confidence: "low", link: false, declaredDistinct: true };
-    }
-    if (sig.link === false) {
-      // A non-linking hint: surface it on both records but do NOT union.
-      (hintsByRecord.get(i) || hintsByRecord.set(i, []).get(i)).push({ other: j, signal: sig.signal });
-      (hintsByRecord.get(j) || hintsByRecord.set(j, []).get(j)).push({ other: i, signal: sig.signal });
-      return;
-    }
+  const pushHint = (i, j, signal) => {
+    (hintsByRecord.get(i) || hintsByRecord.set(i, []).get(i)).push({ other: j, signal });
+    (hintsByRecord.get(j) || hintsByRecord.set(j, []).get(j)).push({ other: i, signal });
+  };
+  // First pass COLLECTS candidate linking edges rather than unioning immediately, so the constrained
+  // union can process them strongest-first: when a declaration forces one of two bridge edges to be cut,
+  // the stronger evidence must be the edge that survives, not whichever happened to be compared first.
+  // A directly declared-distinct pair, and any naturally non-linking signal, becomes a hint here and is
+  // never a candidate.
+  const edgeMap = new Map();   // "i|j" (i<j) -> strongest candidate signal for that pair
+  const collectSignal = (i, j, sig) => {
+    if (declaredDistinct && declaredDistinct.has(distinctKey(i, j))) { pushHint(i, j, sig.signal); return; }
+    if (sig.link === false) { pushHint(i, j, sig.signal); return; }
     const key = i < j ? `${i}|${j}` : `${j}|${i}`;
-    const prev = signalsByEdge.get(key);
-    const rank = { high: 3, medium: 2, low: 1 };
-    if (!prev || rank[sig.confidence] > rank[prev.confidence]) signalsByEdge.set(key, sig);
-    uf.union(i, j);
+    const prev = edgeMap.get(key);
+    if (!prev || rank[sig.confidence] > rank[prev.confidence]) edgeMap.set(key, sig);
   };
 
   // Build blocks.
@@ -229,12 +232,42 @@ function findDuplicateClusters(records, opts = {}) {
     for (let x = 0; x < idxs.length; x++) for (let y = x + 1; y < idxs.length; y++) {
       const i = idxs[x], j = idxs[y];
       const sig = pairSignal(records[i], records[j]);
-      if (sig) recordSignal(i, j, sig);
+      if (sig) collectSignal(i, j, sig);
     }
   };
   for (const idxs of emailBlocks.values()) comparePairInBlock(idxs);
   for (const idxs of phoneBlocks.values()) comparePairInBlock(idxs);
   for (const idxs of surnameBlocks.values()) comparePairInBlock(idxs);
+
+  // Constrained union: process collected edges strongest-first and refuse any merge that would place a
+  // declared-distinct pair in one component. A refused edge is real evidence, so it is surfaced as a
+  // hint rather than dropped silently. The tie-break on the pair key makes the outcome deterministic (a
+  // re-run of the same data yields the same clusters), and with no declarations this reproduces plain
+  // union-find exactly — connectivity is order-independent — so unconstrained scans are unchanged.
+  const constrainedUnion = (i, j) => {
+    const ri = uf.find(i), rj = uf.find(j);
+    if (ri === rj) return true;                      // already in one component
+    if (declaredDistinct) {
+      const A = comp[ri], B = comp[rj];
+      for (const a of A) for (const b of B) {
+        if (declaredDistinct.has(distinctKey(a, b))) return false;   // this merge would violate a declaration
+      }
+    }
+    uf.union(i, j);
+    const nr = uf.find(i);                           // surviving root (ri or rj)
+    comp[nr] = comp[ri].concat(comp[rj]);            // merged member list either way; the other root's list is now dead
+    return true;
+  };
+  const candidateEdges = [...edgeMap.entries()].map(([key, sig]) => {
+    const p = key.split("|"); return { i: +p[0], j: +p[1], sig, key };
+  });
+  candidateEdges.sort((e1, e2) =>
+    (rank[e2.sig.confidence] - rank[e1.sig.confidence]) ||
+    (e1.key < e2.key ? -1 : e1.key > e2.key ? 1 : 0));
+  for (const e of candidateEdges) {
+    if (constrainedUnion(e.i, e.j)) signalsByEdge.set(e.key, e.sig);
+    else pushHint(e.i, e.j, e.sig.signal);
+  }
 
   // Gather clusters of size >= 2.
   const groups = new Map();

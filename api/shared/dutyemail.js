@@ -103,13 +103,13 @@ function renderDutyEmail(r, opts = {}) {
 
   const text = [
     `Dear ${name},`, "",
-    `Congratulations! We are pleased to inform you that you have been invited to volunteer at the ${session}. Below are the details of your assignment:`, "",
+    `Congratulations! We are pleased to inform you that you have been invited to volunteer at the ${session} Didar. Below are the details of your assignment:`, "",
     `Duty Name: ${duty}`,
     `Duty Description: ${desc}`, "",
     `Please arrive at the ${LOUNGE} at: ${time}`, "",
     "Thank you for your commitment and support. We truly appreciate your willingness to serve and look forward to your participation.", "",
-    senderName, EVENT_LABEL, "",
-    `\u2014`, `You're receiving this because you volunteered for the Didar. Replies go to ${REPLY_TO}.`,
+    `Please do not reply to this email. If you need any assistance with your volunteer experience please email ${REPLY_TO}.`, "",
+    senderName,
   ].join("\n");
 
   const row = (label, value) => `<tr>
@@ -125,11 +125,10 @@ function renderDutyEmail(r, opts = {}) {
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%; max-width:600px; background:#ffffff; border:1px solid #dbe1e9; border-radius:10px; overflow:hidden;">
     <tr><td style="background:#1f3a5f; padding:22px 30px;">
       <div style="font-family:Georgia,'Times New Roman',serif; color:#ffffff; font-size:19px; font-weight:bold; line-height:1.2;">${esc(senderName)}</div>
-      <div style="font-family:Arial,Helvetica,sans-serif; color:#b9c7db; font-size:13px; margin-top:3px;">${esc(EVENT_LABEL)}</div>
     </td></tr>
     <tr><td style="padding:30px; font-family:Arial,Helvetica,sans-serif;">
       <p style="margin:0 0 16px; color:#1f2733; font-size:15px; line-height:1.65;">Dear ${esc(name)},</p>
-      <p style="margin:0 0 18px; color:#1f2733; font-size:15px; line-height:1.65;">Congratulations! We are pleased to inform you that you have been invited to volunteer at the <b>${esc(session)}</b>. Below are the details of your assignment:</p>
+      <p style="margin:0 0 18px; color:#1f2733; font-size:15px; line-height:1.65;">Congratulations! We are pleased to inform you that you have been invited to volunteer at the <b>${esc(session)}</b> Didar. Below are the details of your assignment:</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e7ee; border-radius:8px; background:#f7f9fc; margin:0 0 20px;"><tr><td style="padding:18px 20px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,Helvetica,sans-serif;">
           ${row("Duty Name", `<b>${esc(duty)}</b>`)}
@@ -137,11 +136,9 @@ function renderDutyEmail(r, opts = {}) {
         </table>
       </td></tr></table>
       <p style="margin:0 0 20px; color:#1f2733; font-size:15px; line-height:1.65;">Please arrive at the ${esc(LOUNGE)} at: <b>${esc(time)}</b></p>
-      <p style="margin:0 0 8px; color:#1f2733; font-size:15px; line-height:1.65;">Thank you for your commitment and support. We truly appreciate your willingness to serve and look forward to your participation.</p>
-      <p style="margin:24px 0 0; color:#1f2733; font-size:15px; line-height:1.6;"><span style="font-weight:bold;">${esc(senderName)}</span><br><span style="color:#61708a; font-size:13px;">${esc(EVENT_LABEL)}</span></p>
-    </td></tr>
-    <tr><td style="background:#f3f6f9; padding:16px 30px; border-top:1px solid #e2e7ee;">
-      <p style="margin:0; color:#8592a3; font-family:Arial,Helvetica,sans-serif; font-size:12px; line-height:1.55;">You're receiving this because you volunteered for the Didar. Replies go to the ${esc(senderName)} (${esc(REPLY_TO)}).</p>
+      <p style="margin:0 0 16px; color:#1f2733; font-size:15px; line-height:1.65;">Thank you for your commitment and support. We truly appreciate your willingness to serve and look forward to your participation.</p>
+      <p style="margin:0 0 8px; color:#1f2733; font-size:15px; line-height:1.65;">Please do not reply to this email. If you need any assistance with your volunteer experience please email <a href="mailto:${esc(REPLY_TO)}" style="color:#1f3a5f;">${esc(REPLY_TO)}</a>.</p>
+      <p style="margin:24px 0 0; color:#1f2733; font-size:15px; line-height:1.6;"><span style="font-weight:bold;">${esc(senderName)}</span></p>
     </td></tr>
   </table>
 </td></tr></table>

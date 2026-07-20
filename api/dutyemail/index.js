@@ -19,7 +19,7 @@
 // Selection + rendering + the send/stamp helpers live in shared/dutyemail (pure, unit-tested). Super
 // Admin and Admin only (Admin region-walled).
 const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor, readSessions, readConfigJson } = require("../shared/store");
-const { buildLookups, selectForSession, renderDutyEmail, sendWithBudget, stampNotified, REPLY_TO } = require("../shared/dutyemail");
+const { buildLookups, selectForSession, renderDutyEmail, sendWithBudget, stampNotified, REPLY_TO, ON_LINEUP, hasEmail } = require("../shared/dutyemail");
 
 const ROSTER_BLOB = "session-duties.json";
 const DUTIES_BLOB = "duties.json";
@@ -61,6 +61,29 @@ module.exports = async function (context, req) {
 
     const isPost = String(req.method || "").toUpperCase() === "POST";
     const sessions = await readSessions(null);
+
+    // All-sessions duty progress tally for the screen header: across every session, how many duty
+    // emails have been sent (lineup rows stamped notified_at) vs. still to send. No catalog lookup, no ACS.
+    if (!isPost && String((req.query && req.query.summary) || "") === "1") {
+      let sRegions = REGIONS.slice();
+      if (!isSuper) { const allowed = allowedRegionsFor(await readRolesStore(), email) || []; sRegions = sRegions.filter(r => allowed.includes(r)); }
+      const sContainer = await getContainer(DATA_CONTAINER);
+      let sent = 0, remaining = 0, noEmail = 0;
+      for (const region of sRegions) {
+        const { records } = await readRegion(sContainer, region);
+        const seen = new Set();
+        for (const v of records) {
+          const uid = String(v.user_id);
+          if (seen.has(uid)) continue; seen.add(uid);
+          const rows = (v.event_assignments || []).filter(r => r && r.basis === "session" && ON_LINEUP.has(_clean(r.state)));
+          if (!rows.length) continue;
+          const hasEm = hasEmail(v);
+          for (const r of rows) { if (!hasEm) { noEmail++; } else if (r.notified_at) { sent++; } else { remaining++; } }
+        }
+      }
+      context.res = { body: { summary: { sent, remaining, noEmail } } };
+      return;
+    }
 
     const want = String(((isPost ? (req.body && req.body.session) : (req.query && req.query.session)) || "")).trim();
     if (!want) {

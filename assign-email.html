@@ -35,6 +35,10 @@
   .previewframe{width:100%;height:560px;border:1px solid var(--line);border-radius:10px;background:#e9edf2}
   .sep{height:1px;background:var(--line);margin:16px 0}
   .pill{display:inline-block;background:#eef6f7;color:#1f6b5c;border:1px solid #BFE3D6;border-radius:999px;padding:3px 10px;font-size:12.5px;margin-left:6px}
+  .summarybox{margin-top:12px;padding:10px 14px;background:var(--paper);border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink)}
+  .summarybox .bar{height:8px;background:#eef1f4;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-bottom:7px}
+  .summarybox .bar > div{height:100%;background:var(--teal)}
+  .summarybox .mute{color:var(--mute)}
 </style>
 </head>
 <body>
@@ -62,6 +66,7 @@
     <div class="small" style="margin-top:8px;padding:8px 10px;background:#eef6f7;border:1px solid #BFE3D6;border-radius:8px">
       <b>Sending via SendGrid?</b> Click <b>Download all recipients</b> to export every accepted volunteer across all sessions as a CSV — with first name, area, session, check-in time, orientation day, and a working personal decline link — ready for a SendGrid mail-merge.
     </div>
+    <div id="summary" class="summarybox" hidden></div>
     <div class="small" style="margin-top:10px">
       Goes to <b>everyone accepted</b> for the chosen session (by their Jamatkhana), with their area, the
       session&rsquo;s check-in window, their orientation day, and a personal <b>decline link</b>. Run the

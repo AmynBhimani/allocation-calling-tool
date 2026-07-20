@@ -11,6 +11,20 @@
   function session() { return EL("session").value || ""; }
   function sessionName() { var s = SESSIONS.filter(function (x) { return x.id === session(); })[0]; return s ? s.name : ""; }
 
+  // All-sessions progress tally (sent vs. remaining) shown in the header, independent of session.
+  function loadSummary() {
+    fetch("/api/assignemail?summary=1").then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.summary) return;
+      var s = d.summary, emailable = s.sent + s.remaining, pct = emailable ? Math.round(s.sent / emailable * 100) : 0;
+      EL("summary").hidden = false;
+      EL("summary").innerHTML =
+        '<div class="bar"><div style="width:' + pct + '%"></div></div>' +
+        '<b>' + num(s.sent) + '</b> sent \u00b7 <b>' + num(s.remaining) + '</b> still to send' +
+        (s.noEmail ? ' \u00b7 ' + num(s.noEmail) + ' no email' : '') +
+        ' <span class="mute">(' + pct + '% of ' + num(emailable) + ' emailable accepted)</span>';
+    }).catch(function () {});
+  }
+
   function load() {
     return fetch("/api/assignemail").then(function (r) { return r.json(); }).then(function (d) {
       if (d.error) { banner(esc(d.error), true); return; }
@@ -157,12 +171,14 @@
       .then(function (d) {
         if (d.error) { banner(esc(d.error), true); EL("markBtn").disabled = false; return; }
         banner("Marked <b>" + num(d.marked) + "</b> as sent. They won\u2019t appear in future exports.", false);
+        loadSummary();
       }).catch(function () { banner("Couldn\u2019t mark as sent \u2014 try again.", true); EL("markBtn").disabled = false; })
       .then(function () { busy = false; });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     load();
+    loadSummary();
     EL("previewBtn").addEventListener("click", preview);
     EL("downloadBtn").addEventListener("click", downloadRecipients);
     EL("markBtn").addEventListener("click", markSent);

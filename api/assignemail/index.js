@@ -51,6 +51,29 @@ module.exports = async function (context, req) {
     const sessions = await readSessions(null);
     const jkIndex = buildJkIndex(sessions);
 
+    // All-sessions progress tally for the screen header: total accepted, how many marked sent, how many
+    // still to send, and how many have no email. Session-independent; no ACS.
+    if (!isPost && String((req.query && req.query.summary) || "") === "1") {
+      let sRegions = REGIONS.slice();
+      if (!isSuper) { const allowed = allowedRegionsFor(await readRolesStore(), email) || []; sRegions = sRegions.filter(r => allowed.includes(r)); }
+      const sContainer = await getContainer(DATA_CONTAINER);
+      let total = 0, sent = 0, remaining = 0, noEmail = 0;
+      for (const region of sRegions) {
+        const { records } = await readRegion(sContainer, region);
+        const seen = new Set();
+        for (const v of records) {
+          if (!isAcceptedVolunteer(v)) continue;
+          const uid = String(v.user_id);
+          if (seen.has(uid)) continue; seen.add(uid);
+          total++;
+          if (!hasEmail(v)) { noEmail++; continue; }
+          if (v.accepted_notified_at) sent++; else remaining++;
+        }
+      }
+      context.res = { body: { summary: { total, sent, remaining, noEmail } } };
+      return;
+    }
+
     // Session-independent CSV export of ALL accepted recipients, for external mail-merge (e.g. SendGrid).
     // Data-only: does not need ACS. Fills every merge field and a working per-person decline link.
     if (isPost && String((req.body && req.body.mode) || "").trim() === "export") {

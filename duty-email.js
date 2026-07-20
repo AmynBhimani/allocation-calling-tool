@@ -12,6 +12,20 @@
   function session() { return EL("session").value || ""; }
   function sessionName() { var s = SESSIONS.filter(function (x) { return x.id === session(); })[0]; return s ? s.name : ""; }
 
+  // All-sessions duty progress tally (sent vs. remaining across every session), shown in the header.
+  function loadSummary() {
+    fetch("/api/dutyemail?summary=1").then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.summary) return;
+      var s = d.summary, emailable = s.sent + s.remaining, pct = emailable ? Math.round(s.sent / emailable * 100) : 0;
+      EL("summary").hidden = false;
+      EL("summary").innerHTML =
+        '<div class="bar"><div style="width:' + pct + '%"></div></div>' +
+        '<b>' + num(s.sent) + '</b> duty emails sent \u00b7 <b>' + num(s.remaining) + '</b> still to send' +
+        (s.noEmail ? ' \u00b7 ' + num(s.noEmail) + ' no email' : '') +
+        ' <span class="mute">(' + pct + '% across all sessions)</span>';
+    }).catch(function () {});
+  }
+
   function load() {
     return fetch("/api/dutyemail").then(function (r) { return r.json(); }).then(function (d) {
       if (d.error) { banner(esc(d.error), true); return; }
@@ -158,6 +172,7 @@
         if (d.error) { banner(esc(d.error), true); EL("markBtn").disabled = false; return; }
         exportedSession = null;
         banner("Marked <b>" + num(d.marked) + "</b> as sent. They won\u2019t appear in future exports.", false);
+        loadSummary();
         if (session()) preview();
       }).catch(function () { banner("Couldn\u2019t mark as sent \u2014 try again.", true); EL("markBtn").disabled = false; })
       .then(function () { busy = false; });
@@ -165,6 +180,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     load();
+    loadSummary();
     EL("previewBtn").addEventListener("click", preview);
     EL("downloadBtn").addEventListener("click", downloadRecipients);
     EL("markBtn").addEventListener("click", markSent);

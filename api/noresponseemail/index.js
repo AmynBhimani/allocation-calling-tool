@@ -7,13 +7,15 @@
 // Super Admin / Admin only (Admin region-walled). Sends via the daily-digest ACS sender.
 const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 const { sendWithBudget } = require("../shared/dutyemail");
-const { makeEmailClient, sendEmailWithTimeout } = require("../shared/acssend");
 const { selectUnreached, renderNoResponseEmail, stampNoResponseSent } = require("../shared/wrapemail");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const PREVIEW_CAP = 500, BATCH_MAX = 500, SEND_BUDGET_MS = 35000, SEND_CONCURRENCY = 8;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REPLY_TO = "volunteer.experience@iicanada.net";
+const clean = (s) => String(s == null ? "" : s).trim();
+const csvCell = (v) => { v = String(v == null ? "" : v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const toCsv = (headers, rows) => "\ufeff" + [headers.map(csvCell).join(","), ...rows.map(r => r.map(csvCell).join(","))].join("\r\n");
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -49,6 +51,15 @@ module.exports = async function (context, req) {
       return { eligible, noEmail, counts };
     };
 
+    // CSV export of ALL unreached recipients for external mail-merge (e.g. SendGrid). Data-only, no ACS.
+    if (isPost && String((req.body && req.body.mode) || "").trim() === "export") {
+      const { eligible } = await gather();
+      const rows = eligible.map(e => [clean(e.email), (clean(e.first) || "Volunteer"), clean(e.region)]);
+      const csv = toCsv(["email", "first_name", "region"], rows);
+      context.res = { body: { ok: true, csv, filename: "no-response-recipients.csv", count: rows.length } };
+      return;
+    }
+
     // ---- POST: test / send ----
     if (isPost) {
       const mode = String((req.body && req.body.mode) || "").trim();
@@ -57,8 +68,8 @@ module.exports = async function (context, req) {
       let EmailClient;
       try { ({ EmailClient } = require("@azure/communication-email")); }
       catch { context.res = { status: 500, body: { error: "@azure/communication-email is not installed in the API." } }; return; }
-      const client = makeEmailClient(EmailClient, conn);
-      const sendMail = (to, msg) => sendEmailWithTimeout(client, {
+      const client = new EmailClient(conn);
+      const sendMail = (to, msg) => client.beginSend({
         senderAddress: from, content: { subject: msg.subject, plainText: msg.text, html: msg.html },
         recipients: { to: [{ address: to }] }, replyTo: [{ address: REPLY_TO }],
       });
@@ -66,10 +77,10 @@ module.exports = async function (context, req) {
       if (mode === "test") {
         const to = String((req.body && req.body.testTo) || "").trim();
         if (!EMAIL_RE.test(to)) { context.res = { status: 400, body: { error: "Enter a valid test email address." } }; return; }
-        // No population scan for a test — the message is generic; just render a sample and send one.
-        const msg = renderNoResponseEmail({ first: "Volunteer" });
+        const { eligible } = await gather();
+        const msg = renderNoResponseEmail({ first: eligible[0] ? eligible[0].first : "Volunteer" });
         await sendMail(to, msg);
-        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject } };
+        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject, usedRealRecipient: !!eligible[0] } };
         return;
       }
 

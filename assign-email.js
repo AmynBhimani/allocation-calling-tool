@@ -60,7 +60,7 @@
           '<button class="btn ghost2" id="testBtn">Send test</button>' +
           '<button class="btn commit" id="sendBtn"' + (c.eligible ? '' : ' disabled') + '>Send to ' + num(c.eligible) + ' now</button>' +
         '</div>' +
-        '<div class="small" style="margin-top:8px">Sends automatically in batches of 500 until the whole session is done \u2014 keep the tab open. Already-emailed people are skipped, and it\u2019s safe to stop and resume.</div>' +
+        '<div class="small" style="margin-top:8px">Sends up to 500 per click; click again for the rest. Already-emailed people are skipped.</div>' +
         '<div id="sendResult"></div>' +
 
         (elig.length ?
@@ -89,74 +89,66 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.error) banner(esc(d.error), true);
-        else banner('Test sent to <b>' + esc(d.testSentTo) + '</b> \u2014 it uses sample content; the preview above shows a real recipient.', false);
+        else banner('Test sent to <b>' + esc(d.testSentTo) + '</b>' + (d.usedRealRecipient ? " (with a real recipient\u2019s details)." : " (sample details \u2014 no eligible recipient yet)."), false);
       }).catch(function () { banner("Couldn\u2019t send the test.", true); })
       .then(function () { busy = false; EL("testBtn").disabled = false; });
   }
 
-  function progressHtml(sent, total, subtitle) {
-    var pct = total ? Math.min(100, Math.round(sent / total * 100)) : (sent ? 100 : 0);
-    return '<div style="margin-top:12px">' +
-      '<div style="height:10px;background:#eef1f4;border:1px solid var(--line);border-radius:999px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--teal)"></div></div>' +
-      '<div class="small" style="margin-top:6px">Sent <b>' + num(sent) + '</b> of <b>' + num(total) + '</b>' + (subtitle ? ' \u2014 ' + subtitle : '') + '</div></div>';
-  }
-  function failuresTable(list) {
-    return '<details><summary>See the ' + num(list.length) + ' that couldn\u2019t be sent</summary><div class="scrollx" style="margin-top:8px"><table class="matrix"><thead><tr><th>Name</th><th>User ID</th><th>Error</th></tr></thead><tbody>' +
-      list.map(function (f) { return '<tr><td>' + esc(f.name || "") + '</td><td>' + esc(f.user_id) + '</td><td>' + esc(f.error) + '</td></tr>'; }).join("") +
-      '</tbody></table></div></details>';
-  }
-
-  // Auto-advance: fire batches back-to-back until the cohort is clear. The backend is unchanged (up to
-  // 500 per request, stamped, resumable) — the browser just drives the loop. Sequential (each batch's
-  // stamp lands before the next gathers), so no double-sends. Stops on completion, on zero-progress
-  // (persistent failures), on a hard round cap, or on a dropped connection — all safely resumable.
   function sendReal() {
     var c = (VIEW && VIEW.counts) || {};
-    var total = c.eligible || 0;
-    if (!total) return;
-    if (!window.confirm("Email " + num(total) + " accepted volunteer" + (total === 1 ? "" : "s") + " for " + sessionName() + "?\n\nThis sends automatically in batches of 500, each with a decline link. Keep this tab open until it finishes.")) return;
-    if (busy) return; busy = true; EL("sendBtn").disabled = true; EL("testBtn").disabled = true; clearBanner();
+    if (!c.eligible) return;
+    if (!window.confirm("Email " + num(c.eligible) + " accepted volunteer" + (c.eligible === 1 ? "" : "s") + " for " + sessionName() + "?\n\nUp to 500 will be sent now, each with their own decline link.")) return;
+    if (busy) return; busy = true; EL("sendBtn").disabled = true; clearBanner();
+    EL("sendResult").innerHTML = '<div class="small" style="margin-top:10px">Sending\u2026 this can take up to a minute; don\u2019t close the tab.</div>';
+    fetch("/api/assignemail", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: session(), mode: "send" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { EL("sendResult").innerHTML = ""; banner(esc(d.error), true); EL("sendBtn").disabled = false; return; }
+        var msg = '<div class="good" style="margin-top:12px">Sent <b>' + num(d.sent) + '</b> email' + (d.sent === 1 ? "" : "s") +
+          (d.failed ? '; <b>' + num(d.failed) + '</b> failed (not marked sent, so the next click retries just them)' : '') + '. ';
+        if (d.remaining) msg += '<b>' + num(d.remaining) + '</b> still to go \u2014 click <b>Send</b> again.';
+        else msg += 'Everyone accepted for this session has now been emailed.';
+        msg += '</div>';
+        if (d.stampWriteFailed) msg += '<div class="warn">Some were sent but their records couldn\u2019t be marked \u2014 <b>Preview again before sending</b> so they aren\u2019t emailed twice. (' + esc(JSON.stringify(d.stampWriteFailed)) + ')</div>';
+        if (d.failures && d.failures.length) {
+          msg += '<details><summary>See failed sends</summary><div class="scrollx" style="margin-top:8px"><table class="matrix"><thead><tr><th>Name</th><th>User ID</th><th>Error</th></tr></thead><tbody>' +
+            d.failures.map(function (f) { return '<tr><td>' + esc(f.name || "") + '</td><td>' + esc(f.user_id) + '</td><td>' + esc(f.error) + '</td></tr>'; }).join("") +
+            '</tbody></table></div></details>';
+        }
+        EL("sendResult").innerHTML = msg;
+        EL("sendBtn").disabled = !d.remaining;
+      }).catch(function () {
+        EL("sendResult").innerHTML = "";
+        banner("The send request failed \u2014 some may have gone out. Preview again before retrying.", true);
+        EL("sendBtn").disabled = false;
+      }).then(function () { busy = false; });
+  }
 
-    var sentTotal = 0, rounds = 0, maxRounds = Math.ceil(total / 500) + 5, lastFailures = [], stampWarn = null;
-    EL("sendResult").innerHTML = progressHtml(0, total, "keep this tab open\u2026");
-
-    function finish(kind, detail) {
-      var remaining = Math.max(0, total - sentTotal), msg;
-      if (kind === "done") {
-        msg = '<div class="good" style="margin-top:12px">Done \u2014 sent <b>' + num(sentTotal) + '</b> email' + (sentTotal === 1 ? "" : "s") + '. Everyone accepted for this session has now been emailed.</div>';
-      } else if (kind === "error") {
-        msg = '<div class="warn" style="margin-top:12px">Sent <b>' + num(sentTotal) + '</b> of ' + num(total) + ', then hit an error: ' + (detail || "") + '. Nobody was emailed twice \u2014 <b>Preview again</b> to send the rest.</div>';
-      } else {
-        msg = '<div class="warn" style="margin-top:12px">Sent <b>' + num(sentTotal) + '</b> of ' + num(total) + '. <b>' + num(remaining) + '</b> couldn\u2019t be sent' + (kind === "stalled" ? " (they failed on retry)" : "") + '. They\u2019re not marked, so <b>Preview again</b> to retry just them.</div>' + (lastFailures.length ? failuresTable(lastFailures) : "");
-      }
-      if (stampWarn) msg += '<div class="warn">Some were sent but couldn\u2019t be marked \u2014 <b>Preview again before sending</b> so they aren\u2019t emailed twice. (' + esc(JSON.stringify(stampWarn)) + ')</div>';
-      EL("sendResult").innerHTML = progressHtml(sentTotal, total, "") + msg;
-      busy = false; EL("sendBtn").disabled = false; EL("testBtn").disabled = false;
-    }
-
-    function step() {
-      rounds++;
-      fetch("/api/assignemail", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session: session(), mode: "send" }) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.error) { finish("error", esc(d.error)); return; }
-          sentTotal += (d.sent || 0);
-          if (d.failures && d.failures.length) lastFailures = d.failures; else if (d.sent) lastFailures = [];
-          if (d.stampWriteFailed) stampWarn = d.stampWriteFailed;
-          EL("sendResult").innerHTML = progressHtml(sentTotal, total, "keep this tab open\u2026");
-          if (d.remaining === 0) { finish("done"); return; }
-          if (!d.sent) { finish("stalled"); return; }             // no progress this round -> stop
-          if (rounds >= maxRounds) { finish("capped"); return; }  // safety cap
-          step();
-        })
-        .catch(function () { finish("error", "the connection dropped"); });
-    }
-    step();
+  // Export ALL accepted recipients (across every session) as a mail-merge CSV for SendGrid.
+  function downloadRecipients() {
+    if (busy) return; busy = true; EL("downloadBtn").disabled = true; clearBanner();
+    banner("Preparing the recipient list\u2026", false);
+    fetch("/api/assignemail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "export" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { banner(esc(d.error), true); return; }
+        var blob = new Blob([d.csv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a"); a.href = url; a.download = d.filename || "acceptance-recipients.csv";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+        var extra = "";
+        if (d.noEmail) extra += " " + num(d.noEmail) + " accepted have no email (not in the file).";
+        if (d.noSession) extra += " " + num(d.noSession) + " couldn\u2019t be matched to a session (blank check-in \u2014 worth a look).";
+        banner("Downloaded <b>" + num(d.count) + "</b> recipients for SendGrid." + extra, false);
+      }).catch(function () { banner("Couldn\u2019t prepare the list \u2014 try again.", true); })
+      .then(function () { busy = false; EL("downloadBtn").disabled = false; });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     load();
     EL("previewBtn").addEventListener("click", preview);
+    EL("downloadBtn").addEventListener("click", downloadRecipients);
   });
 })();

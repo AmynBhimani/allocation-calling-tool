@@ -59,7 +59,11 @@
       <b>&ldquo;Sent No Response Email&rdquo;</b>, which groups them and stops a re-send.
       <b>Preview first</b> &mdash; nothing sends until you send a test and click Send.
     </div>
-    <div class="row"><button class="btn ghost2" id="refreshBtn">Refresh preview</button></div>
+    <div class="row"><button class="btn ghost2" id="refreshBtn">Refresh preview</button>
+      <button class="btn ghost2" id="downloadBtn">Download recipients (SendGrid CSV)</button></div>
+    <div class="small" style="margin-top:10px;padding:8px 10px;background:#eef6f7;border:1px solid #BFE3D6;border-radius:8px">
+      <b>Sending via SendGrid?</b> Click <b>Download recipients</b> to export the unreached list (email + first name) as a CSV for a SendGrid mail-merge.
+    </div>
   </div>
 
   <div id="results"><div class="card"><div class="small">Loading preview\u2026</div></div></div>

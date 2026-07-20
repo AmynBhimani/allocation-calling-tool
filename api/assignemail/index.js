@@ -7,15 +7,18 @@
 //   batch of up to 500: generate/keep each person's decline_token, send, then stamp accepted_notified_at.
 // Super Admin / Admin only (Admin region-walled). Sends via the daily-digest ACS sender.
 const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor, readSessions } = require("../shared/store");
-const { buildJkIndex } = require("../shared/sessions");
+const { buildJkIndex, sessionForJk } = require("../shared/sessions");
 const { sendWithBudget } = require("../shared/dutyemail");
-const { makeEmailClient, sendEmailWithTimeout } = require("../shared/acssend");
-const { selectAcceptedForSession, renderAssignEmail, stampAcceptedSent, checkInFor, orientationFor, newToken } = require("../shared/wrapemail");
+const { selectAcceptedForSession, renderAssignEmail, stampAcceptedSent, checkInFor, orientationFor, newToken, hasEmail } = require("../shared/wrapemail");
+const { isAcceptedVolunteer } = require("../shared/rollup");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const PREVIEW_CAP = 500, BATCH_MAX = 500, SEND_BUDGET_MS = 35000, SEND_CONCURRENCY = 8;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REPLY_TO = "volunteer.experience@iicanada.net";
+const clean = (s) => String(s == null ? "" : s).trim();
+const csvCell = (v) => { v = String(v == null ? "" : v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const toCsv = (headers, rows) => "\ufeff" + [headers.map(csvCell).join(","), ...rows.map(r => r.map(csvCell).join(","))].join("\r\n");
 
 function getPrincipal(req) {
   const h = req.headers["x-ms-client-principal"];
@@ -47,6 +50,43 @@ module.exports = async function (context, req) {
     const isPost = String(req.method || "").toUpperCase() === "POST";
     const sessions = await readSessions(null);
     const jkIndex = buildJkIndex(sessions);
+
+    // Session-independent CSV export of ALL accepted recipients, for external mail-merge (e.g. SendGrid).
+    // Data-only: does not need ACS. Fills every merge field and a working per-person decline link.
+    if (isPost && String((req.body && req.body.mode) || "").trim() === "export") {
+      let xRegions = REGIONS.slice();
+      if (!isSuper) { const allowed = allowedRegionsFor(await readRolesStore(), email) || []; xRegions = xRegions.filter(r => allowed.includes(r)); }
+      const xContainer = await getContainer(DATA_CONTAINER);
+      const xBase = baseUrl(req);
+      if (!xBase) { context.res = { status: 500, body: { error: "Couldn't determine the site URL for the decline links. Set a PUBLIC_BASE_URL app setting and retry." } }; return; }
+      const rows = [], newTokens = {}; let noEmail = 0, noSession = 0;
+      for (const region of xRegions) {
+        const { records } = await readRegion(xContainer, region);
+        const seen = new Set();
+        for (const v of records) {
+          if (!isAcceptedVolunteer(v)) continue;
+          const uid = String(v.user_id);
+          if (seen.has(uid)) continue; seen.add(uid);
+          if (!hasEmail(v)) { noEmail++; continue; }
+          const sid = sessionForJk(jkIndex, v.ceremony_jk);
+          const sess = sid ? sessions.find(x => String(x.id) === String(sid)) : null;
+          if (!sess) noSession++;
+          const token = clean(v.decline_token) || newToken();
+          if (!clean(v.decline_token)) (newTokens[region] = newTokens[region] || new Map()).set(uid, token);
+          rows.push([clean(v.email), (clean(v.first) || "Volunteer"), clean(v.last),
+            clean(v.final_area), (sess ? sess.name : ""), (sess ? checkInFor(sess.name) : ""),
+            orientationFor(v.region), declineUrlFor(xBase, v.region, v.user_id, token)]);
+        }
+      }
+      // persist any newly-generated decline tokens so the links validate when clicked
+      for (const region of Object.keys(newTokens)) {
+        const m = newTokens[region];
+        await mergeRegion(xContainer, region, (records) => { for (const v of records) { const t = m.get(String(v.user_id)); if (t && !clean(v.decline_token)) v.decline_token = t; } return records; });
+      }
+      const csv = toCsv(["email", "first_name", "last_name", "area", "session", "check_in", "orientation", "decline_link"], rows);
+      context.res = { body: { ok: true, csv, filename: "acceptance-recipients.csv", count: rows.length, noEmail, noSession } };
+      return;
+    }
 
     const want = String(((isPost ? (req.body && req.body.session) : (req.query && req.query.session)) || "")).trim();
     if (!want) {
@@ -89,8 +129,8 @@ module.exports = async function (context, req) {
       let EmailClient;
       try { ({ EmailClient } = require("@azure/communication-email")); }
       catch { context.res = { status: 500, body: { error: "@azure/communication-email is not installed in the API." } }; return; }
-      const client = makeEmailClient(EmailClient, conn);
-      const sendMail = (to, msg) => sendEmailWithTimeout(client, {
+      const client = new EmailClient(conn);
+      const sendMail = (to, msg) => client.beginSend({
         senderAddress: from, content: { subject: msg.subject, plainText: msg.text, html: msg.html },
         recipients: { to: [{ address: to }] }, replyTo: [{ address: REPLY_TO }],
       });
@@ -98,11 +138,10 @@ module.exports = async function (context, req) {
       if (mode === "test") {
         const to = String((req.body && req.body.testTo) || "").trim();
         if (!EMAIL_RE.test(to)) { context.res = { status: 400, body: { error: "Enter a valid test email address." } }; return; }
-        // No population scan for a test — render a sample (session check-in + placeholder area/decline)
-        // and send one. The preview pane already shows a real recipient.
-        const msg = sampleFor(null);
+        const { eligible } = await gather();
+        const msg = sampleFor(eligible[0] || null);
         await sendMail(to, msg);
-        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject } };
+        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject, usedRealRecipient: !!eligible[0] } };
         return;
       }
 

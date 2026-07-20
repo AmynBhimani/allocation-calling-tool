@@ -488,6 +488,13 @@
       ]
     },
     {
+      "route": "/duty-email.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/duty-rosters.html",
       "allowedRoles": [
         "superadmin",

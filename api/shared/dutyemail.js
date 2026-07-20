@@ -64,21 +64,63 @@ function enrichOne(v, sid, lookups) {
 }
 
 // Split a session's members into who WOULD get an email now, who is on the lineup but has no address
-// (so they can be phoned), and how many were already emailed for this row.
+// (so they can be phoned), and how many were already emailed for this row. Deduped by user_id: a
+// volunteer who exists as more than one record (an app copy plus a re-imported BI copy share an id)
+// is offered ONCE, so a duplicate can never turn into two emails to the same person.
 //   eligible = on a lineup (submitted/entered) AND not yet notified AND has an email
 function selectForSession(records, sid, lookups) {
   const eligible = [], noEmail = [];
   let alreadySent = 0, onLineup = 0;
+  const seen = new Set();   // user_ids already decided this pass
   for (const v of (records || [])) {
     const row = sessionRow(v, sid);
     if (!row || !ON_LINEUP.has(clean(row.state))) continue;
     onLineup++;
     if (row.notified_at) { alreadySent++; continue; }
+    const uid = String(v.user_id);
+    if (seen.has(uid)) continue;   // same person via a duplicate record — already handled
     const e = enrichOne(v, sid, lookups);
     if (!e) continue;
+    seen.add(uid);
     if (hasEmail(v)) eligible.push(e); else noEmail.push(e);
   }
   return { eligible, noEmail, alreadySent, onLineup };
+}
+
+// ---- Sending ------------------------------------------------------------------------------------
+// Send to `recipients` with bounded concurrency and a wall-clock budget so a large batch can never hit
+// the function timeout. sendOne(r) resolves when the message is accepted (success) or rejects (failure,
+// left un-stamped so a re-run retries just it). Returns { sent:[user_id...], failed:[{user_id,name,error}],
+// stopped } where stopped=true means the budget was reached before finishing — the caller reports how
+// many remain and the operator clicks Send again. Single-threaded JS makes the shared cursor/arrays safe.
+async function sendWithBudget(recipients, sendOne, opts = {}) {
+  const concurrency = Math.max(1, opts.concurrency || 8);
+  const budgetMs = opts.budgetMs || 35000;
+  const now = opts.now || (() => Date.now());
+  const start = now();
+  const sent = [], failed = [];
+  let idx = 0, stopped = false;
+  async function worker() {
+    while (idx < recipients.length) {
+      if (now() - start >= budgetMs) { stopped = true; return; }
+      const r = recipients[idx++];
+      try { await sendOne(r); sent.push(String(r.user_id)); }
+      catch (e) { failed.push({ user_id: String(r.user_id), name: r.name, error: String((e && e.message) || e) }); }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, recipients.length) }, worker));
+  return { sent, failed, stopped };
+}
+
+// mergeRegion pass: stamp notified_at on the session row (for `sid`) of every record whose user_id was
+// sent. Stamps ALL copies of a duplicated person so no copy is re-emailed. Mutates in place; returns records.
+function stampNotified(records, sentSet, sid, nowIso) {
+  for (const v of (records || [])) {
+    if (!sentSet.has(String(v.user_id))) continue;
+    for (const row of (Array.isArray(v.event_assignments) ? v.event_assignments : []))
+      if (row && row.basis === "session" && String(row.event) === String(sid)) row.notified_at = nowIso;
+  }
+  return records;
 }
 
 // ---- The email ------------------------------------------------------------------------------------
@@ -149,5 +191,6 @@ function renderDutyEmail(r, opts = {}) {
 
 module.exports = {
   buildLookups, enrichOne, selectForSession, renderDutyEmail, hasEmail,
+  sendWithBudget, stampNotified,
   ON_LINEUP, SENDER_NAME, EVENT_LABEL, REPLY_TO, LOUNGE, SUBJECT,
 };

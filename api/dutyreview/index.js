@@ -247,6 +247,7 @@ module.exports = async function (context, req) {
         if (LOCKED_STATES.includes(clean(row.state))) return { locked: true };   // entered — cannot toggle
         if (on && !clean(row.duty)) return { noDuty: true };                      // nothing to commit yet
         row.state = on ? STATE_SUBMITTED : STATE_ALLOCATED;
+        if (!on) delete row.notified_at;   // off the lineup -> clear the email stamp so a re-add is emailable again
         v.activity_log = v.activity_log || [];
         v.activity_log.push({ ts: new Date().toISOString(), actor: email,
           action: on ? "duty_submit" : "duty_unsubmit", session: sid, area, duty: clean(row.duty) });

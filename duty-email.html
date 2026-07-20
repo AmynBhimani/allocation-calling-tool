@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duty emails &middot; Admin</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap{max-width:1000px;margin:0 auto;padding:20px 24px 60px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:22px}
+  .card h2{font-family:Cambria,Georgia,serif;font-size:18px;color:var(--ink);margin:0 0 14px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  .field select,.field input{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--paper);min-width:260px}
+  .btn{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:10px 18px;cursor:pointer}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.5;cursor:default}
+  .btn.commit{background:var(--accent)} .btn.commit:hover{filter:brightness(.94)}
+  .btn.ghost2{background:transparent;color:var(--teal);border:1px solid var(--line)} .btn.ghost2:hover{background:#F6F7F8}
+  .small{font-size:12.5px;color:var(--mute)}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:120px}
+  .kpi .n{font-family:Cambria,Georgia,serif;font-size:22px;color:var(--ink)}
+  .kpi .l{font-size:11.5px;color:var(--mute);margin-top:2px}
+  .kpi.flag{border-color:#EAD2CE;background:#FBEFEC}
+  .kpi.go{border-color:#BFE3D6;background:#E9F6F1}
+  table.matrix{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table.matrix th,table.matrix td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+  table.matrix th{background:#F6F7F8;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--mute)}
+  table.matrix tr:last-child td{border-bottom:none}
+  .warn{background:#FBEFEC;border:1px solid #EAD2CE;border-radius:10px;padding:11px 13px;font-size:13px;color:#7d4a41;margin:12px 0}
+  .good{background:#E9F6F1;border:1px solid #BFE3D6;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E6C57;margin:12px 0}
+  details{margin:10px 0} summary{cursor:pointer;font-size:13px;color:var(--teal)}
+  .scrollx{overflow-x:auto;max-height:340px;overflow-y:auto;border-radius:10px}
+  .previewframe{width:100%;height:520px;border:1px solid var(--line);border-radius:10px;background:#e9edf2}
+  .sep{height:1px;background:var(--line);margin:16px 0}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Duty emails</h1>
+  <span class="sub">Confirmation emails</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Send duty confirmations</h2>
+    <div class="row">
+      <div class="field"><label>Session</label><select id="session"></select></div>
+      <button class="btn" id="previewBtn" disabled>Preview</button>
+    </div>
+    <div class="small" style="margin-top:10px">
+      Pick a session and <b>Preview</b> to see who would be emailed right now &mdash; everyone on the iVol
+      lineup for that session who has an email and hasn&rsquo;t been emailed yet. Nothing goes out until you
+      send a <b>test</b> to yourself and then click <b>Send</b>. Anyone taken off the lineup and added back
+      becomes emailable again, and no one is ever emailed twice.
+    </div>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script src="nav.js"></script>
+<script src="duty-email.js"></script>
+</body>
+</html>

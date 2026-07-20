@@ -16,6 +16,7 @@
 // pick the least-loaded so far (ties break by target order). Deterministic (stable sort + fixed
 // tie-break) so the dry-run and the commit produce the identical plan.
 const { AS_OF, ageOfOn } = require("./eventage");
+const { isAcceptedVolunteer } = require("./rollup");
 
 const clean = (s) => String(s == null ? "" : s).trim();
 const norm = (s) => clean(s).toLowerCase();
@@ -86,4 +87,57 @@ function applyReassign(v, to, from, actor, nowIso) {
     note: from + " dissolved; reassigned by interest, balance, and age gate." });
 }
 
-module.exports = { planReassign, applyReassign, ageEligible, DEFAULT_FROM, DEFAULT_TARGETS, TARGET_GATES, OVERFLOW_AREA };
+// ---- Reverse (restore) ----------------------------------------------------------------------------
+// The reassignment above changed ONLY final_area and the matching row areas, and stamped an
+// "area_reassigned" activity entry naming the area it moved the person out of. That entry is the exact,
+// reliable record of who was moved. Restoring = point final_area and those rows back to the original
+// area. Because nothing else was touched (accepted status, duty, state, confirmation all preserved),
+// this returns each person to their exact pre-reassignment state — including anyone who had already
+// accepted a Medical duty.
+function wasReassignedFrom(v, from) {
+  return Array.isArray(v && v.activity_log) &&
+    v.activity_log.some(l => l && l.action === "area_reassigned" && norm(l.from) === norm(from));
+}
+
+function dutyOnLineup(v) {
+  for (const row of (Array.isArray(v && v.event_assignments) ? v.event_assignments : [])) {
+    if (row && clean(row.duty)) return clean(row.duty);
+  }
+  return "";
+}
+
+// records = ONE region's records. from defaults to Medical Services. Returns the plan of who to restore.
+function planRestore(records, opts = {}) {
+  const from = opts.from || DEFAULT_FROM;
+  const plan = [];
+  const byArea = {};
+  let accepted = 0;
+  for (const v of (records || [])) {
+    if (!wasReassignedFrom(v, from)) continue;
+    if (norm(v.final_area) === norm(from)) continue;   // already back in the original area — idempotent
+    const cur = clean(v.final_area);
+    byArea[cur] = (byArea[cur] || 0) + 1;
+    const wasAccepted = isAcceptedVolunteer(v);
+    if (wasAccepted) accepted++;
+    plan.push({ user_id: v.user_id, region: v.region,
+      name: (clean((v.first || "") + " " + (v.last || "")) || ("#" + v.user_id)),
+      currentArea: cur, accepted: wasAccepted, duty: dutyOnLineup(v) });
+  }
+  return { from, count: plan.length, accepted, byArea, plan };
+}
+
+// Reverse one person: rows currently in their (reassigned-to) area go back to `from`; final_area goes
+// back to `from`; the reassignment's referred_from marker is cleared; a revert entry is logged.
+function applyRestore(v, from, actor, nowIso) {
+  const currentArea = v.final_area;
+  for (const row of (Array.isArray(v.event_assignments) ? v.event_assignments : [])) {
+    if (row && norm(row.area) === norm(currentArea)) row.area = from;
+  }
+  v.final_area = from;
+  if (norm(v.referred_from) === norm(from)) v.referred_from = null;
+  v.activity_log = v.activity_log || [];
+  v.activity_log.push({ ts: nowIso, actor, action: "area_reassign_reverted", from: currentArea, to: from,
+    note: "Restored to " + from + " (reassignment reverted)." });
+}
+
+module.exports = { planReassign, applyReassign, ageEligible, wasReassignedFrom, planRestore, applyRestore, DEFAULT_FROM, DEFAULT_TARGETS, TARGET_GATES, OVERFLOW_AREA };

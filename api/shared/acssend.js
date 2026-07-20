@@ -1,17 +1,13 @@
-// ACS send wrapper. Two problems it solves, both about VISIBILITY of failures:
-//  1. The ACS SDK retries a bad key / unreachable endpoint several times with backoff, which can blow
-//     past the request timeout — the function then returns a blank non-JSON 500 and the UI can only say
-//     "couldn't send". We cut retries down so a real error (401, bad sender, domain not linked) comes
-//     back fast and legibly.
-//  2. As a hard backstop, we race the send against a timeout, so even a true network hang becomes a
-//     clear, actionable error string instead of a mystery timeout.
-const DEFAULT_TIMEOUT_MS = 15000;
+// ACS send wrapper. The earlier version cut retries to near-zero to make a network HANG visible while we
+// diagnosed a wrong-resource connection string. That's resolved — the failure now is ACS rate-limiting,
+// which the SDK is designed to ride through with its normal retry/backoff. So we go back to the default
+// retry policy and keep only a generous timeout as a last-resort backstop against a true hang (well under
+// the platform request limit), which won't interfere with normal throttle retries.
+const DEFAULT_TIMEOUT_MS = 60000;
 
 function makeEmailClient(EmailClient, conn) {
-  // Fail fast: one quick retry at most, so the underlying ACS error surfaces instead of being buried
-  // under the SDK's default backoff. Unknown options are ignored by the SDK, which is harmless.
-  try { return new EmailClient(conn, { retryOptions: { maxRetries: 1, maxRetryDelayInMs: 2000 } }); }
-  catch { return new EmailClient(conn); }
+  // Default retry policy: retries transient failures and 429 throttling with backoff, honoring Retry-After.
+  return new EmailClient(conn);
 }
 
 function sendEmailWithTimeout(client, message, ms) {
@@ -19,9 +15,8 @@ function sendEmailWithTimeout(client, message, ms) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(
-      "The email service (ACS) didn't respond within " + Math.round(budget / 1000) + "s. This usually means " +
-      "ACS_EMAIL_CONNECTION_STRING is missing/wrong or points to a different resource, or DASHBOARD_EMAIL_FROM's " +
-      "sender domain isn't connected to that ACS resource. Check both in the Static Web App's environment variables."
+      "The email service (ACS) didn't respond within " + Math.round(budget / 1000) + "s. It may be rate-limiting " +
+      "or temporarily unavailable — wait a minute and try again. If it persists, the resource's sending limit may need raising."
     )), budget);
   });
   const send = Promise.resolve().then(() => client.beginSend(message));

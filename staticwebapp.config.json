@@ -493,6 +493,20 @@
       ]
     },
     {
+      "route": "/api/assignemail",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/api/noresponseemail",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/api/migrateduties",
       "allowedRoles": [
         "superadmin"
@@ -529,6 +543,20 @@
     },
     {
       "route": "/reassign-medical.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/assign-email.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/no-response-email.html",
       "allowedRoles": [
         "superadmin",
         "admin"

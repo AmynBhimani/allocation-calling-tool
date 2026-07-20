@@ -11,6 +11,7 @@
       {href:'/all-volunteers.html', label:'All Volunteers',   roles:['superadmin','admin','leadership']},
       {href:'/accepted.html',       label:'Accepted',         roles:['superadmin','admin','dutyteam','quarterback','leadership']},
       {href:'/massaccept.html',     label:'Mass accept',      roles:['superadmin','admin']},
+      {href:'/reassign-medical.html',label:'Reassign Medical', roles:['superadmin','admin']},
       {href:'/caller-activity.html',label:'Caller Activity',  roles:['superadmin','admin','dutyteam','quarterback','leadership']},
     ]},
     { label:'Calling', items:[

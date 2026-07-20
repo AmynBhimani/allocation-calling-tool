@@ -467,6 +467,13 @@
       ]
     },
     {
+      "route": "/api/massaccept",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/api/migrateduties",
       "allowedRoles": [
         "superadmin"
@@ -489,6 +496,13 @@
     },
     {
       "route": "/duty-email.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/massaccept.html",
       "allowedRoles": [
         "superadmin",
         "admin"

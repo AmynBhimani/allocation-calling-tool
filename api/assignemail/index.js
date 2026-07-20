@@ -67,6 +67,7 @@ module.exports = async function (context, req) {
           if (!isAcceptedVolunteer(v)) continue;
           const uid = String(v.user_id);
           if (seen.has(uid)) continue; seen.add(uid);
+          if (v.accepted_notified_at) continue;   // already marked sent — excluded so re-export gives only the rest
           if (!hasEmail(v)) { noEmail++; continue; }
           const sid = sessionForJk(jkIndex, v.ceremony_jk);
           const sess = sid ? sessions.find(x => String(x.id) === String(sid)) : null;
@@ -85,6 +86,34 @@ module.exports = async function (context, req) {
       }
       const csv = toCsv(["email", "first_name", "last_name", "area", "session", "check_in", "orientation", "decline_link"], rows);
       context.res = { body: { ok: true, csv, filename: "acceptance-recipients.csv", count: rows.length, noEmail, noSession } };
+      return;
+    }
+
+    // Mark all accepted (unmarked, with email) as sent after an external send. No ACS, session-independent.
+    // Retry-safe: re-computes eligibility inside the merge closure and captures the count from the last run.
+    if (isPost && String((req.body && req.body.mode) || "").trim() === "marksent") {
+      let mRegions = REGIONS.slice();
+      if (!isSuper) { const allowed = allowedRegionsFor(await readRolesStore(), email) || []; mRegions = mRegions.filter(r => allowed.includes(r)); }
+      const mContainer = await getContainer(DATA_CONTAINER);
+      const nowIso = new Date().toISOString();
+      let marked = 0;
+      for (const region of mRegions) {
+        let n = 0;
+        await mergeRegion(mContainer, region, (records) => {
+          const seen = new Set(); let localN = 0;
+          for (const v of records) {
+            if (!isAcceptedVolunteer(v)) continue;
+            const uid = String(v.user_id);
+            if (seen.has(uid)) continue; seen.add(uid);
+            if (v.accepted_notified_at || !hasEmail(v)) continue;
+            v.accepted_notified_at = nowIso; localN++;
+          }
+          n = localN;
+          return records;
+        });
+        marked += n;
+      }
+      context.res = { body: { ok: true, marked } };
       return;
     }
 

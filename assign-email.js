@@ -141,14 +141,30 @@
         var extra = "";
         if (d.noEmail) extra += " " + num(d.noEmail) + " accepted have no email (not in the file).";
         if (d.noSession) extra += " " + num(d.noSession) + " couldn\u2019t be matched to a session (blank check-in \u2014 worth a look).";
-        banner("Downloaded <b>" + num(d.count) + "</b> recipients for SendGrid." + extra, false);
+        EL("markBtn").disabled = !d.count;
+        banner("Downloaded <b>" + num(d.count) + "</b> recipients for SendGrid." + extra + " After sending in SendGrid, click <b>Mark as sent</b>.", false);
       }).catch(function () { banner("Couldn\u2019t prepare the list \u2014 try again.", true); })
       .then(function () { busy = false; EL("downloadBtn").disabled = false; });
+  }
+
+  // After an external SendGrid send, stamp all sent-eligible accepted people so they drop out of future exports.
+  function markSent() {
+    if (busy) return;
+    if (!window.confirm("Mark all accepted volunteers (across all sessions) as sent?\n\nOnly do this AFTER you\u2019ve sent them through SendGrid. They\u2019ll be excluded from future exports.")) return;
+    busy = true; EL("markBtn").disabled = true; clearBanner();
+    fetch("/api/assignemail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "marksent" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { banner(esc(d.error), true); EL("markBtn").disabled = false; return; }
+        banner("Marked <b>" + num(d.marked) + "</b> as sent. They won\u2019t appear in future exports.", false);
+      }).catch(function () { banner("Couldn\u2019t mark as sent \u2014 try again.", true); EL("markBtn").disabled = false; })
+      .then(function () { busy = false; });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     load();
     EL("previewBtn").addEventListener("click", preview);
     EL("downloadBtn").addEventListener("click", downloadRecipients);
+    EL("markBtn").addEventListener("click", markSent);
   });
 })();

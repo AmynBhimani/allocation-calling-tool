@@ -113,14 +113,30 @@
         var a = document.createElement("a"); a.href = url; a.download = d.filename || "no-response-recipients.csv";
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
-        banner("Downloaded <b>" + num(d.count) + "</b> recipients for SendGrid.", false);
+        EL("markBtn").disabled = !d.count;
+        banner("Downloaded <b>" + num(d.count) + "</b> recipients for SendGrid. After sending in SendGrid, click <b>Mark as sent</b>.", false);
       }).catch(function () { banner("Couldn\u2019t prepare the list \u2014 try again.", true); })
       .then(function () { busy = false; EL("downloadBtn").disabled = false; });
+  }
+
+  // After an external SendGrid send, stamp all sent-eligible unreached people so they drop out of future exports.
+  function markSent() {
+    if (busy) return;
+    if (!window.confirm("Mark all unreached volunteers as sent?\n\nOnly do this AFTER you\u2019ve sent them through SendGrid. They\u2019ll be excluded from future exports.")) return;
+    busy = true; EL("markBtn").disabled = true; clearBanner();
+    fetch("/api/noresponseemail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "marksent" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { banner(esc(d.error), true); EL("markBtn").disabled = false; return; }
+        banner("Marked <b>" + num(d.marked) + "</b> as sent. They won\u2019t appear in future exports.", false);
+      }).catch(function () { banner("Couldn\u2019t mark as sent \u2014 try again.", true); EL("markBtn").disabled = false; })
+      .then(function () { busy = false; });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     load();
     EL("refreshBtn").addEventListener("click", load);
     EL("downloadBtn").addEventListener("click", downloadRecipients);
+    EL("markBtn").addEventListener("click", markSent);
   });
 })();

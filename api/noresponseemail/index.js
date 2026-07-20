@@ -60,6 +60,26 @@ module.exports = async function (context, req) {
       return;
     }
 
+    // Mark all unreached (unmarked, with email) as sent after an external send. No ACS.
+    // Retry-safe: re-computes eligibility inside the merge closure and captures the count from the last run.
+    if (isPost && String((req.body && req.body.mode) || "").trim() === "marksent") {
+      const nowIso = new Date().toISOString();
+      let marked = 0;
+      for (const region of regions) {
+        let n = 0;
+        await mergeRegion(container, region, (records) => {
+          const { eligible } = selectUnreached(records);
+          const uids = new Set(eligible.map(e => String(e.user_id)));
+          stampNoResponseSent(records, uids, nowIso);
+          n = uids.size;
+          return records;
+        });
+        marked += n;
+      }
+      context.res = { body: { ok: true, marked } };
+      return;
+    }
+
     // ---- POST: test / send ----
     if (isPost) {
       const mode = String((req.body && req.body.mode) || "").trim();

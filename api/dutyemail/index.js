@@ -45,6 +45,10 @@ const emailOf = (p) => {
   return e ? String(e).toLowerCase() : null;
 };
 
+const _clean = (s) => String(s == null ? "" : s).trim();
+const _csvCell = (v) => { v = String(v == null ? "" : v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const _toCsv = (headers, rows) => "\ufeff" + [headers.map(_csvCell).join(","), ...rows.map(r => r.map(_csvCell).join(","))].join("\r\n");
+
 module.exports = async function (context, req) {
   try {
     const p = getPrincipal(req);
@@ -91,9 +95,40 @@ module.exports = async function (context, req) {
       return { eligible, noEmail, counts };
     };
 
-    // ---- POST: test / send ----
+    // ---- POST: export / marksent / test / send ----
     if (isPost) {
       const mode = String((req.body && req.body.mode) || "").trim();
+
+      // CSV export of this session's duty recipients for external mail-merge (e.g. SendGrid). No ACS.
+      if (mode === "export") {
+        const { eligible } = await gather();
+        const rows = eligible.map(e => [_clean(e.email), (_clean(e.name) || "Volunteer"), _clean(e.sessionName),
+          _clean(e.area), _clean(e.dutyName), _clean(e.description), _clean(e.checkIn)]);
+        const csv = _toCsv(["email", "first_name", "session", "area", "duty", "duty_description", "check_in"], rows);
+        context.res = { body: { ok: true, csv, filename: "duty-recipients-" + want + ".csv", count: rows.length, session: { id: String(session.id), name: session.name } } };
+        return;
+      }
+
+      // Mark this session's eligible recipients as sent (stamp notified_at) after an external send. No ACS.
+      // Retry-safe: re-gathers eligible inside the merge closure and captures the count from the last run.
+      if (mode === "marksent") {
+        const nowIso = new Date().toISOString();
+        let marked = 0;
+        for (const region of regions) {
+          let n = 0;
+          await mergeRegion(container, region, (records) => {
+            const { eligible } = selectForSession(records, want, lookups);
+            const uids = new Set(eligible.map(e => String(e.user_id)));
+            stampNotified(records, uids, want, nowIso);
+            n = uids.size;
+            return records;
+          });
+          marked += n;
+        }
+        context.res = { body: { ok: true, marked, session: { id: String(session.id), name: session.name } } };
+        return;
+      }
+
       const conn = process.env.ACS_EMAIL_CONNECTION_STRING, from = process.env.DASHBOARD_EMAIL_FROM;
       if (!conn || !from) { context.res = { status: 500, body: { error: "Email not configured (need ACS_EMAIL_CONNECTION_STRING and DASHBOARD_EMAIL_FROM)." } }; return; }
       let EmailClient;

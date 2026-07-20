@@ -20,6 +20,7 @@
         ? SESSIONS.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>"; }).join("")
         : '<option value="">(no sessions)</option>';
       EL("previewBtn").disabled = !SESSIONS.length;
+      EL("downloadBtn").disabled = !SESSIONS.length;
     }).catch(function () { banner("Couldn\u2019t load sessions.", true); });
   }
 
@@ -125,8 +126,47 @@
       }).then(function () { busy = false; });
   }
 
+  // Export this session's duty recipients as a mail-merge CSV for SendGrid, then mark them sent.
+  var exportedSession = null;
+  function downloadRecipients() {
+    if (!session()) return;
+    if (busy) return; busy = true; EL("downloadBtn").disabled = true; clearBanner();
+    banner("Preparing the recipient list\u2026", false);
+    fetch("/api/dutyemail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: session(), mode: "export" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { banner(esc(d.error), true); return; }
+        var blob = new Blob([d.csv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a"); a.href = url; a.download = d.filename || "duty-recipients.csv";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+        exportedSession = session();
+        EL("markBtn").disabled = !d.count;
+        banner("Downloaded <b>" + num(d.count) + "</b> duty recipients for " + esc(d.session ? d.session.name : sessionName()) + ". After you\u2019ve sent them in SendGrid, click <b>Mark this batch as sent</b>.", false);
+      }).catch(function () { banner("Couldn\u2019t prepare the list \u2014 try again.", true); })
+      .then(function () { busy = false; EL("downloadBtn").disabled = false; });
+  }
+  function markSent() {
+    if (!exportedSession) return;
+    var sn = (SESSIONS.filter(function (x) { return x.id === exportedSession; })[0] || {}).name || exportedSession;
+    if (!window.confirm("Mark this session\u2019s duty recipients (" + sn + ") as sent?\n\nOnly do this AFTER you\u2019ve sent them through SendGrid. They\u2019ll be excluded from future exports and the duty-email list.")) return;
+    if (busy) return; busy = true; EL("markBtn").disabled = true; clearBanner();
+    fetch("/api/dutyemail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: exportedSession, mode: "marksent" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { banner(esc(d.error), true); EL("markBtn").disabled = false; return; }
+        exportedSession = null;
+        banner("Marked <b>" + num(d.marked) + "</b> as sent. They won\u2019t appear in future exports.", false);
+        if (session()) preview();
+      }).catch(function () { banner("Couldn\u2019t mark as sent \u2014 try again.", true); EL("markBtn").disabled = false; })
+      .then(function () { busy = false; });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     load();
     EL("previewBtn").addEventListener("click", preview);
+    EL("downloadBtn").addEventListener("click", downloadRecipients);
+    EL("markBtn").addEventListener("click", markSent);
   });
 })();

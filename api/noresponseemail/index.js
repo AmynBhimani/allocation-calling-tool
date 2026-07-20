@@ -7,6 +7,7 @@
 // Super Admin / Admin only (Admin region-walled). Sends via the daily-digest ACS sender.
 const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 const { sendWithBudget } = require("../shared/dutyemail");
+const { makeEmailClient, sendEmailWithTimeout } = require("../shared/acssend");
 const { selectUnreached, renderNoResponseEmail, stampNoResponseSent } = require("../shared/wrapemail");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -56,8 +57,8 @@ module.exports = async function (context, req) {
       let EmailClient;
       try { ({ EmailClient } = require("@azure/communication-email")); }
       catch { context.res = { status: 500, body: { error: "@azure/communication-email is not installed in the API." } }; return; }
-      const client = new EmailClient(conn);
-      const sendMail = (to, msg) => client.beginSend({
+      const client = makeEmailClient(EmailClient, conn);
+      const sendMail = (to, msg) => sendEmailWithTimeout(client, {
         senderAddress: from, content: { subject: msg.subject, plainText: msg.text, html: msg.html },
         recipients: { to: [{ address: to }] }, replyTo: [{ address: REPLY_TO }],
       });

@@ -8,7 +8,7 @@
 // Super Admin / Admin only; Admin is region-walled. Balancing is per region because areas are staffed
 // within a region's Didar.
 const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
-const { planReassign, applyReassign, DEFAULT_FROM, DEFAULT_TARGETS } = require("../shared/reassign");
+const { planReassign, applyReassign, DEFAULT_FROM, DEFAULT_TARGETS, OVERFLOW_AREA } = require("../shared/reassign");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const SAMPLE_PER_REGION = 20;
@@ -28,7 +28,8 @@ module.exports = async function (context, req) {
     if (!email || !(isSuper || roles.includes("admin"))) { context.res = { status: 403, body: { error: "Super Admin or Admin only." } }; return; }
     if (!process.env.RESPONSES_STORAGE) { context.res = { status: 500, body: { error: "Storage not configured." } }; return; }
 
-    const from = DEFAULT_FROM, targets = DEFAULT_TARGETS;
+    const from = DEFAULT_FROM;
+    const areas = [...DEFAULT_TARGETS, OVERFLOW_AREA];   // the four landing areas (3 targets + overflow)
     const allowed = isSuper ? null : allowedRegionsFor(await readRolesStore(), email);
     const inScope = (region) => isSuper || (allowed && allowed.includes(region));
     const scopeRegions = REGIONS.filter(inScope);
@@ -36,40 +37,43 @@ module.exports = async function (context, req) {
 
     // ---- GET: dry run ----
     if (String(req.method || "").toUpperCase() !== "POST") {
-      const counts = {}; targets.forEach(t => { counts[t] = 0; });
-      const byReason = { interest: 0, balanced: 0 };
+      const counts = {}; areas.forEach(a => { counts[a] = 0; });
+      const byReason = { interest: 0, balanced: 0, overflow: 0 };
       const byRegion = {}; let total = 0; const sample = [];
       for (const region of scopeRegions) {
         const { records } = await readRegion(container, region);
-        const p = planReassign(records, { from, targets });
+        const p = planReassign(records);
         byRegion[region] = { total: p.count, counts: p.counts };
         total += p.count;
-        targets.forEach(t => { counts[t] += p.counts[t]; });
-        byReason.interest += p.byReason.interest; byReason.balanced += p.byReason.balanced;
+        for (const k of Object.keys(p.counts)) counts[k] = (counts[k] || 0) + p.counts[k];
+        for (const k of Object.keys(p.byReason)) byReason[k] = (byReason[k] || 0) + p.byReason[k];
         for (const row of p.plan.slice(0, SAMPLE_PER_REGION)) sample.push(row);
       }
-      context.res = { body: { mode: "dry-run", from, targets, total, counts, byReason, byRegion, sample } };
+      context.res = { body: { mode: "dry-run", from, areas, overflow: OVERFLOW_AREA, total, counts, byReason, byRegion, sample } };
       return;
     }
 
     // ---- POST: commit ----
+    // Counting is retry-safe: mergeRegion re-runs the closure on a write conflict, so the plan's own
+    // count is captured INSIDE the closure and overwritten each run — the last (successful) run wins.
     const nowIso = new Date().toISOString();
-    const counts = {}; targets.forEach(t => { counts[t] = 0; });
+    const counts = {}; areas.forEach(a => { counts[a] = 0; });
     const byRegion = {}; let movedCount = 0;
     for (const region of scopeRegions) {
-      let n = 0; const rCounts = {}; targets.forEach(t => { rCounts[t] = 0; });
+      let regionCount = 0, regionCounts = {};
       await mergeRegion(container, region, (records) => {
-        const p = planReassign(records, { from, targets });
+        const p = planReassign(records);
         const byId = new Map(p.plan.map(x => [String(x.user_id), x.to]));
         for (const v of records) {
           const to = byId.get(String(v.user_id));
-          if (to) { applyReassign(v, to, from, email, nowIso); n++; rCounts[to]++; }
+          if (to) applyReassign(v, to, from, email, nowIso);
         }
+        regionCount = p.count; regionCounts = p.counts;
         return records;
       });
-      byRegion[region] = { total: n, counts: rCounts };
-      targets.forEach(t => { counts[t] += rCounts[t]; });
-      movedCount += n;
+      byRegion[region] = { total: regionCount, counts: regionCounts };
+      for (const k of Object.keys(regionCounts)) counts[k] = (counts[k] || 0) + regionCounts[k];
+      movedCount += regionCount;
     }
     context.res = { body: { ok: true, mode: "commit", from, movedCount, counts, byRegion } };
   } catch (err) {

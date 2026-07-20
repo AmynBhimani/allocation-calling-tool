@@ -8,20 +8,25 @@
   function clearBanner() { EL("banner").hidden = true; }
   function num(n) { return (n || 0).toLocaleString(); }
 
-  function regionTable(byRegion, targets) {
+  function regionTable(byRegion, areas) {
     var regions = Object.keys(byRegion || {});
     if (!regions.length) return "";
-    var head = '<tr><th>Region</th>' + targets.map(function (t) { return '<th class="n">' + esc(t) + '</th>'; }).join("") + '<th class="n">Total</th></tr>';
+    var head = '<tr><th>Region</th>' + areas.map(function (t) { return '<th class="n">' + esc(t) + '</th>'; }).join("") + '<th class="n">Total</th></tr>';
     var body = regions.map(function (r) {
       var c = byRegion[r].counts || {};
-      return '<tr><td>' + esc(r) + '</td>' + targets.map(function (t) { return '<td class="n">' + num(c[t]) + '</td>'; }).join("") + '<td class="n">' + num(byRegion[r].total) + '</td></tr>';
+      return '<tr><td>' + esc(r) + '</td>' + areas.map(function (t) { return '<td class="n">' + num(c[t]) + '</td>'; }).join("") + '<td class="n">' + num(byRegion[r].total) + '</td></tr>';
     }).join("");
     return '<div class="scrollx" style="margin-top:8px"><table class="matrix"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
   }
+  function reasonLabel(reason) {
+    if (reason === "interest") return "Area of interest";
+    if (reason === "overflow") return "Under 16 / no age \u2014 low-risk area";
+    return "Balanced";
+  }
   function sampleTable(sample) {
     if (!sample || !sample.length) return "";
-    return '<details><summary>Sample of who goes where (' + sample.length + ')</summary><div class="scrollx" style="margin-top:8px"><table class="matrix"><thead><tr><th>Name</th><th>Region</th><th>New area</th><th>Why</th></tr></thead><tbody>' +
-      sample.map(function (s) { return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.region) + '</td><td>' + esc(s.to) + '</td><td>' + (s.reason === "interest" ? "Area of interest" : "Balanced") + '</td></tr>'; }).join("") +
+    return '<details><summary>Sample of who goes where (' + sample.length + ')</summary><div class="scrollx" style="margin-top:8px"><table class="matrix"><thead><tr><th>Name</th><th>Region</th><th class="n">Age</th><th>New area</th><th>Why</th></tr></thead><tbody>' +
+      sample.map(function (s) { return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.region) + '</td><td class="n">' + (s.age == null ? "\u2014" : s.age) + '</td><td>' + esc(s.to) + '</td><td>' + reasonLabel(s.reason) + '</td></tr>'; }).join("") +
       '</tbody></table></div></details>';
   }
 
@@ -34,24 +39,27 @@
   }
 
   function render(d) {
-    var targets = d.targets || [], counts = d.counts || {}, reason = d.byReason || {};
+    var areas = d.areas || [], counts = d.counts || {}, reason = d.byReason || {}, overflow = d.overflow;
     EL("scope").textContent = "Regions in scope: " + Object.keys(d.byRegion || {}).join(", ");
     if (!d.total) {
       EL("results").innerHTML = '<div class="card"><div class="good" style="margin:0">No one is in Medical Services. Nothing to reassign \u2014 you can go ahead with the mass-accept.</div></div>';
       return;
     }
-    var kpis = targets.map(function (t) {
-      return '<div class="kpi go"><div class="n">' + num(counts[t]) + '</div><div class="l">' + esc(t) + '</div></div>';
+    var kpis = areas.map(function (t) {
+      var isOverflow = (t === overflow);
+      return '<div class="kpi ' + (isOverflow ? 'flag' : 'go') + '"><div class="n">' + num(counts[t]) + '</div><div class="l">' + esc(t) + (isOverflow ? ' <span title="under 16 / no age on file">(low-risk)</span>' : '') + '</div></div>';
     }).join("");
+    var reasonLine = num(reason.interest) + ' placed into an area they were interested in &middot; ' + num(reason.balanced) + ' placed to keep the split even';
+    if (reason.overflow) reasonLine += ' &middot; ' + num(reason.overflow) + ' under 16 or no age on file \u2192 <b>' + esc(overflow) + '</b>';
 
     EL("results").innerHTML =
       '<div class="card">' +
         '<div class="bhead"><h2>' + num(d.total) + ' in Medical Services \u2192 reassigned</h2>' +
           '<button class="btn commit" id="commitBtn">Reassign ' + num(d.total) + ' now</button></div>' +
-        '<div class="small">' + num(reason.interest) + ' placed into an area they were interested in &middot; ' + num(reason.balanced) + ' placed to keep the split even.</div>' +
+        '<div class="small">' + reasonLine + '. Age gates match the allocation \u2014 Safety &amp; Flow 19+, Seniors &amp; Mobility 16&ndash;55, Reception &amp; Hospitality 16+.</div>' +
         '<div class="kpis" style="margin-top:12px">' + kpis + '</div>' +
         '<div id="commitResult"></div>' +
-        '<div style="margin-top:16px"><h2 style="font-size:15px">Split by region</h2>' + regionTable(d.byRegion, targets) + '</div>' +
+        '<div style="margin-top:16px"><h2 style="font-size:15px">Split by region</h2>' + regionTable(d.byRegion, areas) + '</div>' +
         sampleTable(d.sample) +
       '</div>';
     if (EL("commitBtn")) EL("commitBtn").addEventListener("click", commit);

@@ -97,10 +97,11 @@ module.exports = async function (context, req) {
       if (mode === "test") {
         const to = String((req.body && req.body.testTo) || "").trim();
         if (!EMAIL_RE.test(to)) { context.res = { status: 400, body: { error: "Enter a valid test email address." } }; return; }
-        const { eligible } = await gather();
-        const msg = sampleFor(eligible[0] || null);
+        // No population scan for a test — render a sample (session check-in + placeholder area/decline)
+        // and send one. The preview pane already shows a real recipient.
+        const msg = sampleFor(null);
         await sendMail(to, msg);
-        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject, usedRealRecipient: !!eligible[0] } };
+        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject } };
         return;
       }
 

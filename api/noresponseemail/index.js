@@ -65,10 +65,10 @@ module.exports = async function (context, req) {
       if (mode === "test") {
         const to = String((req.body && req.body.testTo) || "").trim();
         if (!EMAIL_RE.test(to)) { context.res = { status: 400, body: { error: "Enter a valid test email address." } }; return; }
-        const { eligible } = await gather();
-        const msg = renderNoResponseEmail({ first: eligible[0] ? eligible[0].first : "Volunteer" });
+        // No population scan for a test — the message is generic; just render a sample and send one.
+        const msg = renderNoResponseEmail({ first: "Volunteer" });
         await sendMail(to, msg);
-        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject, usedRealRecipient: !!eligible[0] } };
+        context.res = { body: { ok: true, testSentTo: to, subject: msg.subject } };
         return;
       }
 

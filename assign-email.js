@@ -89,7 +89,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.error) banner(esc(d.error), true);
-        else banner('Test sent to <b>' + esc(d.testSentTo) + '</b>' + (d.usedRealRecipient ? " (with a real recipient\u2019s details)." : " (sample details \u2014 no eligible recipient yet)."), false);
+        else banner('Test sent to <b>' + esc(d.testSentTo) + '</b> \u2014 it uses sample content; the preview above shows a real recipient.', false);
       }).catch(function () { banner("Couldn\u2019t send the test.", true); })
       .then(function () { busy = false; EL("testBtn").disabled = false; });
   }

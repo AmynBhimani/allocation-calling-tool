@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decline your volunteer duty</title>
+<style>
+  :root{ --ink:#1B3A4B; --teal:#028090; --accent:#C44536; --mute:#6b7c85; --line:#d9e2e6; --bg:#f3f7f8; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); display:flex; min-height:100vh; align-items:center; justify-content:center; padding:24px; }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:16px; max-width:440px; width:100%;
+    padding:32px 28px; box-shadow:0 6px 28px rgba(27,58,75,.08); text-align:center; }
+  .badge{ display:inline-block; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:14px; }
+  h1{ font-size:22px; margin:0 0 6px; }
+  .duty{ font-size:18px; font-weight:700; color:var(--teal); margin:18px 0; padding:14px; background:#eef6f7; border-radius:10px; }
+  p{ color:var(--mute); line-height:1.5; margin:10px 0; }
+  button{ font:inherit; font-weight:700; color:#fff; background:var(--accent); border:0; border-radius:10px;
+    padding:14px 22px; width:100%; cursor:pointer; margin-top:10px; }
+  button:disabled{ opacity:.55; cursor:default; }
+  .ok{ color:var(--teal); } .err{ color:var(--accent); }
+  .big{ font-size:40px; line-height:1; margin:6px 0 8px; }
+  .spin{ color:var(--mute); }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="spin">Loading\u2026</div>
+  </div>
+
+<script>
+(function(){
+  var q=new URLSearchParams(location.search);
+  var u=q.get('u')||'', r=q.get('r')||'', t=q.get('t')||'';
+  var card=document.getElementById('card');
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function invalid(msg){ card.innerHTML='<div class="big err">\u26A0</div><h1>This link isn\u2019t valid</h1><p>'+esc(msg||'This link is invalid or has expired. Please contact the Volunteer Experience Team.')+'</p>'; }
+  function done(first,area){ card.innerHTML='<div class="big ok">\u2713</div><h1>You\u2019re withdrawn'+(first?', '+esc(first):'')+'.</h1><p>We\u2019ve recorded that you\u2019re no longer able to volunteer'+(area?' for the '+esc(area)+' area':'')+'. Thank you for letting us know \u2014 you can close this page.</p><p>If this was a mistake, please email the Volunteer Experience Team at volunteer.experience@iicanada.net.</p>'; }
+
+  if(!u||!r||!t){ invalid(); return; }
+
+  fetch('/api/decline?u='+encodeURIComponent(u)+'&r='+encodeURIComponent(r)+'&t='+encodeURIComponent(t))
+    .then(function(res){ return res.json().then(function(d){ return {ok:res.ok,d:d}; }); })
+    .then(function(x){
+      if(!x.d || !x.d.ok){ invalid(x.d && x.d.error); return; }
+      if(x.d.declined){ done(x.d.first, x.d.area); return; }
+      card.innerHTML='<div class="badge">Volunteer duty</div><h1>Ya Ali Madad, '+esc(x.d.first)+'</h1>'+
+        '<p>You\u2019re about to let us know you can <b>no longer volunteer</b> for the upcoming Didar'+(x.d.area?', in this area:':'.')+'</p>'+
+        (x.d.area?'<div class="duty">'+esc(x.d.area)+'</div>':'')+
+        '<p>If that\u2019s right, please confirm below. If you\u2019d still like to serve, simply close this page.</p>'+
+        '<button id="declineBtn">Yes, I need to withdraw</button>';
+      document.getElementById('declineBtn').addEventListener('click',function(){
+        var b=this; b.disabled=true; b.textContent='Withdrawing\u2026';
+        fetch('/api/decline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:u,r:r,t:t})})
+          .then(function(res){ return res.json(); })
+          .then(function(d){ if(d && d.ok){ done(d.first||x.d.first, d.area||x.d.area); } else { b.disabled=false; b.textContent='Yes, I need to withdraw'; invalid(d && d.error); } })
+          .catch(function(){ b.disabled=false; b.textContent='Yes, I need to withdraw'; });
+      });
+    })
+    .catch(function(){ invalid(); });
+})();
+</script>
+</body>
+</html>

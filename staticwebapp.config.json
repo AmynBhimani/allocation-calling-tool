@@ -117,7 +117,19 @@
       ]
     },
     {
+      "route": "/decline.html",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
       "route": "/api/confirm",
+      "allowedRoles": [
+        "anonymous"
+      ]
+    },
+    {
+      "route": "/api/decline",
       "allowedRoles": [
         "anonymous"
       ]

@@ -197,6 +197,7 @@ const dig10 = (s) => String(s == null ? "" : s).replace(/\D/g, "").slice(-10);
 const WORK_FIELDS = [
   "call_done", "call_outcome", "ivol_ready", "ivol_entered",
   "confirmed_at", "confirm_sent_at", "confirm_token",
+  "declined_at", "decline_token", "accepted_notified_at", "no_response_status",
   "assigned_caller", "callable_status", "held_aside", "released_to_pool",
   "assigned_duty",
 ];

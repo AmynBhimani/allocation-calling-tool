@@ -10,6 +10,7 @@
       {href:'/index.html',          label:'Reconcile',        roles:['superadmin','admin','dutyteam']},
       {href:'/all-volunteers.html', label:'All Volunteers',   roles:['superadmin','admin','leadership']},
       {href:'/accepted.html',       label:'Accepted',         roles:['superadmin','admin','dutyteam','quarterback','leadership']},
+      {href:'/declines.html',       label:'Declined',         roles:['superadmin','admin','dutyteam']},
       {href:'/massaccept.html',     label:'Mass accept',      roles:['superadmin','admin']},
       {href:'/reassign-medical.html',label:'Reassign Medical', roles:['superadmin','admin']},
       {href:'/restore-medical.html', label:'Restore Medical',  roles:['superadmin','admin']},

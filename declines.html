@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declined Volunteers</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap{max-width:1120px;margin:0 auto;padding:20px 24px 60px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:22px}
+  .card h2{font-family:Cambria,Georgia,serif;font-size:18px;color:var(--ink);margin:0 0 10px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em}
+  .field select{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);min-width:240px}
+  .btn{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:9px 16px;cursor:pointer}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.5;cursor:default}
+  .btn.commit{background:var(--accent)} .btn.commit:hover{filter:brightness(.94)}
+  .small{font-size:12.5px;color:var(--mute)}
+  .assignbar{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;padding:14px;background:#F6F8F9;border:1px solid var(--line);border-radius:12px;margin-bottom:6px}
+  .filters{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0}
+  .filters input[type=text]{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;min-width:220px}
+  .filters select{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px}
+  table.matrix{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table.matrix th,table.matrix td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  table.matrix th{background:#F6F7F8;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--mute)}
+  table.matrix tr:last-child td{border-bottom:none}
+  table.matrix td.c,table.matrix th.c{width:34px;text-align:center}
+  .good{background:#E9F6F1;border:1px solid #BFE3D6;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E6C57;margin:12px 0}
+  .scrollx{overflow-x:auto;max-height:560px;overflow-y:auto;border-radius:10px}
+  .muted2{color:var(--mute);font-size:12px}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Declined Volunteers</h1>
+  <span class="sub">Withdrawn &mdash; reopen into an area</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Reopen withdrawn volunteers</h2>
+    <div class="small" style="margin-bottom:12px">
+      Everyone here withdrew entirely. Select the ones you&rsquo;ve agreed to bring back, choose the area to
+      place them in, and reopen them &mdash; they&rsquo;re marked <b>accepted in that area</b> with no duty, so
+      the next duty allocation slots them in. Anyone already entered in Better Impact is flagged so the iVol
+      team can re-check them.
+    </div>
+    <div class="assignbar">
+      <div class="field"><label>Reopen into area</label><select id="areaSel"><option value="">Choose an area&hellip;</option></select></div>
+      <button class="btn commit" id="reopenBtn" disabled>Reopen selected</button>
+      <span class="small" id="selcount">None selected</span>
+    </div>
+    <div id="acthint" class="muted2" style="margin-top:8px" hidden></div>
+  </div>
+
+  <div class="filters">
+    <input type="text" id="q" placeholder="Search name or Jamatkhana">
+    <select id="regionSel"><option value="">All regions</option></select>
+    <span class="small" id="count" style="margin-left:auto"></span>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script src="nav.js"></script>
+<script src="declines.js"></script>
+</body>
+</html>

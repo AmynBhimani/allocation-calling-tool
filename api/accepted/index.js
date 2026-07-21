@@ -2,7 +2,7 @@
 // scoped to what the viewer is allowed to see. Super Admin & Leadership see all; Admin & Duty Team see
 // their event regions; Quarterbacks see only their area×region. Leadership (do-not-allocate) is excluded.
 const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor, readDidars } = require("../shared/store");
-const { isAcceptedVolunteer, dutiesOf } = require("../shared/rollup");
+const { isAcceptedVolunteer, dutiesOf, lastOutcome } = require("../shared/rollup");
 const { seedEventAssignments } = require("../shared/status");
 const { repool } = require("../shared/repool");
 const { AREAS } = require("../shared/duties");
@@ -92,6 +92,15 @@ const addDeclined = (v, area) => {
   v.declined_areas = [...new Set(prev.concat([area]))];
 };
 
+// When and why they withdrew — the last "Withdrew" outcome in the log (there's normally just one).
+function withdrewInfo(v) {
+  let ts = null, note = null;
+  for (const e of (v && v.activity_log) || []) {
+    if (e.action === "outcome" && e.outcome === "Withdrew") { ts = e.ts || ts; note = e.note || null; }
+  }
+  return { ts, note };
+}
+
 module.exports = async function (context, req) {
   try {
     const principal = getPrincipal(req);
@@ -136,6 +145,62 @@ module.exports = async function (context, req) {
       if (!(roles.includes("superadmin") || roles.includes("admin") || roles.includes("dutyteam"))) {
         context.res = { status: 403, body: { error: "Duty Team, Admin, or Super Admin only." } }; return;
       }
+
+      // ---- bulk reopen: take fully-withdrawn people and place them as ACCEPTED in a chosen area ----
+      // Different body shape from the per-person actions below (items[] + one target area), so it's
+      // handled here and returns before the single-action path.
+      if (clean((req.body || {}).action) === "reopen_accept") {
+        const area = clean((req.body || {}).area);
+        if (!AREAS.includes(area)) { context.res = { status: 400, body: { error: "Pick a valid area to reopen them into." } }; return; }
+        const items = Array.isArray((req.body || {}).items) ? (req.body || {}).items : [];
+        if (!items.length) { context.res = { status: 400, body: { error: "No volunteers selected." } }; return; }
+        const note = clean((req.body || {}).note);
+        // Which regions may this writer touch (same wall the single-action path computes).
+        const writerRs = roles.includes("superadmin")
+          ? new Set(REGIONS)
+          : (regionScope || new Set(allowedRegionsFor(await readRolesStore(), email) || []));
+        const didars = await readDidars();
+        const res = { ok: true, area, reopened: 0, skipped: { notWithdrawn: 0, outOfScope: 0 }, failed: 0, reopenedNames: [] };
+        let idx = 0;
+        const worker = async () => {
+          while (idx < items.length) {
+            const it = items[idx++]; if (!it) continue;
+            const uid = it.user_id, rg = clean(it.region);
+            if (!REGIONS.includes(rg) || uid == null) { res.failed++; continue; }
+            if (!writerRs.has(rg)) { res.skipped.outOfScope++; continue; }
+            let nm = null;
+            const r = await mutateVolunteer(container, rg, uid, (v) => {
+              if (lastOutcome(v) !== "Withdrew") return { skip: "notWithdrawn" };
+              // Reverse the withdrawal by writing a REAL acceptance in the chosen area — the same shape a
+              // normal acceptance has (outcome "Accepted" is what isAcceptedVolunteer reads), so they
+              // behave identically everywhere downstream. Duty is left empty for the next allocation.
+              v.final_area = area;
+              v.declined_areas = (Array.isArray(v.declined_areas) ? v.declined_areas : [])
+                .filter(a => String(a).trim().toLowerCase() !== area.toLowerCase());
+              v.activity_log = v.activity_log || [];
+              v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "outcome",
+                outcome: "Accepted", via: "declines_screen", to: area, from_withdrawn: true, ...(note ? { note } : {}) });
+              v.call_outcome = "Accepted"; v.call_done = true;
+              // seedEventAssignments only ADDS rows, so start clean to point them at the new area.
+              v.event_assignments = seedEventAssignments({ ...v, event_assignments: [] }, didars);
+              nm = ((v.first || "") + " " + (v.last || "")).trim();
+            });
+            if (r && r.ok && r.extra && r.extra.skip === "notWithdrawn") res.skipped.notWithdrawn++;
+            else if (r && r.ok) { res.reopened++; if (nm && res.reopenedNames.length < 50) res.reopenedNames.push(nm); }
+            else res.failed++;
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker));
+        const bits = [];
+        if (res.reopened) bits.push(`${res.reopened} volunteer(s) reopened as accepted in ${area}.`);
+        if (res.skipped.notWithdrawn) bits.push(`${res.skipped.notWithdrawn} skipped \u2014 no longer withdrawn (reload).`);
+        if (res.skipped.outOfScope) bits.push(`${res.skipped.outOfScope} skipped \u2014 outside your regions.`);
+        if (res.failed) bits.push(`${res.failed} failed \u2014 please retry.`);
+        res.note = bits.join(" ");
+        context.res = { body: res };
+        return;
+      }
+
       const body = req.body || {};
       const action = clean(body.action);
       const region = clean(body.region);
@@ -224,23 +289,35 @@ module.exports = async function (context, req) {
       return;
     }
 
+    const view = clean((req.query || {}).view);
+    const wantWithdrawn = view === "withdrawn";
     const vols = [];
     for (const region of regions) {
       const { records } = await readRegion(container, region);
       for (const v of records) {
-        if (!isAcceptedVolunteer(v)) continue;   // shared definition (excludes Leadership)
+        if (wantWithdrawn ? lastOutcome(v) !== "Withdrew" : !isAcceptedVolunteer(v)) continue;
         if (!inUserScope(v)) continue;
-        vols.push({
-          id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
-          region, jk: v.ceremony_jk || "", area: v.final_area || "", age: ageOf(v), iff: iffOf(v), diverse: diverseOf(v),
-          entered: !!v.ivol_entered, acceptedAt: acceptedAt(v), duties: dutiesOf(v),
-          assignedDuty: String(v.assigned_duty || "").trim(),   // the duty they were GIVEN (vs duties = interest)
-          email: canSeeContact ? String(v.email || "").trim() : "",
-        });
+        if (wantWithdrawn) {
+          const wi = withdrewInfo(v);
+          vols.push({
+            id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
+            region, jk: v.ceremony_jk || "", area: v.final_area || "", age: ageOf(v), iff: iffOf(v), diverse: diverseOf(v),
+            enteredInBi: !!v.ivol_entered, withdrewAt: wi.ts, withdrewNote: wi.note,
+            email: canSeeContact ? String(v.email || "").trim() : "",
+          });
+        } else {
+          vols.push({
+            id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
+            region, jk: v.ceremony_jk || "", area: v.final_area || "", age: ageOf(v), iff: iffOf(v), diverse: diverseOf(v),
+            entered: !!v.ivol_entered, acceptedAt: acceptedAt(v), duties: dutiesOf(v),
+            assignedDuty: String(v.assigned_duty || "").trim(),   // the duty they were GIVEN (vs duties = interest)
+            email: canSeeContact ? String(v.email || "").trim() : "",
+          });
+        }
       }
     }
     vols.sort((a, b) => (a.region + a.name).localeCompare(b.region + b.name));
-    context.res = { body: { volunteers: vols, count: vols.length, canEmail: canSeeContact } };
+    context.res = { body: { volunteers: vols, count: vols.length, canEmail: canSeeContact, view: wantWithdrawn ? "withdrawn" : "accepted" } };
   } catch (err) {
     context.res = { status: 500, body: { error: String(err && err.message || err) } };
   }

@@ -69,6 +69,14 @@
       ]
     },
     {
+      "route": "/declines.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam"
+      ]
+    },
+    {
       "route": "/api/accepted",
       "allowedRoles": [
         "superadmin",

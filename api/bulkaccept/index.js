@@ -20,7 +20,7 @@ function getPrincipal(req) {
 }
 // (acceptGuard now lives in ../shared/accept — shared with the team-file accept.)
 const nm = (v) => ((v.first || "") + " " + (v.last || "")).trim() || ("#" + v.user_id);
-const emptySkip = () => ({ leadership: 0, alreadyAccepted: 0, noArea: 0, inReconciliation: 0, assignedToCaller: 0, notFromReview: 0, outOfRegion: 0, notFound: 0, error: 0 });
+const emptySkip = () => ({ leadership: 0, notAssignable: 0, alreadyAccepted: 0, noArea: 0, inReconciliation: 0, assignedToCaller: 0, notFromReview: 0, outOfRegion: 0, notFound: 0, error: 0 });
 
 module.exports = async function (context, req) {
   try {

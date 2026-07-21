@@ -38,7 +38,7 @@ module.exports = async function (context, req) {
     if (String(req.method || "").toUpperCase() !== "POST") {
       const mk = () => ({ total: 0, byArea: {}, sample: [] });
       const buckets = { accept: mk(), unreached: mk(), leaveAlone: mk() };
-      const skipped = { leadership: 0, alreadyAccepted: 0, noArea: 0, inReconciliation: 0 };
+      const skipped = { leadership: 0, alreadyAccepted: 0, noArea: 0, inReconciliation: 0, notAssignable: 0 };
       for (const region of scopeRegions) {
         const { records } = await readRegion(container, region);
         for (const v of records) {

@@ -500,6 +500,20 @@
       ]
     },
     {
+      "route": "/api/disposition",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/api/inactive",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
       "route": "/api/assignemail",
       "allowedRoles": [
         "superadmin",
@@ -557,6 +571,20 @@
     },
     {
       "route": "/restore-medical.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/disposition.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    {
+      "route": "/inactive.html",
       "allowedRoles": [
         "superadmin",
         "admin"

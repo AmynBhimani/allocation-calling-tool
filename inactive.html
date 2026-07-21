@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inactive Volunteers &middot; Admin</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 24px 60px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:22px}
+  .card h2{font-family:Cambria,Georgia,serif;font-size:18px;color:var(--ink);margin:0 0 6px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .btn{font:inherit;font-size:13px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:8px 14px;cursor:pointer}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.5;cursor:default}
+  .btn.sm{padding:5px 11px;font-size:12.5px}
+  .btn.ghost2{background:transparent;color:var(--teal);border:1px solid var(--line)} .btn.ghost2:hover{background:#F6F7F8}
+  .small{font-size:12.5px;color:var(--mute)}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:130px}
+  .kpi .n{font-family:Cambria,Georgia,serif;font-size:24px;color:var(--ink)}
+  .kpi .l{font-size:11.5px;color:var(--mute);margin-top:2px}
+  table.matrix{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table.matrix th,table.matrix td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  table.matrix th{background:#F6F7F8;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--mute)}
+  table.matrix tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+  .pill.inactive{background:#FDF3E7;color:#8a5a1e;border:1px solid #F0D9B8}
+  .pill.blocked{background:#F3E9E9;color:#8a3d30;border:1px solid #E4C9C9}
+  .good{background:#E9F6F1;border:1px solid #BFE3D6;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E6C57;margin:12px 0}
+  .scrollx{overflow-x:auto;max-height:520px;overflow-y:auto;border-radius:10px}
+  .bhead{display:flex;align-items:baseline;gap:10px;justify-content:space-between;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Inactive Volunteers</h1>
+  <span class="sub">Reactivate when they register</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Inactive &amp; blocked volunteers</h2>
+    <div class="small" style="margin-bottom:10px">
+      <b>Inactive</b> volunteers were set aside for not having a visit registration yet &mdash; they&rsquo;re off
+      all duty lists but can be <b>Activated</b> here if they register, which returns them to the normal flow.
+      <b>Blocked</b> volunteers (ceremony JK outside the three regions) are terminal and shown for reference only.
+    </div>
+    <div class="row">
+      <button class="btn ghost2" id="refreshBtn">Refresh</button>
+      <span class="small" id="scope"></span>
+    </div>
+  </div>
+
+  <div id="results"><div class="card"><div class="small">Loading\u2026</div></div></div>
+</div>
+
+<script src="nav.js"></script>
+<script src="inactive.js"></script>
+</body>
+</html>

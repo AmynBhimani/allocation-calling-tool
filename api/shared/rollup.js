@@ -8,9 +8,24 @@
 // Accepted (a later "reopen" clears it — that's why this reads the log, not the call_outcome field).
 // Leadership (do-not-allocate) is never an accepted volunteer.
 const LEADERSHIP_STATUS = "Leadership - Do Not Allocate";
+
+// Assignability: a deliberate gate ABOVE the normal pipeline, set by the disposition tool.
+//   "blocked"  — terminal (e.g. ceremony JK outside BC/Prairies/Edmonton). Never on any duty list,
+//                no reactivation path.
+//   "inactive" — reversible (e.g. no visit registration yet). Off all duty lists until an admin
+//                Activates them, at which point they return to the normal flow.
+// Both are un-accepted and cleared off their lineup/duty when set, and neither can be re-accepted,
+// re-allocated, session-allocated, or added to a lineup while the flag stands. Absent === "active".
+const ASSIGN_ACTIVE = "active", ASSIGN_INACTIVE = "inactive", ASSIGN_BLOCKED = "blocked";
+const assignabilityOf = (v) => (v && v.assignability) || ASSIGN_ACTIVE;
+const isBlocked = (v) => assignabilityOf(v) === ASSIGN_BLOCKED;
+const isInactive = (v) => assignabilityOf(v) === ASSIGN_INACTIVE;
+const notAssignable = (v) => isBlocked(v) || isInactive(v);
+
 function isAcceptedVolunteer(v) {
   if (!v) return false;
   if (v.callable_status === LEADERSHIP_STATUS) return false;
+  if (notAssignable(v)) return false;                                      // blocked / inactive: out of the pipeline
   return !!v.ivol_ready || lastOutcome(v) === "Accepted";
 }
 
@@ -38,6 +53,7 @@ function rollupRecords(records, acc) {
   const totals = (acc && acc.totals) || blankCounts();
   for (const v of records || []) {
     if (v.callable_status === "Leadership - Do Not Allocate") continue;     // outside the callable pipeline
+    if (notAssignable(v)) continue;                                         // blocked / inactive: not in the pipeline
     const area = v.final_area || "(no area)";
     const b = byArea[area] || (byArea[area] = blankCounts());
     const lo = lastOutcome(v);
@@ -61,6 +77,7 @@ function rollupByJk(records, acc) {
   const areas = (acc && acc.areas) || new Set();
   for (const v of records || []) {
     if (v.callable_status === "Leadership - Do Not Allocate") continue;
+    if (notAssignable(v)) continue;
     const area = v.final_area;
     if (!area) continue;
     const jk = v.ceremony_jk || "(no JK)";
@@ -84,4 +101,5 @@ function jkGrid(byJk, areasArr) {
   return { rows, colTotals, grand };
 }
 
-module.exports = { lastOutcome, isAcceptedVolunteer, dutiesOf, LEADERSHIP_STATUS, blankCounts, rollupRecords, rowsFromByArea, rollupByJk, jkGrid };
+module.exports = { lastOutcome, isAcceptedVolunteer, dutiesOf, LEADERSHIP_STATUS, blankCounts, rollupRecords, rowsFromByArea, rollupByJk, jkGrid,
+  ASSIGN_ACTIVE, ASSIGN_INACTIVE, ASSIGN_BLOCKED, assignabilityOf, isBlocked, isInactive, notAssignable };

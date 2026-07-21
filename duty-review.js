@@ -148,6 +148,12 @@
     // Entered is the wall (locked, no toggle); pending has no duty yet, so nothing to commit.
     if (p.canEdit && st !== "entered" && p.duty) {
       var on = (st === "submitted");
+      // A lineup entry is sent to Better Impact for iVol entry, so it needs a BI account. Someone without
+      // one gets the reason in place of the toggle — never the control. (If somehow already on the lineup,
+      // still let it be turned OFF so a bad state can be cleared.)
+      if (p.no_bi_account && !on) {
+        return '<span class="small" style="color:#9b5b50" title="A lineup entry goes to Better Impact for iVol entry, so a BI account is required first.">Needs a BI account</span>';
+      }
       return '<label class="linetoggle' + (on ? " on" : "") + '">'
         + '<input type="checkbox" class="linechk" data-id="' + esc(p.user_id) + '" data-region="' + esc(p.region) + '"' + (on ? " checked" : "") + ">"
         + '<span>' + (on ? STATE.submitted.label : "Add to lineup") + "</span></label>";

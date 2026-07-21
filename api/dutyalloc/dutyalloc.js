@@ -63,6 +63,7 @@ function leadCheckIn(checkIn) {
 // Age on the EVENT DAY — the same definition the area allocation gates on, imported rather than
 // copied so the two can never drift. See api/shared/eventage.js for why that matters.
 const { AS_OF, ageAsOf, ageOfOn } = require("../shared/eventage");
+const { notAssignable } = require("../shared/rollup");
 
 // One roster row -> the duty itself, plus its lead duty if it needs leads. The lead duty inherits
 // the minimum age (a lead is still doing the job) and checks in an hour earlier.
@@ -124,6 +125,7 @@ function planDuties(records, roster, cfg) {
   // Gather this session's members, by area.
   const byArea = new Map();
   for (const v of (records || [])) {
+    if (notAssignable(v)) continue;                 // blocked / inactive: never on a duty list
     const row = sessionRow(v, sessionId);
     if (!row) continue;
     const area = clean(row.area);

@@ -19,6 +19,7 @@ const { getContainer, readRegion, mutateVolunteer, REGIONS, readDidars, readSess
 const { expandRoster, sessionRow, requestsOf, isLeadName,
         STATE_ALLOCATED, STATE_SUBMITTED, STATE_ENTERED, LOCKED_STATES } = require("../dutyalloc/dutyalloc");
 const { AS_OF, ageOfOn } = require("../shared/eventage");
+const { notAssignable } = require("../shared/rollup");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const clean = (s) => String(s == null ? "" : s).trim();
@@ -128,6 +129,7 @@ module.exports = async function (context, req) {
             age,
             duty, state: clean(row.state) || "pending",
             locked: LOCKED_STATES.includes(clean(row.state)),
+            no_bi_account: !!v.no_bi_account,     // gates the add-to-lineup toggle in the UI
             canEdit: canEditPerson(area, v.region),
             wants: requestsOf(v).filter(x => specs.some(s => norm(s.duty) === norm(x))),
             assigned: clean(v.assigned_duty) || null,
@@ -244,6 +246,9 @@ module.exports = async function (context, req) {
         const row = sessionRow(v, sid);
         if (!row) return { notInSession: true };
         if (clean(row.area) !== area) return { wrongArea: true };
+        // Both gates apply only when ADDING to the lineup; taking someone off always works.
+        if (on && notAssignable(v)) return { notAssignable: true };              // blocked / inactive
+        if (on && v.no_bi_account) return { needsBi: true };                     // no Better Impact account yet
         if (LOCKED_STATES.includes(clean(row.state))) return { locked: true };   // entered — cannot toggle
         if (on && !clean(row.duty)) return { noDuty: true };                      // nothing to commit yet
         row.state = on ? STATE_SUBMITTED : STATE_ALLOCATED;
@@ -257,6 +262,8 @@ module.exports = async function (context, req) {
       const x = result.extra || {};
       if (x.notInSession) { context.res = { status: 409, body: { error: "They're not in this session \u2014 reload." } }; return; }
       if (x.wrongArea) { context.res = { status: 409, body: { error: "They're not in this area any more \u2014 reload." } }; return; }
+      if (x.notAssignable) { context.res = { status: 409, body: { error: "This volunteer is inactive or blocked and can't be added to a lineup." } }; return; }
+      if (x.needsBi) { context.res = { status: 409, body: { error: "This volunteer needs a Better Impact account before they can be added to a lineup. Once the account is created, you can add them." } }; return; }
       if (x.locked) { context.res = { status: 409, body: { error: "They're already Assigned in iVol and locked \u2014 back it out in Better Impact first." } }; return; }
       if (x.noDuty) { context.res = { status: 409, body: { error: "Give them a duty before adding them to the lineup." } }; return; }
       if (!result.ok) { context.res = { status: 409, body: { error: "Couldn't save \u2014 please retry." } }; return; }
@@ -267,14 +274,17 @@ module.exports = async function (context, req) {
     if (op === "submit") {
       // Submit the ALLOCATED rows and say who was left behind. Blocking on stragglers would mean a
       // late accepter with no duty holds up an entire area's lineup; iVol can start on the rest.
-      let submitted = 0, pending = 0, already = 0, locked = 0, skipped = 0;
+      let submitted = 0, pending = 0, already = 0, locked = 0, skipped = 0, noBi = 0;
       const names = [];
+      const noBiNames = [];
       for (const R of scope) {
         const { records } = await readRegion(container, R);
         const ids = [];
         for (const v of records) {
           const row = sessionRow(v, sid);
           if (!row || clean(row.area) !== area) continue;
+          if (notAssignable(v)) continue;                                        // blocked / inactive: never on a lineup
+          if (v.no_bi_account) { noBi++; if (noBiNames.length < 25) noBiNames.push(nameOf(v)); continue; }   // needs a BI account first
           if (!clean(row.duty)) { pending++; if (names.length < 25) names.push(nameOf(v)); continue; }
           const st = clean(row.state);
           if (st === STATE_ENTERED) { locked++; continue; }
@@ -297,10 +307,11 @@ module.exports = async function (context, req) {
       const bits = [`${submitted} volunteer(s) submitted for iVolunteer entry.`];
       if (already) bits.push(`${already} were already submitted.`);
       if (locked) bits.push(`${locked} are already entered and locked.`);
+      if (noBi) bits.push(`${noBi} need a Better Impact account and were NOT submitted \u2014 create the account, then add them.`);
       if (pending) bits.push(`${pending} have no duty yet and were NOT submitted \u2014 re-run the duty allocation to place them, then submit again.`);
       if (skipped) bits.push(`${skipped} are outside the regions you can change and were left for someone else.`);
-      context.res = { body: { ok: true, submitted, already, locked, pending, skipped,
-        pendingNames: names, note: bits.join(" ") } };
+      context.res = { body: { ok: true, submitted, already, locked, pending, skipped, noBi,
+        pendingNames: names, noBiNames, note: bits.join(" ") } };
       return;
     }
 

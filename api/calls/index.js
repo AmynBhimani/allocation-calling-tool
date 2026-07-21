@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { getContainer, readRegion, mutateVolunteer, REGIONS } = require("../shared/store");
+const { notAssignable } = require("../shared/rollup");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -221,6 +222,8 @@ module.exports = async function (context, req) {
 
       const result = await mutateVolunteer(container, region, user_id, (v) => {
         if (v.assigned_caller !== me && !isSuper) return { skip: true };
+        // Blocked / inactive volunteers are off the pipeline and cannot be accepted from anywhere.
+        if (outcome === "Accepted" && notAssignable(v)) return { skip: true, notAssignable: true };
         // "Emailed" is only valid once the accept-link email has actually been generated.
         if (outcome === "Emailed" && !v.confirm_sent_at) return { skip: true, noEmail: true };
         v.activity_log = v.activity_log || [];
@@ -259,6 +262,7 @@ module.exports = async function (context, req) {
 
       if (result.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
       if (result.extra && result.extra.noEmail) { context.res = { status: 400, body: { error: "Create the accept-link email first, then mark Emailed." } }; return; }
+      if (result.extra && result.extra.notAssignable) { context.res = { status: 409, body: { error: "This volunteer is inactive or blocked and can't be accepted." } }; return; }
       if (result.extra && result.extra.skip) { context.res = { status: 403, body: { error: "That volunteer isn't assigned to you." } }; return; }
       if (!result.ok) { context.res = { status: 409, body: { error: "Couldn't save — please retry." } }; return; }
       context.res = { body: { ok: true } };

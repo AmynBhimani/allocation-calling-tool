@@ -7,7 +7,7 @@
 //   POST {commit:true}  -> COMMIT: apply each disposition (one safe merge-write per region), skipping any
 //                          already applied. Idempotent, so re-running is safe.
 // Super Admin / Admin only; Admin is region-walled — ids outside your regions are reported, never touched.
-const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
+const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 const { applyDisposition, alreadyApplied, onLineup, DISPOSITIONS } = require("../shared/disposition");
 const { isAcceptedVolunteer } = require("../shared/rollup");
 
@@ -99,27 +99,37 @@ module.exports = async function (context, req) {
     }
 
     // ---- COMMIT ----
-    // Retry-safe: mergeRegion re-runs the closure on a write conflict, so the per-region counters are
-    // declared outside but reset at the top of each run and overwritten — the last (successful) run wins.
+    // Per PERSON via mutateVolunteer: it reads+writes ONLY the shard holding that volunteer, with its own
+    // ETag and 12 retries — the exact write path callers use during peak. (mergeRegion rewrites all shards
+    // all-or-nothing, so one concurrent caller write forces a full retry and, at this size, times out.)
+    // Light concurrency: different shards never contend; same-shard collisions just retry. `failed` surfaces
+    // anyone a burst of conflicts kept us from writing, so a re-run (idempotent) can mop them up.
     const nowIso = new Date().toISOString();
     const applied = zero(), already = zero();
-    for (const region of Object.keys(byRegion)) {
-      const want = new Map(byRegion[region].map(it => [it.user_id, it.disposition]));
-      const appliedThis = zero(), alreadyThis = zero();
-      await mergeRegion(container, region, (records) => {
-        for (const k of KINDS) { appliedThis[k] = 0; alreadyThis[k] = 0; }
-        for (const v of records) {
-          const disp = want.get(String(v.user_id));
-          if (!disp) continue;
-          if (alreadyApplied(v, disp)) { alreadyThis[disp]++; continue; }
-          applyDisposition(v, disp, REASONS[disp], email, nowIso);
-          appliedThis[disp]++;
-        }
-        return records;
-      });
-      for (const k of KINDS) { applied[k] += appliedThis[k]; already[k] += alreadyThis[k]; }
+    let failed = 0; const failedSample = [];
+    const work = [];
+    for (const region of Object.keys(byRegion)) for (const it of byRegion[region]) work.push({ region, user_id: it.user_id, disposition: it.disposition });
+
+    let idx = 0;
+    async function worker() {
+      while (idx < work.length) {
+        const job = work[idx++];
+        try {
+          const res = await mutateVolunteer(container, job.region, job.user_id, (v) => {
+            if (alreadyApplied(v, job.disposition)) return { already: true };
+            applyDisposition(v, job.disposition, REASONS[job.disposition], email, nowIso);
+            return { applied: true };
+          });
+          const x = (res && res.extra) || {};
+          if (res && res.ok && x.applied) applied[job.disposition]++;
+          else if (res && res.ok && x.already) already[job.disposition]++;
+          else { failed++; if (failedSample.length < 20) failedSample.push(job.user_id); }
+        } catch (e) { failed++; if (failedSample.length < 20) failedSample.push(job.user_id); }
+      }
     }
-    context.res = { body: { ok: true, mode: "commit", applied, already, notFound, invalid } };
+    const CONC = Math.min(6, work.length || 1);
+    await Promise.all(Array.from({ length: CONC }, worker));
+    context.res = { body: { ok: true, mode: "commit", applied, already, notFound, invalid, failed, failedSample } };
   } catch (err) {
     context.res = { status: 500, body: { error: String((err && err.message) || err) } };
   }

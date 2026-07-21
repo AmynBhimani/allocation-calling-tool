@@ -96,8 +96,13 @@
     post(true).then(function (d) {
       if (d.error) { EL("commitResult").innerHTML = ""; banner(esc(d.error), true); EL("commitBtn").disabled = false; return; }
       var a = d.applied || {}, al = d.already || {};
-      EL("commitResult").innerHTML = '<div class="good" style="margin-top:12px">Applied \u2014 blocked <b>' + num(a.block) + '</b>, inactivated <b>' + num(a.inactivate) + '</b>, needs-BI <b>' + num(a.needs_bi) + '</b>.' +
-        ((al.block || al.inactivate || al.needs_bi) ? ' <span class="small">(' + num((al.block || 0) + (al.inactivate || 0) + (al.needs_bi || 0)) + ' were already applied and left as-is.)</span>' : '') + '</div>';
+      var msg = 'Applied \u2014 blocked <b>' + num(a.block) + '</b>, inactivated <b>' + num(a.inactivate) + '</b>, needs-BI <b>' + num(a.needs_bi) + '</b>.' +
+        ((al.block || al.inactivate || al.needs_bi) ? ' <span class="small">(' + num((al.block || 0) + (al.inactivate || 0) + (al.needs_bi || 0)) + ' were already applied and left as-is.)</span>' : '');
+      if (d.failed) {
+        EL("commitResult").innerHTML = '<div class="warnbox" style="margin-top:12px">' + msg + '<br><b>' + num(d.failed) + '</b> could not be written this pass (write contention). They are safe to retry \u2014 just <b>Preview</b> and <b>Apply</b> again; anything already done is skipped.</div>';
+      } else {
+        EL("commitResult").innerHTML = '<div class="good" style="margin-top:12px">' + msg + '</div>';
+      }
     }).catch(function () {
       EL("commitResult").innerHTML = "";
       banner("The apply request failed \u2014 some may have been applied. Preview again before retrying.", true);

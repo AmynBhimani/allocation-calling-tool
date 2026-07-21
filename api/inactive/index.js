@@ -5,7 +5,7 @@
 //           active). They stay un-accepted, so they re-enter allocation/calling like anyone else. Blocked
 //           ids are refused (terminal), and ids that aren't inactive are reported, not touched.
 // Super Admin / Admin only; Admin is region-walled.
-const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
+const { getContainer, readRegion, mutateVolunteer, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 const { activate } = require("../shared/disposition");
 const { assignabilityOf, isInactive, isBlocked, ASSIGN_INACTIVE, ASSIGN_BLOCKED } = require("../shared/rollup");
 
@@ -57,25 +57,28 @@ module.exports = async function (context, req) {
     const wanted = Array.isArray(body.user_ids) ? body.user_ids.map(clean).filter(Boolean)
       : (body.user_id ? [clean(body.user_id)] : []);
     if (!wanted.length) { context.res = { status: 400, body: { error: "No user_ids supplied." } }; return; }
-    const want = new Set(wanted);
 
     const nowIso = new Date().toISOString();
-    let activated = 0, skippedBlocked = 0, notInactive = 0;
-    for (const region of scopeRegions) {
-      let a = 0, b = 0, n = 0;
-      await mergeRegion(container, region, (records) => {
-        a = b = n = 0;
-        for (const v of records) {
-          if (!want.has(String(v.user_id))) continue;
-          if (isBlocked(v)) { b++; continue; }       // terminal — never reactivated here
-          if (!isInactive(v)) { n++; continue; }     // already active / not applicable
-          activate(v, email, nowIso); a++;
+    let activated = 0, skippedBlocked = 0, notInactive = 0, notFound = 0;
+    // Per person via mutateVolunteer (one shard, ETag + retries) — never a whole-region rewrite, so this is
+    // safe to run mid-event. Region is resolved by trying each in-scope region's shard until the id is found.
+    for (const uid of wanted) {
+      let found = false;
+      for (const region of scopeRegions) {
+        const res = await mutateVolunteer(container, region, uid, (v) => {
+          if (isBlocked(v)) return { blocked: true };       // terminal — never reactivated here
+          if (!isInactive(v)) return { notInactive: true };  // already active / not applicable
+          activate(v, email, nowIso); return { activated: true };
+        });
+        if (res && res.ok) {
+          const x = res.extra || {};
+          if (x.activated) activated++; else if (x.blocked) skippedBlocked++; else if (x.notInactive) notInactive++;
+          found = true; break;
         }
-        return records;
-      });
-      activated += a; skippedBlocked += b; notInactive += n;
+      }
+      if (!found) notFound++;
     }
-    context.res = { body: { ok: true, activated, skippedBlocked, notInactive } };
+    context.res = { body: { ok: true, activated, skippedBlocked, notInactive, notFound } };
   } catch (err) {
     context.res = { status: 500, body: { error: String((err && err.message) || err) } };
   }

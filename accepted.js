@@ -1,6 +1,6 @@
 const AREAS = ["Safety & Flow Management","Parking & Transportation","Reception & Hospitality",
   "Seniors & Mobility","Food Services","Layout & Logistics","Registration & Access","Medical Services","Diverse Abilities Support",
-  "Finance & Procurement","Environmental Sustainability","Memorabilia & Design","Jamati Preparation"];
+  "Finance & Procurement","Environmental Sustainability","Memorabilia & Design","Jamati Preparation","Volunteer Engagement","Operations Centre","Communications"];
 let CAN_UNDO = false;   // Duty Team / Admin / Super Admin. Quarterbacks + Leadership may look, not act.
 let DATA = { volunteers: [] };
 const filters = { region: "", jk: "", area: "", group: "", q: "", notInBi: false, duty: "", dutyMode: "assigned" };
@@ -142,8 +142,58 @@ function renderDetail(d) {
       : `<div class="dmuted">No calls logged yet.</div>`}</div>`;
   const panel = EL("detailPanel");
   panel.className = "detailcard";
-  panel.innerHTML = `<h2>${esc(d.name)}</h2><div class="sub2">${esc(d.region)}${d.area ? " · " + esc(d.area) : ""}</div>${contact}${dutiesHtml}${prefHtml}${logHtml}${undoHtml(d)}`;
-  if (CAN_UNDO) wireUndo(d);
+  panel.innerHTML = `<h2>${esc(d.name)}</h2><div class="sub2">${esc(d.region)}${d.area ? " · " + esc(d.area) : ""}</div>${contact}${dutiesHtml}${prefHtml}${logHtml}${moveHtml(d)}${undoHtml(d)}`;
+  if (CAN_UNDO) { wireMove(d); wireUndo(d); }
+}
+
+// Move an accepted volunteer to a different area, keeping them accepted. Distinct from "undo acceptance"
+// below: nothing about their acceptance changes, only the area (and the now-cleared duty). Blocked while
+// they're on a lineup — the server enforces it too, this just says so up front.
+function moveHtml(d) {
+  if (!CAN_UNDO) return "";
+  const opts = AREAS.filter(a => a !== d.area).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+  const locked = !!d.onLineup;
+  return `<div class="dsec move">
+    <h4>Move to another area</h4>
+    <div class="dmuted">Keep them accepted, but change their area. Their current duty is cleared and reset for the new area.${locked ? " <b>Unavailable while they\u2019re on a lineup</b> \u2014 take them off the lineup first." : ""}</div>
+    <select id="mArea"${locked ? " disabled" : ""}><option value="">Move to which area?</option>${opts}</select>
+    <input id="mNote" type="text" maxlength="300" placeholder="Note (optional)"${locked ? " disabled" : ""}>
+    <button class="btn-ghost" id="mGo" disabled>Move to area</button>
+    <div id="mOut"></div>
+  </div>`;
+}
+
+function wireMove(d) {
+  const area = EL("mArea"), go = EL("mGo");
+  if (!area || !go) return;
+  const sync = () => { go.disabled = !area.value; };
+  area.addEventListener("change", sync);
+  go.addEventListener("click", () => applyMove(d));
+  sync();
+}
+
+async function applyMove(d) {
+  const referral_area = EL("mArea").value;
+  const note = EL("mNote").value;
+  const out = EL("mOut");
+  if (!referral_area) return;
+  if (!confirm(`Move ${d.name} to ${referral_area}?\n\nThey stay accepted. Their current duty is cleared and reset for the new area.`)) return;
+  out.innerHTML = `<div class="dmuted">Saving\u2026</div>`;
+  EL("mGo").disabled = true;
+  try {
+    const r = await fetch("/api/accepted", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "move_area", user_id: DETAIL_ID, region: d.region, referral_area, note }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    await load();                        // still accepted, now in the new area
+    const id = DETAIL_ID, region = d.region;
+    setTimeout(() => { if (String(DETAIL_ID) === String(id)) selectVolunteer(id, region); }, 200);
+  } catch (e) {
+    out.innerHTML = `<div class="derr">${esc(e.message)}</div>`;
+    EL("mGo").disabled = false;
+  }
 }
 
 // Undoing an acceptance. Which ending applies is the volunteer's answer, not ours, so the control

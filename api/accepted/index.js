@@ -42,7 +42,19 @@ function acceptedAt(v) {
 // The volunteer accepted, then told someone they can't. Three endings, and which one applies is the
 // volunteer's answer, not ours: they've withdrawn entirely; they'd serve, just not in this area (refer
 // them on); or they simply don't want the area they were given (back to the pool for re-allocation).
-const ACTIONS = ["withdraw", "decline_refer", "repool"];
+const ACTIONS = ["withdraw", "decline_refer", "repool", "move_area"];
+
+// On a lineup = a session row already submitted to iVol's queue (on the lineup) or entered in Better
+// Impact (locked). Moving someone's area resets their duties, so it must never silently pull a committed
+// person off a lineup — the move is blocked while any row is in one of these states. Returns the blocking
+// state ("submitted" / "entered") or null.
+function lineupLock(v) {
+  for (const r of (Array.isArray(v.event_assignments) ? v.event_assignments : [])) {
+    const s = String(r && r.state || "").trim();
+    if (s === "submitted" || s === "entered") return s;
+  }
+  return null;
+}
 
 // Un-accept, exactly as api/calls' reopen does. ivol_ready is the half of isAcceptedVolunteer that
 // isn't the activity log, so leaving it set would keep them "accepted" no matter what outcome we
@@ -140,8 +152,8 @@ module.exports = async function (context, req) {
         const rs = regionScope || new Set(allowedRegionsFor(await readRolesStore(), email) || []);
         if (!rs.has(region)) { context.res = { status: 403, body: { error: "That region is outside your assigned events." } }; return; }
       }
-      if (action === "decline_refer") {
-        if (!referralArea) { context.res = { status: 400, body: { error: "Pick an area to refer them to." } }; return; }
+      if (action === "decline_refer" || action === "move_area") {
+        if (!referralArea) { context.res = { status: 400, body: { error: action === "move_area" ? "Pick an area to move them to." : "Pick an area to refer them to." } }; return; }
         if (!AREAS.includes(referralArea)) { context.res = { status: 400, body: { error: "Unknown area." } }; return; }
       }
 
@@ -149,11 +161,12 @@ module.exports = async function (context, req) {
       let out = null;
       const result = await mutateVolunteer(container, region, user_id, (v) => {
         if (!isAcceptedVolunteer(v)) return { notAccepted: true };
-        if (action === "decline_refer" && v.final_area === referralArea) return { sameArea: true };
+        if ((action === "decline_refer" || action === "move_area") && v.final_area === referralArea) return { sameArea: true };
+        if (action === "move_area") { const locked = lineupLock(v); if (locked) return { locked: true, lockedState: locked }; }
         const from = v.final_area || null;
         const enteredInBi = !!v.ivol_entered;
         const dutiesCleared = clearDuties(v);
-        unaccept(v, email, note);
+        if (action !== "move_area") unaccept(v, email, note);   // a move keeps them accepted
 
         if (action === "withdraw") {
           // They're out. The area is moot — no point recording a decline against it, and no point
@@ -177,6 +190,13 @@ module.exports = async function (context, req) {
           // The old area's rows carry that area's duty interests, which mean nothing in the new one —
           // and seedEventAssignments only ADDS rows, it never re-points an existing one. Reseed.
           v.event_assignments = seedEventAssignments({ ...v, event_assignments: [] }, didars);
+        } else if (action === "move_area") {
+          // Keep them accepted; only the area and its (now cleared) duty change. Reseed so the rows point
+          // at the new area — seedEventAssignments only ADDS rows, it never re-points an existing one.
+          v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "area_move",
+            from, to: referralArea, via: "accepted_screen", ...(note ? { note } : {}) });
+          v.final_area = referralArea;
+          v.event_assignments = seedEventAssignments({ ...v, event_assignments: [] }, didars);
         } else {
           // repool: they don't want the area they were given. Record the refusal BEFORE repool clears
           // final_area, or the fact is gone. unaccept() ran first, so the record is no longer
@@ -191,9 +211,11 @@ module.exports = async function (context, req) {
       if (result.notFound) { context.res = { status: 404, body: { error: "Volunteer not found." } }; return; }
       if (result.extra && result.extra.notAccepted) { context.res = { status: 409, body: { error: "That volunteer isn't currently accepted — reload the screen." } }; return; }
       if (result.extra && result.extra.sameArea) { context.res = { status: 400, body: { error: "That's the area they're already in." } }; return; }
+      if (result.extra && result.extra.locked) { context.res = { status: 409, body: { error: `They\u2019re ${result.extra.lockedState === "entered" ? "entered in Better Impact" : "on the iVol lineup"} and can\u2019t be moved. Take them off the lineup first.` } }; return; }
       if (!result.ok) { context.res = { status: 409, body: { error: "Couldn't save — please retry." } }; return; }
 
       const bits = [];
+      if (action === "move_area") bits.push(`Moved to ${referralArea} \u2014 still accepted.`);
       if (out && out.dutiesCleared) bits.push(`Duty cleared (${out.dutiesCleared}) — the next duty allocation will refill the slot.`);
       if (out && out.enteredInBi) bits.push("They were already entered in Better Impact — flagged for the iVol team to remove.");
       if (action === "decline_refer") bits.push(`Referred to ${referralArea}; ${out && out.from ? out.from : "their old area"} recorded as declined.`);

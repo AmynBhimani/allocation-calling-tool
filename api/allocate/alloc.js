@@ -20,6 +20,7 @@ const ALL_AREAS = [
   "Seniors & Mobility", "Food Services", "Layout & Logistics", "Registration & Access",
   "Medical Services", "Diverse Abilities Support", "Finance & Procurement", "Environmental Sustainability",
   "Memorabilia & Design", "Jamati Preparation",
+  "Volunteer Engagement", "Operations Centre", "Communications",
 ];
 const SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file", "Unassigned"];
 
@@ -36,6 +37,9 @@ const ASSIGN_TARGETS = [
   { area: "Registration & Access",         pct: 0, min: 16, max: null },
   { area: "Medical Services",              pct: 0, min: null, max: null },
   { area: "Diverse Abilities Support",            pct: 0, min: null, max: null },
+  { area: "Volunteer Engagement",          pct: 0, min: 16, max: null },
+  { area: "Operations Centre",             pct: 0, min: 16, max: null },
+  { area: "Communications",                pct: 0, min: 16, max: null },
 ];
 
 function mulberry32(a) {

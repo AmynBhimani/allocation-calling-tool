@@ -85,13 +85,18 @@ module.exports = async function (context, req) {
       .flatMap(a => Array.isArray(a.candidate_duties) ? a.candidate_duties : [])
       .map(d => String(d).trim()).filter(Boolean))];
 
+    // On a lineup = any session row submitted to iVol's queue or entered in Better Impact. Surfaced so
+    // the accepted screen can gate "move to another area" — a committed person can't be moved.
+    const onLineup = (Array.isArray(v.event_assignments) ? v.event_assignments : [])
+      .some(a => { const s = String(a && a.state || "").trim(); return s === "submitted" || s === "entered"; });
+
     context.res = {
       body: {
         id: v.user_id,
         name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
         region, jk: v.ceremony_jk || "", area: v.final_area || "", age: ageOf(v),
         cell: v.cell_phone || "", home: v.home_phone || "", work: v.work_phone || "", email: v.email || "",
-        duties,
+        duties, onLineup,
         prefAreas: Array.isArray(v.pref_areas) ? v.pref_areas : [],
         happyAnywhere: !!v.happy_anywhere,
         log: (v.activity_log || []).filter(e => e.action === "outcome"),

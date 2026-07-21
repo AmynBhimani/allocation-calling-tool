@@ -3,7 +3,8 @@
     "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
     "Seniors & Mobility", "Food Services", "Layout & Logistics", "Registration & Access",
     "Medical Services", "Diverse Abilities Support", "Finance & Procurement", "Environmental Sustainability",
-    "Memorabilia & Design", "Jamati Preparation"
+    "Memorabilia & Design", "Jamati Preparation",
+    "Volunteer Engagement", "Operations Centre", "Communications"
   ];
   var SPECIAL = ["In reconciliation", "Young Volunteers", "IFF", "No age on file", "Unassigned"];
   var REGIONS = ["BC", "Prairies", "Edmonton"];
@@ -23,7 +24,10 @@
     { area: "Memorabilia & Design", id: "t_mem", pct: 2, min: 16, max: null, rule: "min age 16 \u00b7 flex-only" },
     { area: "Registration & Access", id: "t_reg", pct: 0, min: 16, max: null, rule: "set target % & age" },
     { area: "Medical Services", id: "t_med", pct: 0, min: null, max: null, rule: "cert-driven · medical pros first (% is a goal only)" },
-    { area: "Diverse Abilities Support", id: "t_da", pct: 0, min: null, max: null, rule: "set target % & age" }
+    { area: "Diverse Abilities Support", id: "t_da", pct: 0, min: null, max: null, rule: "set target % & age" },
+    { area: "Volunteer Engagement", id: "t_ve", pct: 0, min: 16, max: null, rule: "set target % & age" },
+    { area: "Operations Centre", id: "t_ops", pct: 0, min: 16, max: null, rule: "set target % & age" },
+    { area: "Communications", id: "t_comm", pct: 0, min: 16, max: null, rule: "set target % & age" }
   ];
 
   function buildTargetInputs() {

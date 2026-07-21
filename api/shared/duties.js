@@ -8,6 +8,7 @@ const AREAS = [
   "Seniors & Mobility", "Food Services", "Layout & Logistics",
   "Registration & Access", "Medical Services", "Diverse Abilities Support",
   "Finance & Procurement", "Environmental Sustainability", "Memorabilia & Design", "Jamati Preparation",
+  "Volunteer Engagement", "Operations Centre", "Communications",
 ];
 
 const clean = (s) => String(s == null ? "" : s).trim();

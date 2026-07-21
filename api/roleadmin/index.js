@@ -12,7 +12,8 @@ const AREAS = [
   "Safety & Flow Management", "Parking & Transportation", "Reception & Hospitality",
   "Seniors & Mobility", "Food Services", "Layout & Logistics",
   "Registration & Access", "Medical Services", "Diverse Abilities Support",
-  "Finance & Procurement", "Environmental Sustainability", "Memorabilia & Design", "Jamati Preparation"
+  "Finance & Procurement", "Environmental Sustainability", "Memorabilia & Design", "Jamati Preparation",
+  "Volunteer Engagement", "Operations Centre", "Communications"
 ];
 
 function getPrincipal(req) {

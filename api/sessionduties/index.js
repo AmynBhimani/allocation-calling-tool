@@ -116,11 +116,19 @@ module.exports = async function (context, req) {
       if (!files.length) { context.res = { status: 400, body: { error: "No template files were read." } }; return; }
       if (!sessions.length) { context.res = { status: 400, body: { error: "No sessions are configured — add them on the Events screen first." } }; return; }
 
-      // Only pay for the holder index when the files actually ask to remove something. Building it
-      // walks every shard of every region, and the app is live — a normal import (no removals) must
-      // not carry that cost.
-      const hasRemovals = files.some(f => (f.entries || []).some(e => parseRemove(e.remove)));
-      const holderIdx = hasRemovals ? await buildHolderIndex() : new Map();
+      // Under replace, ANY cell the upload addresses can drop duties — a blank row removes just as a
+      // Remove mark does — so the holder index is needed whenever an addressed cell already has a
+      // committed roster. Decided cheaply from the files + committed roster, reading no volunteer;
+      // building the index itself walks every shard of every region, so it only runs when it can matter.
+      const touched = new Set();
+      for (const f of files) {
+        const a = clean(f.area);
+        for (const e of (f.entries || [])) { const s = String(e.sessionId || ""); if (s && a) touched.add(s + "|" + a); }
+      }
+      const needsHolders = [...touched].some(k => {
+        const i = k.indexOf("|"); return (((store.sessions[k.slice(0, i)] || {})[k.slice(i + 1)]) || []).length > 0;
+      });
+      const holderIdx = needsHolders ? await buildHolderIndex() : new Map();
       const plan = planRoster(files, catalog, sessions, {
         areas: AREAS, current: store.sessions,
         holders: (sid, area, duty) => holderIdx.get(String(sid) + "|" + clean(area) + "|" + norm(duty)) || [],
@@ -144,8 +152,8 @@ module.exports = async function (context, req) {
       const noteBits = [];
       if (plan.counts.cleared) {
         noteBits.push(plan.counts.cleared + " volunteer(s) " + (commit ? "were moved off" : "will be moved off")
-          + " duties this file removes \u2014 they now have no duty. Re-run the duty allocation to place them "
-          + "on another duty they asked for, or in the pool.");
+          + " duties this upload drops \u2014 they\u2019re now unassigned in their area and flagged to reassign. "
+          + "Place them on the Duty review or Assign duties screen, or re-run the duty allocation.");
       }
       if (plan.blocked.length) {
         const n = plan.blocked.length;
@@ -217,6 +225,10 @@ module.exports = async function (context, req) {
             if (!row || norm(row.duty) !== norm(h.duty)) return { skip: true };
             if (LOCKED_STATES.includes(clean(row.state))) return { skip: true };
             row.duty = ""; row.state = "pending";
+            // Flag them for reassignment so the area sees, on Duty review and Assign duties, exactly who
+            // lost a duty and needs placing again — not just a log line. Cleared on the next assignment.
+            row.needs_reassign = true;
+            row.reassign_from = h.duty;
             v.activity_log = v.activity_log || [];
             v.activity_log.push({ ts: new Date().toISOString(), actor: email, action: "duty_cleared",
               reason: "duty_removed_from_roster", session: rem.session, area: rem.area, duty: h.duty });

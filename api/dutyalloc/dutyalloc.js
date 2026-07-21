@@ -201,9 +201,13 @@ function planDuties(records, roster, cfg) {
 
     const pool = shuffle(open, rng);
     const give = (p, duty, how) => {
-      const rows = (Array.isArray(p.v.event_assignments) ? p.v.event_assignments : []).map(r =>
-        (r && String(r.event) === sessionId && r.basis === "session")
-          ? { ...r, duty, state: STATE_ALLOCATED } : r);
+      const rows = (Array.isArray(p.v.event_assignments) ? p.v.event_assignments : []).map(r => {
+        if (!(r && String(r.event) === sessionId && r.basis === "session")) return r;
+        // Placing them resolves any "duty dropped by an upload — reassign" flag: strip it and its note
+        // rather than carrying it forward onto the new duty.
+        const { needs_reassign, reassign_from, ...rest } = r;
+        return { ...rest, duty, state: STATE_ALLOCATED };
+      });
       changes.push({ user_id: p.v.user_id, region: p.v.region, rows, duty, area });
       tally[duty]++; counts.placed++; counts[how]++;
     };

@@ -243,6 +243,9 @@
           var badges = "";
           if (p.leader) badges += ' <span class="badge b-lead" title="Identified as a team lead in the roster upload">Team Lead</span>';
           if (p.duty && (p.duty in leadDutyNames)) badges += ' <span class="badge b-leadduty" title="Assigned as a lead' + (leadDutyNames[p.duty] ? " of " + esc(leadDutyNames[p.duty]) : "") + ' on this screen">Lead</span>';
+          // Their duty was removed by a roster upload and they were moved to unassigned. Shown only while
+          // they still have no duty, so it clears itself the moment they are placed again.
+          if (p.needsReassign && !p.duty) badges += ' <span class="badge b-reassign" title="Their duty' + (p.reassignFrom ? " (" + esc(p.reassignFrom) + ")" : "") + ' was removed from the roster \u2014 assign them a new one">Reassign</span>';
           return "<tr><td>" + esc(p.name) + badges + "</td><td>" + (p.jk ? esc(p.jk) : '<span class="small">\u2014</span>')
             + "</td><td>" + groups + "</td>"
             + '<td class="n">' + (p.age == null ? '<span class="small" style="color:#9b5b50">no DOB</span>' : num(p.age))

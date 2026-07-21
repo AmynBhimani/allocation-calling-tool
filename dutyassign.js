@@ -3,7 +3,7 @@
 // roster who aren't yet on the lineup (pending/allocated, and editable by you) are shown and assignable.
 (function () {
   var SESSIONS = [], VIEW = null, selected = {}, busy = false;
-  var filters = { q: "", noDutyOnly: false };
+  var filters = { q: "", noDutyOnly: false, reassignOnly: false };
   function EL(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
   function banner(m, e) { var b = EL("banner"); b.hidden = false; b.className = "banner" + (e ? " err" : ""); b.innerHTML = m; }
@@ -40,7 +40,11 @@
 
   function eligible(p) { return p.canEdit && (p.state === "pending" || p.state === "allocated"); }
   function pool() { return (VIEW.people || []).filter(eligible); }
+  // People a roster upload moved off a removed duty and who still have none — the ones to place first.
+  function reassignPool() { return pool().filter(function (p) { return p.needsReassign && !p.duty; }); }
+  function reassignCountLabel() { var n = reassignPool().length; return n ? ' <span class="small">(' + num(n) + ')</span>' : ""; }
   function matches(p) {
+    if (filters.reassignOnly && !(p.needsReassign && !p.duty)) return false;
     if (filters.noDutyOnly && p.duty) return false;
     if (filters.q) { var q = filters.q.toLowerCase(); if ((p.name || "").toLowerCase().indexOf(q) < 0 && (p.jk || "").toLowerCase().indexOf(q) < 0) return false; }
     return true;
@@ -78,6 +82,7 @@
         '<div class="filters">' +
           '<input type="text" id="q" placeholder="Search name or Jamatkhana">' +
           '<label class="chk"><input type="checkbox" id="noDutyOnly"> Only people without a duty</label>' +
+          '<label class="chk"><input type="checkbox" id="reassignOnly"> Needs reassignment' + reassignCountLabel() + '</label>' +
           '<span class="small" id="fcount" style="margin-left:auto"></span>' +
         '</div>' +
         '<div id="tableBox"></div>' +
@@ -85,6 +90,7 @@
     EL("dutySel").addEventListener("change", refreshBtn);
     EL("q").addEventListener("input", function (e) { filters.q = e.target.value; renderTable(); });
     EL("noDutyOnly").addEventListener("change", function (e) { filters.noDutyOnly = e.target.checked; renderTable(); });
+    EL("reassignOnly").addEventListener("change", function (e) { filters.reassignOnly = e.target.checked; renderTable(); });
     EL("assignBtn").addEventListener("click", assign);
   }
 
@@ -106,7 +112,13 @@
   function rowFor(p) {
     var checked = selected[p.user_id] ? " checked" : "";
     var name = esc(p.name) + (p.no_bi_account ? ' <span class="small" style="color:#9a6a12">\u00b7 needs BI account</span>' : "");
-    var dutyCell = p.duty ? '<span class="pill alloc">' + esc(p.duty) + '</span>' : '<span class="pill none">No duty</span>';
+    // A flagged person's duty was removed by a roster upload — surface that instead of a plain "No duty"
+    // so the area sees who to place first, and what they lost.
+    var dutyCell = p.duty
+      ? '<span class="pill alloc">' + esc(p.duty) + '</span>'
+      : (p.needsReassign
+          ? '<span class="pill reassign" title="Their duty' + (p.reassignFrom ? " (" + esc(p.reassignFrom) + ")" : "") + ' was removed from the roster">Reassign</span>'
+          : '<span class="pill none">No duty</span>');
     var wants = (p.wants || []).length ? esc(p.wants.join(", ")) : (p.assigned ? '<b>' + esc(p.assigned) + '</b> <span class="small">(caller)</span>' : '<span class="small">\u2014</span>');
     return '<tr><td class="c"><input type="checkbox" class="rsel" data-id="' + esc(p.user_id) + '"' + checked + '></td>' +
       '<td>' + name + '</td><td>' + (p.jk ? esc(p.jk) : '<span class="small">\u2014</span>') + '</td>' +

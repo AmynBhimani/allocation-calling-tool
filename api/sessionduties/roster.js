@@ -93,16 +93,15 @@ function planRoster(files, catalog, sessions, opts) {
   const blocked = [];                // Remove refused: someone is already doing it
   const untouched = [];              // rows left exactly as they were (blank = "I didn't fill this in")
 
-  // Start every touched cell from what is already committed, so anything the file doesn't mention
-  // survives untouched.
+  // REPLACE, not merge: a cell the upload addresses is rebuilt from ONLY the rows it fills in. Whatever
+  // the committed roster had that this upload doesn't fill is a removal, reconciled after all rows are
+  // read (see the pass at the end). touchedCells records every cell the file speaks to — a filled row,
+  // a blank row, or a Remove all count as "addressed", so its removals get computed.
+  const touchedCells = new Set();
   const cellFor = (sid, area) => {
+    touchedCells.add(sid + "|" + area);
     const bySession = roster[sid] || (roster[sid] = {});
-    if (!bySession[area]) {
-      const prior = ((current[sid] || {})[area] || []);
-      bySession[area] = prior.map(r => ({ duty: clean(r.duty), min: Number(r.min) || 0,
-        leads: Number(r.leads) || 0, minAge: Number(r.minAge) > 0 ? Number(r.minAge) : null,
-        checkIn: clean(r.checkIn) }));
-    }
+    if (!bySession[area]) bySession[area] = [];
     return bySession[area];
   };
   const indexIn = (cell, name) => cell.findIndex(r => norm(r.duty) === norm(name));
@@ -178,37 +177,11 @@ function planRoster(files, catalog, sessions, opts) {
       }
 
       if (parseRemove(e.remove)) {
-        // Removed means GONE: nobody is allocated to it, nobody can be moved onto it, and an interest
-        // in it counts for nothing — the allocator only ever sees rostered duties, so someone who
-        // wanted this one lands on another duty they asked for, or in the general pool.
-        //
-        // Which leaves the people already on it. This guard used to refuse the removal outright, on
-        // the grounds that gap-fill never reclaims a duty and they would be left holding one that no
-        // longer exists. Clearing them removes that premise: back to pending, and the next allocation
-        // places them exactly as if they had never been on it.
-        //
-        // Assigned in iVol is the one real wall. Better Impact holds that shift, and clearing it here
-        // would put the two out of step — the fix has to start there. One such holder blocks the ROW,
-        // not the file, so the rest of the import still lands.
-        //
-        // Removing a duty ALSO removes the lead duty derived from it, so both have to be checked. The
-        // holder index is keyed by the duty as held — a lead is stored as "Lead - Server", so looking
-        // up "Server" alone would miss them and strand exactly the people this guard exists for.
-        const who = holdersFor(sid, area, name);
-        const inIvol = who.filter(h => LOCKED_STATES.includes(clean(h.state)));
-        if (inIvol.length) {
-          blocked.push({ session: sid, sessionName, area, duty: name, where: where(e), reason: "in_ivol",
-            holders: inIvol.slice(0, 25), holderCount: inIvol.length });
-          continue;
-        }
-        counts.removed++;
-        counts.cleared += who.length;
-        // The commit clears these; the preview lists them. Whoever drops a duty sees exactly who it
-        // moves before anything is written.
-        removed.push({ session: sid, sessionName, area, duty: name, clearing: who });
-        const cell = cellFor(sid, area);
-        const at = indexIn(cell, name);
-        if (at >= 0) cell.splice(at, 1);
+        // Under replace, an explicit Remove and a blank row mean the same thing: this duty is not in
+        // the uploaded roster for this cell. Just mark the cell addressed and drop the row; if the
+        // committed roster had the duty, the reconciliation pass at the end removes it, guards iVol,
+        // and gathers who to move.
+        cellFor(sid, area);
         continue;                                                       // dropped from THIS session only
       }
 
@@ -218,12 +191,13 @@ function planRoster(files, catalog, sessions, opts) {
       const untouchedRow = clean(e.min) === "" && clean(e.leads) === ""
         && clean(e.minAge) === "" && clean(e.checkIn) === "";
       if (untouchedRow) {
+        // A blank row rosters NOTHING (replace, not merge): the duty is simply absent from the uploaded
+        // roster for this cell. Mark the cell addressed so the pass below removes the duty (and moves
+        // anyone on it) if the committed roster had it. The name still reaches the CATALOG — blank means
+        // "not rostered here", not "this duty doesn't exist".
         counts.untouched++;
-        const cell = cellFor(sid, area);
-        const already = indexIn(cell, name) >= 0;
-        untouched.push({ session: sid, sessionName, area, duty: name, inRoster: already });
-        // The name still goes to the CATALOG — blank values mean "not rostered for this session",
-        // not "this duty doesn't exist". Only the roster half of the row is left alone.
+        cellFor(sid, area);
+        untouched.push({ session: sid, sessionName, area, duty: name });
         const known = captureNewDuty(area, name, e.description, where(e));
         if (!known) {
           warnings.push({ where: where(e), duty: name,
@@ -250,32 +224,67 @@ function planRoster(files, catalog, sessions, opts) {
       const cell = cellFor(sid, area);
       const at = indexIn(cell, name);
 
-      // Dropping Leads required to 0 DELETES the derived "Lead - X" duty. It arrives as a value
-      // change rather than a Remove mark, so the "a floor is not a cap, min reductions are fine"
-      // exemption would wave it through and strand whoever is holding it. Same guard, same reason.
-      const priorLeads = at >= 0 ? Number(cell[at].leads) || 0 : 0;
-      const nextLeads = leads.value == null ? 0 : leads.value;
-      if (priorLeads > 0 && nextLeads === 0) {
-        const leadHolders = holdersOf(sid, area, leadNameFor(name)) || [];
-        if (leadHolders.length) {
-          blocked.push({ session: sid, sessionName, area, duty: leadNameFor(name), where: where(e),
-            reason: "leads_to_zero",
-            holders: leadHolders.slice(0, 25).map(h => ({ user_id: h.user_id, name: h.name, state: clean(h.state) })),
-            holderCount: leadHolders.length });
-          continue;                     // the whole row is left alone: its leads are load-bearing
-        }
-      }
-
+      // Leads dropping to 0 (which deletes the derived "Lead - X") and reductions in min are handled by
+      // the reconciliation pass below, against the COMMITTED roster — not against this fresh cell, which
+      // no longer carries the prior values.
       const row = { duty: name, min: min.value == null ? 0 : min.value,
         leads: leads.value == null ? 0 : leads.value,
         // Blank age = no gate, and so does 0 — stored as null either way, so nothing downstream has
         // to decide whether "minAge: 0" means "no limit" or "everyone qualifies".
         minAge: minAge.value ? minAge.value : null,
         checkIn: t.value || "", isNew: !known };
-      if (at >= 0) cell[at] = row; else cell.push(row);                  // upsert onto the committed cell
+      if (at >= 0) cell[at] = row; else cell.push(row);
       counts.kept++;
     }
     counts.sheets += sheets.size;
+  }
+
+  // ---- REPLACE reconciliation ----
+  // For every cell the upload addressed, compare the committed roster to what the upload rostered.
+  // Anything the upload left out is a removal: the people on it (and on the lead duty it derives) go
+  // back to unassigned-in-area and are flagged to reassign. The one wall stays: a duty someone is
+  // ENTERED for in iVolunteer can't be yanked — Better Impact holds that shift — so it is kept exactly
+  // as committed and reported. A held holder keeps the WHOLE duty (its non-iVol holders included),
+  // which is the same all-or-nothing the old Remove guard applied.
+  for (const key of touchedCells) {
+    const cut = key.indexOf("|"); const sid = key.slice(0, cut), area = key.slice(cut + 1);
+    const sessionName = (sessById.get(sid) || {}).name || sid;
+    const newCell = (roster[sid] || {})[area] || [];
+    for (const pr of ((current[sid] || {})[area] || [])) {
+      const pdName = clean(pr.duty); if (!pdName) continue;
+      const nd = newCell.find(r => norm(r.duty) === norm(pdName));
+      if (!nd) {
+        // the base duty is gone entirely — strands its own holders AND its lead's holders
+        const who = holdersFor(sid, area, pdName);
+        const inIvol = who.filter(h => LOCKED_STATES.includes(clean(h.state)));
+        if (inIvol.length) {
+          newCell.push({ duty: pdName, min: Number(pr.min) || 0, leads: Number(pr.leads) || 0,
+            minAge: Number(pr.minAge) > 0 ? Number(pr.minAge) : null, checkIn: clean(pr.checkIn), isNew: false });
+          blocked.push({ session: sid, sessionName, area, duty: pdName, reason: "in_ivol",
+            holders: inIvol.slice(0, 25), holderCount: inIvol.length });
+        } else {
+          counts.removed++; counts.cleared += who.length;
+          removed.push({ session: sid, sessionName, area, duty: pdName, clearing: who });
+        }
+      } else {
+        // the base duty stays, but leads falling to 0 deletes the "Lead - X" it derived
+        const priorLeads = Number(pr.leads) || 0, nextLeads = Number(nd.leads) || 0;
+        if (priorLeads > 0 && nextLeads === 0) {
+          const leadName = leadNameFor(pdName);
+          const who = (holdersOf(sid, area, leadName) || []).map(h =>
+            ({ user_id: h.user_id, region: h.region, name: h.name, state: clean(h.state), duty: leadName }));
+          const inIvol = who.filter(h => LOCKED_STATES.includes(clean(h.state)));
+          if (inIvol.length) {
+            nd.leads = priorLeads;                     // held in iVol — keep the leads it derives
+            blocked.push({ session: sid, sessionName, area, duty: leadName, reason: "leads_to_zero",
+              holders: inIvol.slice(0, 25), holderCount: inIvol.length });
+          } else if (who.length) {
+            counts.removed++; counts.cleared += who.length;
+            removed.push({ session: sid, sessionName, area, duty: leadName, clearing: who });
+          }
+        }
+      }
+    }
   }
 
   for (const sid of Object.keys(roster)) {

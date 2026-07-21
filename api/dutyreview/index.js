@@ -131,6 +131,10 @@ module.exports = async function (context, req) {
             locked: LOCKED_STATES.includes(clean(row.state)),
             no_bi_account: !!v.no_bi_account,     // gates the add-to-lineup toggle in the UI
             leader: !!v.leader_flag,              // Team Lead from the roster upload — surfaced as a badge
+            // Flagged by a roster upload that dropped their duty: they were moved to unassigned and need
+            // placing again. Surfaced as a badge so the area sees exactly who to reassign.
+            needsReassign: !!row.needs_reassign,
+            reassignFrom: clean(row.reassign_from) || null,
             canEdit: canEditPerson(area, v.region),
             wants: requestsOf(v).filter(x => specs.some(s => norm(s.duty) === norm(x))),
             assigned: clean(v.assigned_duty) || null,
@@ -206,6 +210,9 @@ module.exports = async function (context, req) {
         // the date of birth on file doesn't. It is logged either way, so the decision has an owner.
         const tooYoung = !!(spec && spec.minAge && (age == null || age < spec.minAge));
         row.duty = spec ? spec.duty : "";
+        // A human has now acted on this person, so the "duty dropped by an upload — reassign" flag is
+        // resolved whether they were placed on a new duty or deliberately left unassigned.
+        delete row.needs_reassign; delete row.reassign_from;
         // A row already submitted STAYS submitted — dropping it back to "allocated" would silently
         // pull it out of iVol's queue, and the change would land nowhere.
         if (!spec) row.state = "pending";
@@ -274,6 +281,7 @@ module.exports = async function (context, req) {
               const age = ageOfOn(v, AS_OF);
               const young = !!(spec.minAge && (age == null || age < spec.minAge));
               row.duty = spec.duty;
+              delete row.needs_reassign; delete row.reassign_from;   // placed — the reassign flag is resolved
               // Assign AND add to the lineup — unless there's no Better Impact account yet, in which case
               // they hold the duty (allocated) and wait, the same gate the per-person toggle enforces.
               const onLineup = !v.no_bi_account;

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assign Duties</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap{max-width:1120px;margin:0 auto;padding:20px 24px 60px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:22px}
+  .card h2{font-family:Cambria,Georgia,serif;font-size:18px;color:var(--ink);margin:0 0 14px}
+  .picker{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em}
+  .field select{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);min-width:220px}
+  .btn{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--teal);border:none;border-radius:9px;padding:9px 16px;cursor:pointer}
+  .btn:hover{background:var(--teal-d)} .btn:disabled{opacity:.5;cursor:default}
+  .btn.commit{background:var(--accent)} .btn.commit:hover{filter:brightness(.94)}
+  .btn.ghost2{background:transparent;color:var(--teal);border:1px solid var(--line)} .btn.ghost2:hover{background:#F6F7F8}
+  .small{font-size:12.5px;color:var(--mute)}
+  .assignbar{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;padding:14px;background:#F6F8F9;border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
+  .filters{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:2px 0 12px}
+  .filters input[type=text]{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;min-width:200px}
+  label.chk{font-size:13px;color:var(--ink);display:flex;gap:6px;align-items:center}
+  table.matrix{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table.matrix th,table.matrix td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  table.matrix th{background:#F6F7F8;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--mute)}
+  table.matrix tr:last-child td{border-bottom:none}
+  table.matrix td.c,table.matrix th.c{width:34px;text-align:center}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+  .pill.none{background:#EEF1F3;color:#5b6570}
+  .pill.alloc{background:#E6F4F0;color:#1E6C57;border:1px solid #BFE3D6}
+  .good{background:#E9F6F1;border:1px solid #BFE3D6;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E6C57;margin:12px 0}
+  .warnbox{background:#FBEFEC;border:1px solid #EAD2CE;border-radius:10px;padding:11px 13px;font-size:13px;color:#8a3d30;margin:12px 0}
+  .scrollx{overflow-x:auto;max-height:560px;overflow-y:auto;border-radius:10px}
+  .bhead{display:flex;align-items:baseline;gap:10px;justify-content:space-between;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Assign Duties</h1>
+  <span class="sub">Mass duty assignment</span>
+  <div class="userbox">
+    <nav id="navlinks" class="navlinks"></nav>
+    <span id="whoami" class="whoami"></span>
+    <a class="ghost" href="/.auth/logout?post_logout_redirect_uri=/">Sign out</a>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Pick an area&rsquo;s roster</h2>
+    <div class="picker">
+      <div class="field"><label>Session</label><select id="event"></select></div>
+      <div class="field"><label>Area</label><select id="area"></select></div>
+      <button class="btn" id="loadBtn">Show roster</button>
+      <span class="small" id="scope"></span>
+    </div>
+    <div class="small" style="margin-top:10px">
+      Assign a duty to many volunteers at once. You&rsquo;ll see everyone on this area&rsquo;s roster who
+      isn&rsquo;t yet on the lineup &mdash; pick a duty, select people, and assign. People already on the
+      lineup or locked in iVolunteer aren&rsquo;t shown here; change those on the Duty review screen.
+    </div>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script src="nav.js"></script>
+<script src="dutyassign.js"></script>
+</body>
+</html>

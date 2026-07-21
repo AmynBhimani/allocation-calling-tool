@@ -549,6 +549,15 @@
       ]
     },
     {
+      "route": "/dutyassign.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback"
+      ]
+    },
+    {
       "route": "/duty-email.html",
       "allowedRoles": [
         "superadmin",

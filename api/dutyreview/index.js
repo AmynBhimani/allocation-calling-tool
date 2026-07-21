@@ -231,6 +231,65 @@ module.exports = async function (context, req) {
       return;
     }
 
+    if (op === "assign_bulk") {
+      // Mass duty assignment: put many people onto ONE duty at once. Same rules as a single reassign,
+      // applied per person via mutateVolunteer (one shard each, ETag + retries — peak-safe). Only pending
+      // or allocated people are touched: submitted (already on the lineup) and entered (locked) are left
+      // alone. The age minimum is a warning, logged, never a wall — same as the per-person path.
+      const duty = clean(body.duty);
+      const items = Array.isArray(body.items) ? body.items : [];
+      const spec = specs.find(s => norm(s.duty) === norm(duty));
+      if (!spec) { context.res = { status: 400, body: { error: "Pick a duty that's on this roster." } }; return; }
+      if (!items.length) { context.res = { status: 400, body: { error: "No volunteers selected." } }; return; }
+
+      const seen = new Set(); const work = [];
+      const skipped = { locked: 0, onLineup: 0, notInSession: 0, wrongArea: 0, outOfScope: 0 };
+      for (const it of items) {
+        const uid = clean(it && it.user_id), region = clean(it && it.region);
+        if (!uid || seen.has(uid)) continue;
+        seen.add(uid);
+        if (!scope.includes(region) || !canEditPerson(area, region)) { skipped.outOfScope++; continue; }
+        work.push({ user_id: uid, region });
+      }
+
+      const nowIso = new Date().toISOString();
+      let assigned = 0, tooYoung = 0, failed = 0; const tooYoungNames = [];
+      let idx = 0;
+      const run = async () => {
+        while (idx < work.length) {
+          const job = work[idx++];
+          try {
+            const res = await mutateVolunteer(container, job.region, job.user_id, (v) => {
+              const row = sessionRow(v, sid);
+              if (!row) return { skip: "notInSession" };
+              if (clean(row.area) !== area) return { skip: "wrongArea" };
+              const st = clean(row.state);
+              if (LOCKED_STATES.includes(st)) return { skip: "locked" };       // entered — frozen in iVol
+              if (st === STATE_SUBMITTED) return { skip: "onLineup" };          // already on the lineup — leave it
+              const from = clean(row.duty) || null;
+              const age = ageOfOn(v, AS_OF);
+              const young = !!(spec.minAge && (age == null || age < spec.minAge));
+              row.duty = spec.duty; row.state = STATE_ALLOCATED;
+              v.activity_log = v.activity_log || [];
+              v.activity_log.push({ ts: nowIso, actor: email, action: "duty_reassign", session: sid, area,
+                from, to: spec.duty, state: STATE_ALLOCATED, via: "mass_assign",
+                ...(young ? { override: "under_minimum_age", age, minAge: spec.minAge } : {}) });
+              return { assigned: true, young, name: nameOf(v) };
+            });
+            const x = (res && res.extra) || {};
+            if (res && res.ok && x.assigned) { assigned++; if (x.young) { tooYoung++; if (tooYoungNames.length < 25) tooYoungNames.push(x.name); } }
+            else if (res && res.ok && x.skip) { skipped[x.skip] = (skipped[x.skip] || 0) + 1; }
+            else failed++;
+          } catch (e) { failed++; }
+        }
+      };
+      const CONC = Math.min(6, work.length || 1);
+      await Promise.all(Array.from({ length: CONC }, run));
+
+      context.res = { body: { ok: true, assigned, duty: spec.duty, minAge: spec.minAge || null, skipped, failed, tooYoung, tooYoungNames } };
+      return;
+    }
+
     if (op === "set_lineup") {
       // on=true  -> put this ONE person on the lineup   (allocated -> submitted)
       // on=false -> take them back off it                (submitted -> allocated)

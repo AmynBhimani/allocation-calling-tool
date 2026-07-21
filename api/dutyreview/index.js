@@ -232,10 +232,12 @@ module.exports = async function (context, req) {
     }
 
     if (op === "assign_bulk") {
-      // Mass duty assignment: put many people onto ONE duty at once. Same rules as a single reassign,
-      // applied per person via mutateVolunteer (one shard each, ETag + retries — peak-safe). Only pending
-      // or allocated people are touched: submitted (already on the lineup) and entered (locked) are left
-      // alone. The age minimum is a warning, logged, never a wall — same as the per-person path.
+      // Mass duty assignment, in one pass: give many people ONE duty AND add them to the lineup — the same
+      // as doing a reassign then the add-to-lineup toggle for each, applied via mutateVolunteer (one shard
+      // each, ETag + retries — peak-safe). Untouched: submitted (already on the lineup) and entered (locked).
+      // Blocked/inactive are skipped entirely; no-BI people get the duty but are HELD OFF the lineup until
+      // they have a Better Impact account — exactly the gates the per-person toggle and "add all" enforce.
+      // The age minimum is a warning, logged, never a wall.
       const duty = clean(body.duty);
       const items = Array.isArray(body.items) ? body.items : [];
       const spec = specs.find(s => norm(s.duty) === norm(duty));
@@ -243,7 +245,7 @@ module.exports = async function (context, req) {
       if (!items.length) { context.res = { status: 400, body: { error: "No volunteers selected." } }; return; }
 
       const seen = new Set(); const work = [];
-      const skipped = { locked: 0, onLineup: 0, notInSession: 0, wrongArea: 0, outOfScope: 0 };
+      const skipped = { locked: 0, onLineup: 0, notInSession: 0, wrongArea: 0, outOfScope: 0, blocked: 0 };
       for (const it of items) {
         const uid = clean(it && it.user_id), region = clean(it && it.region);
         if (!uid || seen.has(uid)) continue;
@@ -253,7 +255,8 @@ module.exports = async function (context, req) {
       }
 
       const nowIso = new Date().toISOString();
-      let assigned = 0, tooYoung = 0, failed = 0; const tooYoungNames = [];
+      let added = 0, needsBi = 0, tooYoung = 0, failed = 0;
+      const needsBiNames = [], tooYoungNames = [];
       let idx = 0;
       const run = async () => {
         while (idx < work.length) {
@@ -266,19 +269,27 @@ module.exports = async function (context, req) {
               const st = clean(row.state);
               if (LOCKED_STATES.includes(st)) return { skip: "locked" };       // entered — frozen in iVol
               if (st === STATE_SUBMITTED) return { skip: "onLineup" };          // already on the lineup — leave it
+              if (notAssignable(v)) return { skip: "blocked" };                 // blocked / inactive — never on a lineup
               const from = clean(row.duty) || null;
               const age = ageOfOn(v, AS_OF);
               const young = !!(spec.minAge && (age == null || age < spec.minAge));
-              row.duty = spec.duty; row.state = STATE_ALLOCATED;
+              row.duty = spec.duty;
+              // Assign AND add to the lineup — unless there's no Better Impact account yet, in which case
+              // they hold the duty (allocated) and wait, the same gate the per-person toggle enforces.
+              const onLineup = !v.no_bi_account;
+              row.state = onLineup ? STATE_SUBMITTED : STATE_ALLOCATED;
               v.activity_log = v.activity_log || [];
               v.activity_log.push({ ts: nowIso, actor: email, action: "duty_reassign", session: sid, area,
-                from, to: spec.duty, state: STATE_ALLOCATED, via: "mass_assign",
+                from, to: spec.duty, state: row.state, via: "mass_assign",
                 ...(young ? { override: "under_minimum_age", age, minAge: spec.minAge } : {}) });
-              return { assigned: true, young, name: nameOf(v) };
+              if (onLineup) v.activity_log.push({ ts: nowIso, actor: email, action: "duty_submit", session: sid, area, duty: spec.duty, via: "mass_assign" });
+              return { added: onLineup, needsBi: !onLineup, young, name: nameOf(v) };
             });
             const x = (res && res.extra) || {};
-            if (res && res.ok && x.assigned) { assigned++; if (x.young) { tooYoung++; if (tooYoungNames.length < 25) tooYoungNames.push(x.name); } }
-            else if (res && res.ok && x.skip) { skipped[x.skip] = (skipped[x.skip] || 0) + 1; }
+            if (res && res.ok && (x.added || x.needsBi)) {
+              if (x.added) added++; else { needsBi++; if (needsBiNames.length < 25) needsBiNames.push(x.name); }
+              if (x.young) { tooYoung++; if (tooYoungNames.length < 25) tooYoungNames.push(x.name); }
+            } else if (res && res.ok && x.skip) { skipped[x.skip] = (skipped[x.skip] || 0) + 1; }
             else failed++;
           } catch (e) { failed++; }
         }
@@ -286,7 +297,8 @@ module.exports = async function (context, req) {
       const CONC = Math.min(6, work.length || 1);
       await Promise.all(Array.from({ length: CONC }, run));
 
-      context.res = { body: { ok: true, assigned, duty: spec.duty, minAge: spec.minAge || null, skipped, failed, tooYoung, tooYoungNames } };
+      context.res = { body: { ok: true, duty: spec.duty, minAge: spec.minAge || null,
+        added, needsBi, needsBiNames, skipped, failed, tooYoung, tooYoungNames } };
       return;
     }
 

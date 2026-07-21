@@ -105,10 +105,11 @@
 
   function rowFor(p) {
     var checked = selected[p.user_id] ? " checked" : "";
+    var name = esc(p.name) + (p.no_bi_account ? ' <span class="small" style="color:#9a6a12">\u00b7 needs BI account</span>' : "");
     var dutyCell = p.duty ? '<span class="pill alloc">' + esc(p.duty) + '</span>' : '<span class="pill none">No duty</span>';
     var wants = (p.wants || []).length ? esc(p.wants.join(", ")) : (p.assigned ? '<b>' + esc(p.assigned) + '</b> <span class="small">(caller)</span>' : '<span class="small">\u2014</span>');
     return '<tr><td class="c"><input type="checkbox" class="rsel" data-id="' + esc(p.user_id) + '"' + checked + '></td>' +
-      '<td>' + esc(p.name) + '</td><td>' + (p.jk ? esc(p.jk) : '<span class="small">\u2014</span>') + '</td>' +
+      '<td>' + name + '</td><td>' + (p.jk ? esc(p.jk) : '<span class="small">\u2014</span>') + '</td>' +
       '<td class="n">' + (p.age == null ? '<span class="small" style="color:#9b5b50">no DOB</span>' : num(p.age)) + '</td>' +
       '<td>' + dutyCell + '</td><td>' + wants + '</td></tr>';
   }
@@ -125,7 +126,7 @@
     if (!ids.length || !duty) return;
     var byId = {}; (VIEW.people || []).forEach(function (p) { byId[p.user_id] = p; });
     var items = ids.map(function (id) { return byId[id] ? { user_id: id, region: byId[id].region } : null; }).filter(Boolean);
-    if (!window.confirm("Assign " + num(items.length) + " volunteer(s) to " + duty + "?")) return;
+    if (!window.confirm("Assign " + num(items.length) + " volunteer(s) to " + duty + " and add them to the lineup?")) return;
     if (busy) return; busy = true; EL("assignBtn").disabled = true; clearBanner();
     EL("assignResult").innerHTML = '<div class="small" style="margin-top:8px">Assigning\u2026</div>';
     fetch("/api/dutyreview", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -133,12 +134,14 @@
       .then(function (r) { return r.json(); }).then(function (d) {
         busy = false;
         if (d.error) { EL("assignResult").innerHTML = ""; banner(esc(d.error), true); refreshBtn(); return; }
-        var sk = d.skipped || {}; var skTot = (sk.locked || 0) + (sk.onLineup || 0) + (sk.notInSession || 0) + (sk.wrongArea || 0) + (sk.outOfScope || 0);
-        var msg = "Assigned <b>" + num(d.assigned) + "</b> to " + esc(d.duty) + ".";
-        if (d.tooYoung) msg += " <b>" + num(d.tooYoung) + "</b> under the " + num(d.minAge) + "+ guideline (allowed, logged).";
-        if (skTot) msg += " " + num(skTot) + " skipped (already on the lineup, locked, or moved).";
+        var sk = d.skipped || {}; var skTot = (sk.locked || 0) + (sk.onLineup || 0) + (sk.notInSession || 0) + (sk.wrongArea || 0) + (sk.outOfScope || 0) + (sk.blocked || 0);
+        var msg = "Added <b>" + num(d.added) + "</b> to the lineup as " + esc(d.duty) + ".";
+        if (d.needsBi) msg += " <b>" + num(d.needsBi) + "</b> got the duty but need a Better Impact account before they can be added to the lineup.";
+        if (d.tooYoung) msg += " <b>" + num(d.tooYoung) + "</b> under the " + num(d.minAge) + "+ guideline (added, logged).";
+        if (skTot) msg += " " + num(skTot) + " skipped (already on the lineup, locked, blocked, or out of scope).";
         if (d.failed) msg += " <b>" + num(d.failed) + "</b> couldn\u2019t be saved \u2014 reload and retry.";
-        EL("assignResult").innerHTML = '<div class="' + ((d.tooYoung || d.failed) ? "warnbox" : "good") + '" style="margin-top:10px">' + msg + '</div>';
+        var warn = d.needsBi || d.tooYoung || d.failed;
+        EL("assignResult").innerHTML = '<div class="' + (warn ? "warnbox" : "good") + '" style="margin-top:10px">' + msg + '</div>';
         selected = {}; setTimeout(show, 700);
       }).catch(function () { busy = false; EL("assignResult").innerHTML = ""; banner("The assign request failed \u2014 reload and retry.", true); refreshBtn(); });
   }

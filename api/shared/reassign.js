@@ -41,8 +41,21 @@ function ageEligible(age, gate) {
 
 // records = ONE region's records. Returns { from, targets, overflow, count, counts, byReason, plan }.
 // counts is keyed by every landing area (the three targets + the overflow area).
+// "Committed to a Medical duty" = they accepted (call outcome / ivol_ready) OR they're on a duty lineup
+// (a submitted/entered roster row). Either way they've taken up a Medical assignment and must not be moved
+// by a second reassignment. Used with planReassign({ keepCommitted: true }).
+const LINEUP_STATES = new Set(["submitted", "entered"]);
+function onLineup(v) {
+  return Array.isArray(v && v.event_assignments) &&
+    v.event_assignments.some(r => r && LINEUP_STATES.has(String((r && r.state) || "").trim().toLowerCase()));
+}
+function hasAcceptedMedicalDuty(v) {
+  return isAcceptedVolunteer(v) || onLineup(v);
+}
+
 function planReassign(records, opts = {}) {
   const from = opts.from || DEFAULT_FROM;
+  const keepCommitted = !!opts.keepCommitted;
   const gates = (opts.gates && opts.gates.length) ? opts.gates : TARGET_GATES;
   const overflow = opts.overflow || OVERFLOW_AREA;
   const targetAreas = gates.map(g => g.area);
@@ -50,7 +63,21 @@ function planReassign(records, opts = {}) {
   const byReason = { interest: 0, balanced: 0, overflow: 0 };
   const plan = [];
 
-  const people = (records || []).filter(v => v && norm(v.final_area) === norm(from));
+  let people = (records || []).filter(v => v && norm(v.final_area) === norm(from));
+
+  // When keepCommitted is set, anyone who accepted or is on a Medical duty lineup stays put; only the
+  // volunteers who never took up a Medical duty are moved.
+  let kept = 0, keptAccepted = 0, keptLineup = 0; const keptSample = [];
+  if (keepCommitted) {
+    const staying = people.filter(hasAcceptedMedicalDuty);
+    kept = staying.length;
+    for (const v of staying) { if (isAcceptedVolunteer(v)) keptAccepted++; if (onLineup(v)) keptLineup++; }
+    for (const v of staying.slice(0, 25)) keptSample.push({ user_id: v.user_id, region: v.region,
+      name: (clean((v.first || "") + " " + (v.last || "")) || ("#" + v.user_id)),
+      accepted: isAcceptedVolunteer(v), onLineup: onLineup(v), duty: dutyOnLineup(v) });
+    people = people.filter(v => !hasAcceptedMedicalDuty(v));
+  }
+
   people.sort((a, b) => String(a.region || "").localeCompare(String(b.region || "")) || String(a.user_id).localeCompare(String(b.user_id)));
 
   for (const v of people) {
@@ -71,7 +98,7 @@ function planReassign(records, opts = {}) {
     plan.push({ user_id: v.user_id, region: v.region, name: (clean((v.first || "") + " " + (v.last || "")) || ("#" + v.user_id)),
       from, to: pick, reason, age: (age == null ? null : age) });
   }
-  return { from, targets: targetAreas, overflow, count: plan.length, counts, byReason, plan };
+  return { from, targets: targetAreas, overflow, count: plan.length, counts, byReason, plan, kept, keptAccepted, keptLineup, keptSample };
 }
 
 // Move ONE person: point final_area and their existing event_assignments rows at the new area (duty
@@ -140,4 +167,4 @@ function applyRestore(v, from, actor, nowIso) {
     note: "Restored to " + from + " (reassignment reverted)." });
 }
 
-module.exports = { planReassign, applyReassign, ageEligible, wasReassignedFrom, planRestore, applyRestore, DEFAULT_FROM, DEFAULT_TARGETS, TARGET_GATES, OVERFLOW_AREA };
+module.exports = { planReassign, applyReassign, ageEligible, hasAcceptedMedicalDuty, onLineup, wasReassignedFrom, planRestore, applyRestore, DEFAULT_FROM, DEFAULT_TARGETS, TARGET_GATES, OVERFLOW_AREA };

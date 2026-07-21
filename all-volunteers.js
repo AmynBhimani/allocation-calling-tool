@@ -230,10 +230,10 @@ async function doBulkAccept() {
 
 function exportCsv() {
   const list = shown();
-  const cols = ["Name", "Region", "Jamatkhana", "Area", "Status", "Caller", "Accepted", "Age"];
+  const cols = ["User ID", "Name", "Region", "Jamatkhana", "Area", "Status", "Caller", "Accepted", "Age"];
   const esc2 = s => { s = String(s == null ? "" : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const lines = [cols.join(",")];
-  for (const v of list) lines.push([v.name, v.region, v.jk, v.area || "", v.needsDecision ? "In reconciliation" : v.status,
+  for (const v of list) lines.push([v.id, v.name, v.region, v.jk, v.area || "", v.needsDecision ? "In reconciliation" : v.status,
     v.callerAssigned ? (v.callPending ? "Call pending" : "Assigned") : "", v.accepted ? "Accepted" : "", v.age == null ? "" : v.age].map(esc2).join(","));
   const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob); const a = document.createElement("a");

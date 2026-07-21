@@ -52,29 +52,46 @@
     var reasonLine = num(reason.interest) + ' placed into an area they were interested in &middot; ' + num(reason.balanced) + ' placed to keep the split even';
     if (reason.overflow) reasonLine += ' &middot; ' + num(reason.overflow) + ' under 16 or no age on file \u2192 <b>' + esc(overflow) + '</b>';
 
+    var keptLine = "";
+    if (d.kept) {
+      keptLine = '<div class="good" style="margin:12px 0 0">' +
+        '<b>' + num(d.kept) + '</b> volunteer' + (d.kept === 1 ? '' : 's') + ' who took up a Medical duty ' +
+        '<b>stay in Medical Services</b> and are not moved' +
+        ' <span class="small">(' + num(d.keptAccepted) + ' accepted' + (d.keptLineup ? ', ' + num(d.keptLineup) + ' on a duty lineup' : '') + ').</span></div>';
+    }
+
     EL("results").innerHTML =
       '<div class="card">' +
-        '<div class="bhead"><h2>' + num(d.total) + ' in Medical Services \u2192 reassigned</h2>' +
+        '<div class="bhead"><h2>' + num(d.total) + ' Medical volunteers who never took up a duty \u2192 reassigned</h2>' +
           '<button class="btn commit" id="commitBtn">Reassign ' + num(d.total) + ' now</button></div>' +
-        '<div class="small">' + reasonLine + '. Age gates match the allocation \u2014 Safety &amp; Flow 19+, Seniors &amp; Mobility 16&ndash;55, Reception &amp; Hospitality 16+.</div>' +
+        '<div class="small">Only volunteers who have <b>not accepted a Medical duty</b> are moved. ' + reasonLine + '. Age gates match the allocation \u2014 Safety &amp; Flow 19+, Seniors &amp; Mobility 16&ndash;55, Reception &amp; Hospitality 16+.</div>' +
+        keptLine +
         '<div class="kpis" style="margin-top:12px">' + kpis + '</div>' +
         '<div id="commitResult"></div>' +
         '<div style="margin-top:16px"><h2 style="font-size:15px">Split by region</h2>' + regionTable(d.byRegion, areas) + '</div>' +
+        (d.keptSample && d.keptSample.length ? keptSampleTable(d.keptSample) : '') +
         sampleTable(d.sample) +
       '</div>';
     if (EL("commitBtn")) EL("commitBtn").addEventListener("click", commit);
   }
 
+  function keptSampleTable(sample) {
+    if (!sample || !sample.length) return "";
+    return '<details><summary>Sample staying in Medical Services (' + sample.length + ')</summary><div class="scrollx" style="margin-top:8px"><table class="matrix"><thead><tr><th>Name</th><th>Region</th><th>Accepted?</th><th>On lineup?</th><th>Duty</th></tr></thead><tbody>' +
+      sample.map(function (s) { return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.region) + '</td><td>' + (s.accepted ? "Yes" : "\u2014") + '</td><td>' + (s.onLineup ? "Yes" : "\u2014") + '</td><td>' + esc(s.duty || "\u2014") + '</td></tr>'; }).join("") +
+      '</tbody></table></div></details>';
+  }
+
   function commit() {
     if (!VIEW || !VIEW.total) return;
-    if (!window.confirm("Reassign " + num(VIEW.total) + " people out of Medical Services into the three areas?\n\nTheir area is changed now. Run the mass-accept afterward so they're accepted into the new area.")) return;
+    if (!window.confirm("Reassign " + num(VIEW.total) + " Medical volunteers who never took up a duty into the three areas?\n\n" + num(VIEW.kept || 0) + " who accepted a Medical duty stay put. Their area is changed now; run the mass-accept afterward so the moved ones are accepted into the new area.")) return;
     if (busy) return; busy = true; EL("commitBtn").disabled = true; clearBanner();
     EL("commitResult").innerHTML = '<div class="small" style="margin-top:10px">Reassigning\u2026</div>';
     fetch("/api/reassignmedical", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.error) { EL("commitResult").innerHTML = ""; banner(esc(d.error), true); EL("commitBtn").disabled = false; return; }
-        EL("commitResult").innerHTML = '<div class="good" style="margin-top:12px">Reassigned <b>' + num(d.movedCount) + '</b> people out of Medical Services. Now run the <b>Mass accept</b> so they\u2019re accepted into their new areas.</div>';
+        EL("commitResult").innerHTML = '<div class="good" style="margin-top:12px">Reassigned <b>' + num(d.movedCount) + '</b> volunteers out of Medical Services' + (d.keptTotal ? '; <b>' + num(d.keptTotal) + '</b> who accepted a Medical duty stayed' : '') + '. Now run the <b>Mass accept</b> so the moved ones are accepted into their new areas.</div>';
         setTimeout(load, 400);
       }).catch(function () {
         EL("commitResult").innerHTML = "";

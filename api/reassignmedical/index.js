@@ -39,17 +39,19 @@ module.exports = async function (context, req) {
     if (String(req.method || "").toUpperCase() !== "POST") {
       const counts = {}; areas.forEach(a => { counts[a] = 0; });
       const byReason = { interest: 0, balanced: 0, overflow: 0 };
-      const byRegion = {}; let total = 0; const sample = [];
+      const byRegion = {}; let total = 0, kept = 0, keptAccepted = 0, keptLineup = 0; const sample = []; const keptSample = [];
       for (const region of scopeRegions) {
         const { records } = await readRegion(container, region);
-        const p = planReassign(records);
-        byRegion[region] = { total: p.count, counts: p.counts };
+        const p = planReassign(records, { keepCommitted: true });
+        byRegion[region] = { total: p.count, kept: p.kept, counts: p.counts };
         total += p.count;
         for (const k of Object.keys(p.counts)) counts[k] = (counts[k] || 0) + p.counts[k];
         for (const k of Object.keys(p.byReason)) byReason[k] = (byReason[k] || 0) + p.byReason[k];
         for (const row of p.plan.slice(0, SAMPLE_PER_REGION)) sample.push(row);
+        kept += p.kept; keptAccepted += p.keptAccepted; keptLineup += p.keptLineup;
+        for (const row of (p.keptSample || [])) keptSample.push(row);
       }
-      context.res = { body: { mode: "dry-run", from, areas, overflow: OVERFLOW_AREA, total, counts, byReason, byRegion, sample } };
+      context.res = { body: { mode: "dry-run", from, areas, overflow: OVERFLOW_AREA, total, kept, keptAccepted, keptLineup, counts, byReason, byRegion, sample, keptSample } };
       return;
     }
 
@@ -58,24 +60,25 @@ module.exports = async function (context, req) {
     // count is captured INSIDE the closure and overwritten each run — the last (successful) run wins.
     const nowIso = new Date().toISOString();
     const counts = {}; areas.forEach(a => { counts[a] = 0; });
-    const byRegion = {}; let movedCount = 0;
+    const byRegion = {}; let movedCount = 0, keptTotal = 0;
     for (const region of scopeRegions) {
       let regionCount = 0, regionCounts = {};
       await mergeRegion(container, region, (records) => {
-        const p = planReassign(records);
+        const p = planReassign(records, { keepCommitted: true });
         const byId = new Map(p.plan.map(x => [String(x.user_id), x.to]));
         for (const v of records) {
           const to = byId.get(String(v.user_id));
           if (to) applyReassign(v, to, from, email, nowIso);
         }
-        regionCount = p.count; regionCounts = p.counts;
+        regionCount = p.count; regionCounts = p.counts; regionKept = p.kept;
         return records;
       });
-      byRegion[region] = { total: regionCount, counts: regionCounts };
+      byRegion[region] = { total: regionCount, kept: regionKept, counts: regionCounts };
+      keptTotal += regionKept;
       for (const k of Object.keys(regionCounts)) counts[k] = (counts[k] || 0) + regionCounts[k];
       movedCount += regionCount;
     }
-    context.res = { body: { ok: true, mode: "commit", from, movedCount, counts, byRegion } };
+    context.res = { body: { ok: true, mode: "commit", from, movedCount, keptTotal, counts, byRegion } };
   } catch (err) {
     context.res = { status: 500, body: { error: String((err && err.message) || err) } };
   }

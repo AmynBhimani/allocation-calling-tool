@@ -130,6 +130,7 @@ module.exports = async function (context, req) {
             duty, state: clean(row.state) || "pending",
             locked: LOCKED_STATES.includes(clean(row.state)),
             no_bi_account: !!v.no_bi_account,     // gates the add-to-lineup toggle in the UI
+            leader: !!v.leader_flag,              // Team Lead from the roster upload — surfaced as a badge
             canEdit: canEditPerson(area, v.region),
             wants: requestsOf(v).filter(x => specs.some(s => norm(s.duty) === norm(x))),
             assigned: clean(v.assigned_duty) || null,

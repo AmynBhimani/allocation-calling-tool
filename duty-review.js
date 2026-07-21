@@ -226,6 +226,10 @@
 
   function renderPeople(d) {
     var shown = d.people.filter(matches);
+    // Lead duties (the review tool's own leads): map each lead duty's exact name -> what it leads, so a
+    // person sitting in one gets a "Lead" badge alongside the "Team Lead" badge carried from the upload.
+    var leadDutyNames = {};
+    (d.duties || []).forEach(function (x) { if (x.isLead) leadDutyNames[x.duty] = x.leadOf || ""; });
     EL("peopleBox").innerHTML = '<div class="sub2">Who\u2019s in it</div><div class="scrollx">'
       + '<table class="matrix"><tr><th>Name</th><th>Jamatkhana</th><th>Group</th><th class="n">Age</th>'
       + "<th>Duty</th><th>State</th><th>Asked for</th></tr>"
@@ -236,7 +240,10 @@
             + ((p.wants || []).length ? '<br><span class="small">' + esc(p.wants.join(", ")) + "</span>" : "");
           // Someone can be on more than one list — an IFF senior — so show every one they are on.
           var groups = (p.groups || []).length ? esc(p.groups.join(", ")) : '<span class="small">General</span>';
-          return "<tr><td>" + esc(p.name) + "</td><td>" + (p.jk ? esc(p.jk) : '<span class="small">\u2014</span>')
+          var badges = "";
+          if (p.leader) badges += ' <span class="badge b-lead" title="Identified as a team lead in the roster upload">Team Lead</span>';
+          if (p.duty && (p.duty in leadDutyNames)) badges += ' <span class="badge b-leadduty" title="Assigned as a lead' + (leadDutyNames[p.duty] ? " of " + esc(leadDutyNames[p.duty]) : "") + ' on this screen">Lead</span>';
+          return "<tr><td>" + esc(p.name) + badges + "</td><td>" + (p.jk ? esc(p.jk) : '<span class="small">\u2014</span>')
             + "</td><td>" + groups + "</td>"
             + '<td class="n">' + (p.age == null ? '<span class="small" style="color:#9b5b50">no DOB</span>' : num(p.age))
             + "</td><td>" + dutyCell(p, d.duties) + "</td><td>" + stateChip(p) + "</td><td>" + wants + "</td></tr>";

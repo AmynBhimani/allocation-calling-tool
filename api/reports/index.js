@@ -1,6 +1,7 @@
 const { getContainer, readRegion, REGIONS, readRolesStore, allowedRegionsFor, readSessions } = require("../shared/store");
-const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid, isAcceptedVolunteer } = require("../shared/rollup");
+const { rollupRecords, rowsFromByArea, rollupByJk, jkGrid, isAcceptedVolunteer, blankCounts } = require("../shared/rollup");
 const { rollupBySession, sessionGrid, sessionIdSet, sessionHealth } = require("../shared/sessions");
+const { AREAS } = require("../shared/duties");
 
 const CONN = process.env.RESPONSES_STORAGE;
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
@@ -43,6 +44,10 @@ module.exports = async function (context, req) {
     const sIds = sessionIdSet(sessions);
 
     const acc = { byArea: {}, totals: { assignedDuty: 0, accepted: 0, callPending: 0, declined: 0 } };
+    // Seed every configured area so the "by area" table always lists them, even at zero. Otherwise a
+    // newly-added area (nobody allocated to it yet) simply has no row and looks missing from the
+    // dashboard. rollupRecords reuses these seeded entries and adds to them.
+    for (const a of AREAS) acc.byArea[a] = blankCounts();
     const jkAcc = { byJk: {}, areas: new Set() };
     const sAcc = { bySession: {}, areas: new Set() };
     const sHealth = { notInSession: 0, needsRerun: 0 };

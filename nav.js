@@ -33,6 +33,7 @@
       {href:'/duty-alloc.html',     label:'Duty allocation',  roles:['superadmin']},
       {href:'/duty-review.html',    label:'Duty review',      roles:['superadmin','admin','dutyteam','quarterback']},
       {href:'/dutyassign.html',     label:'Assign duties',    roles:['superadmin','admin','dutyteam','quarterback']},
+      {href:'/eventday.html',       label:'Event day',        roles:['superadmin','admin','dutyteam','quarterback']},
       {href:'/duty-email.html',     label:'Duty emails',      roles:['superadmin','admin']},
       {href:'/assign-email.html',   label:'Acceptance email', roles:['superadmin','admin']},
       {href:'/no-response-email.html',label:'No-Response email',roles:['superadmin','admin']},

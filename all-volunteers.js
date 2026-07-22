@@ -1,5 +1,5 @@
 let DATA = { volunteers: [], tiles: null };
-const filters = { region: "", jk: "", area: "", group: "", q: "", acceptedOnly: false, needsDecisionOnly: false, leadershipOnly: false };
+const filters = { region: "", jk: "", area: "", group: "", q: "", acceptedOnly: false, needsDecisionOnly: false, leadershipOnly: false, noBiOnly: false };
 const EL = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const LEADERSHIP = "Leadership - Do Not Allocate";
@@ -32,6 +32,7 @@ async function boot() {
   EL("acceptedOnly").addEventListener("change", e => { filters.acceptedOnly = e.target.checked; render(); });
   EL("needsDecisionOnly").addEventListener("change", e => { filters.needsDecisionOnly = e.target.checked; render(); });
   EL("leadershipOnly").addEventListener("change", e => { filters.leadershipOnly = e.target.checked; render(); });
+  EL("noBiOnly").addEventListener("change", e => { filters.noBiOnly = e.target.checked; render(); });
   EL("exportBtn").addEventListener("click", exportCsv);
   if (CAN_ACCEPT) {
     EL("acceptBar").hidden = false;
@@ -88,6 +89,7 @@ function shown() {
     (!filters.acceptedOnly || v.accepted) &&
     (!filters.needsDecisionOnly || v.needsDecision) &&
     (!filters.leadershipOnly || v.status === LEADERSHIP) &&
+    (!filters.noBiOnly || v.noBi) &&
     (!filters.group || matchesGroup(v, filters.group)) &&
     (!q || v.name.toLowerCase().includes(q)));
 }
@@ -230,11 +232,12 @@ async function doBulkAccept() {
 
 function exportCsv() {
   const list = shown();
-  const cols = ["User ID", "Name", "Region", "Jamatkhana", "Area", "Status", "Caller", "Accepted", "Age"];
+  const cols = ["User ID", "Name", "Region", "Jamatkhana", "Area", "Status", "Caller", "Accepted", "Age", "No BI account"];
   const esc2 = s => { s = String(s == null ? "" : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const lines = [cols.join(",")];
   for (const v of list) lines.push([v.id, v.name, v.region, v.jk, v.area || "", v.needsDecision ? "In reconciliation" : v.status,
-    v.callerAssigned ? (v.callPending ? "Call pending" : "Assigned") : "", v.accepted ? "Accepted" : "", v.age == null ? "" : v.age].map(esc2).join(","));
+    v.callerAssigned ? (v.callPending ? "Call pending" : "Assigned") : "", v.accepted ? "Accepted" : "", v.age == null ? "" : v.age,
+    v.noBi ? "Yes" : ""].map(esc2).join(","));
   const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob); const a = document.createElement("a");
   a.href = url; a.download = `all-volunteers-${(filters.region || "all")}-${new Date().toISOString().slice(0, 10)}.csv`;

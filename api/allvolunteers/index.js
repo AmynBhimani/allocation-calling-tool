@@ -77,6 +77,7 @@ module.exports = async function (context, req) {
           id: v.user_id, name: ((v.first || "") + " " + (v.last || "")).trim() || "(no name)",
           region, jk: v.ceremony_jk || "", area, status,
           accepted, callerAssigned, callPending, toAssign, needsDecision, age: ageOf(v), iff: iffOf(v), diverse: diverseOf(v),
+          noBi: !!v.no_bi_account,   // no Better Impact account yet — these are the people iVol must create
         });
       }
     }

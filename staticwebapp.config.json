@@ -471,6 +471,15 @@
       ]
     },
     {
+      "route": "/api/eventday",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback"
+      ]
+    },
+    {
       "route": "/api/dutyreview",
       "allowedRoles": [
         "superadmin",
@@ -549,6 +558,15 @@
     },
     {
       "route": "/duty-review.html",
+      "allowedRoles": [
+        "superadmin",
+        "admin",
+        "dutyteam",
+        "quarterback"
+      ]
+    },
+    {
+      "route": "/eventday.html",
       "allowedRoles": [
         "superadmin",
         "admin",

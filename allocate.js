@@ -346,10 +346,16 @@
     return "\u00b7 area admits " + (max != null ? (min + "\u2013" + max) : (min + "+"));
   }
 
-  function ttReset() { EL("ttCommitBtn").disabled = true; ttPlan = null; }
+  function ttReset() {
+    EL("ttCommitBtn").disabled = true; ttPlan = null;
+    // Drop the shown plan too: leaving a preview on screen next to a disabled Commit reads as
+    // "these people are about to be allocated" when they no longer are.
+    var out = EL("ttOut"); if (out) { out.innerHTML = ""; out.style.display = "none"; }
+  }
 
   function ttRender(d) {
     var out = EL("ttOut");
+    out.style.display = "block";          // .resbox ships hidden; nothing shows until this is flipped
     if (d.mode === "commit") {
       var h = '<div class="ok">' + esc(d.note) + "</div>";
       if (d.skipped && d.skipped.length) {
@@ -381,7 +387,7 @@
         + d.excluded.map(function (e) { return esc(e.reason) + " (" + e.n + ")"; }).join(" \u00b7 ") + "</div>";
     }
     if (d.selected && d.selected.length) {
-      html += '<table class="mtx" style="margin-top:10px"><thead><tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th class="n">Age</th><th>Why</th></tr></thead><tbody>'
+      html += '<table class="matrix ttlist" style="margin-top:10px"><thead><tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th class="n">Age</th><th>Why</th></tr></thead><tbody>'
         + d.selected.map(function (s) {
           return "<tr><td>" + esc(s.name) + "</td><td>" + esc(s.region) + "</td><td>" + esc(s.jk)
             + '</td><td class="n">' + (s.age == null ? "" : s.age) + "</td><td>" + esc(s.why)

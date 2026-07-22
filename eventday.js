@@ -55,6 +55,15 @@ function fillSelect(id, values, allLabel) {
   if (keep && (values || []).indexOf(keep) >= 0) sel.value = keep;
 }
 
+// Presentation order: surname first, the way a check-in sheet reads. Sorted here rather than on the
+// server so the table and the export can never disagree — both run through this. Someone working two
+// sessions keeps their rows adjacent, in session order.
+function byLastName(a, b) {
+  return (a.last || "").localeCompare(b.last || "")
+    || (a.first || "").localeCompare(b.first || "")
+    || (a.session || "").localeCompare(b.session || "");
+}
+
 function shown() {
   const q = filters.q.trim().toLowerCase();
   return (DATA.rows || []).filter(r =>
@@ -62,7 +71,8 @@ function shown() {
     (!filters.area || r.area === filters.area) &&
     (!filters.duty || r.duty === filters.duty) &&
     (!q || ((r.first || "") + " " + (r.last || "")).toLowerCase().includes(q)
-        || (r.last || "").toLowerCase().includes(q)));
+        || (r.last || "").toLowerCase().includes(q))
+  ).sort(byLastName);
 }
 
 function render() {

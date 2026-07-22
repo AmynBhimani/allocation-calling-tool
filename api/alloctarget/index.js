@@ -24,11 +24,12 @@
 // PICKS — by default only people who chose this area, or said happy-anywhere, are eligible, which is
 // the rule the main engine follows. The operator can widen it per run (respectPicks:false): the newer
 // areas did not exist at registration, so nobody could have picked them.
-const { getContainer, readRegion, mergeRegion, REGIONS, readDidars } = require("../shared/store");
+const { getContainer, readRegion, mergeRegion, REGIONS, readDidars, readSessions } = require("../shared/store");
 const { computeCallableStatus, seedEventAssignments, callerLocked } = require("../shared/status");
 const { ALL_AREAS, ASSIGN_TARGETS, eligible } = require("../allocate/alloc");
 const { notAssignable, LEADERSHIP_STATUS } = require("../shared/rollup");
 const { AS_OF, ageOfOn } = require("../shared/eventage");
+const { buildJkIndex, sessionForJk } = require("../shared/sessions");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const DEFAULT_SEED = 20260723;
@@ -58,7 +59,11 @@ function getPrincipal(req) {
 
 // Why this person cannot be placed into this area, or null if they can. One function, used for the
 // preview AND re-used verbatim at commit — the two can never drift apart.
-function blockedReason(v, area, areaTarget, guard, respectPicks) {
+//
+// sessionGate, when present, restricts the pool to ONE session's volunteers. Membership is by ceremony
+// JK, decided exactly the way session allocation decides it (sessionForJk): a JK maps to one session,
+// or it's ambiguous / unlisted and the person is left out — the same people that step would flag.
+function blockedReason(v, area, areaTarget, guard, respectPicks, sessionGate) {
   if (callerLocked(v) || v.assigned_caller) return "with a caller";
   if (notAssignable(v)) return "blocked or inactive";
   if (v.callable_status === LEADERSHIP_STATUS) return "leadership";
@@ -66,6 +71,7 @@ function blockedReason(v, area, areaTarget, guard, respectPicks) {
   if (Array.isArray(v.conflict_claims) && v.conflict_claims.length) return "contested in review";
   const declined = Array.isArray(v.declined_areas) ? v.declined_areas : [];
   if (declined.some(a => clean(a).toLowerCase() === area.toLowerCase())) return "declined this area";
+  if (sessionGate && sessionForJk(sessionGate.idx, v.ceremony_jk) !== sessionGate.id) return "not in this session";
   const age = ageOfOn(v, AS_OF);
   if (age == null) return "no age on file";
   if (!eligible(age, areaTarget)) return "outside the area's age range";
@@ -106,11 +112,27 @@ module.exports = async function (context, req) {
     // app-wide 16 floor that eligible() applies when min is null.
     const areaTarget = ASSIGN_TARGETS.find(t => t.area === area) || { area, min: null, max: null };
 
-    // Scope: a Didar owns a region set, exactly as api/allocate scopes.
+    // Scope: a Didar owns a region set, exactly as api/allocate scopes. A chosen SESSION is more
+    // specific — it belongs to one Didar, so it fixes the region scope AND narrows the pool to that
+    // session's people. When a session is given it wins over any event id.
     const allDidars = await readDidars();
-    const eventId = clean(body.event);
-    const didar = eventId ? allDidars.find(d => String(d.id) === eventId) : null;
-    if (eventId && !didar) { context.res = { status: 400, body: { error: "Unknown event." } }; return; }
+    const sessionId = clean(body.session);
+    let sessionGate = null, sessionInfo = null, didar = null;
+    if (sessionId) {
+      const allSessions = await readSessions(null);
+      const target = allSessions.find(s => String(s.id) === sessionId);
+      if (!target) { context.res = { status: 400, body: { error: "Unknown session." } }; return; }
+      didar = allDidars.find(d => String(d.id) === String(target.parent)) || null;
+      // Build the index from every session under this Didar, so a JK shared by two sessions is seen as
+      // ambiguous (and excluded) rather than wrongly counted as this session's.
+      const siblings = allSessions.filter(s => String(s.parent) === String(target.parent));
+      sessionGate = { id: sessionId, idx: buildJkIndex(siblings) };
+      sessionInfo = { id: target.id, name: target.name, didar: didar ? didar.name : null };
+    } else {
+      const eventId = clean(body.event);
+      didar = eventId ? allDidars.find(d => String(d.id) === eventId) : null;
+      if (eventId && !didar) { context.res = { status: 400, body: { error: "Unknown event." } }; return; }
+    }
     const scopeRegions = didar ? REGIONS.filter(r => (didar.regions || []).indexOf(r) >= 0) : REGIONS;
     if (!scopeRegions.length) { context.res = { status: 400, body: { error: "That event has no regions configured yet." } }; return; }
 
@@ -138,7 +160,7 @@ module.exports = async function (context, req) {
           if (!ids.has(String(v.user_id))) return v;
           // Re-check EVERY guard against the record as it is right now. Between preview and commit a
           // caller may have picked this person up; they are left exactly where they are.
-          const why = blockedReason(v, area, areaTarget, guard, respectPicks);
+          const why = blockedReason(v, area, areaTarget, guard, respectPicks, sessionGate);
           if (why) { res.skipped.push({ user_id: v.user_id, name: nameOf(v), region, reason: why }); return v; }
           const nv = { ...v };
           nv.final_area = area;
@@ -175,7 +197,7 @@ module.exports = async function (context, req) {
         if (seen.has(id)) continue;
         seen.add(id);
         scanned++;
-        const why = blockedReason(v, area, areaTarget, guard, respectPicks);
+        const why = blockedReason(v, area, areaTarget, guard, respectPicks, sessionGate);
         if (why) { reasons[why] = (reasons[why] || 0) + 1; continue; }
         const picks = Array.isArray(v.pref_areas) ? v.pref_areas.map(clean) : [];
         const pickedThis = picks.some(a => a.toLowerCase() === area.toLowerCase());
@@ -204,6 +226,7 @@ module.exports = async function (context, req) {
       ok: true, mode: "preview", area, asOf: AS_OF, seed, respectPicks,
       guard, areaWindow: window,
       event: didar ? { id: didar.id, name: didar.name, regions: scopeRegions } : null,
+      session: sessionInfo,
       regions: scopeRegions, scanned,
       requested: count, eligibleTotal, selectedCount: selected.length,
       shortfall: Math.max(0, count - selected.length),

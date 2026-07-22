@@ -374,8 +374,10 @@
       eff += "; your guard " + (d.guard.min != null ? d.guard.min : "any") + "\u2013" + (d.guard.max != null ? d.guard.max : "any");
       if (d.guard.min != null && d.guard.min < d.areaWindow.min) eff += ' <span style="color:#a83729">(the area\u2019s floor of ' + d.areaWindow.min + " wins)</span>";
     }
+    var scope = "scanned " + d.scanned + " record(s) across " + d.regions.join(", ");
+    if (d.session) scope = "session <b>" + esc(d.session.name) + "</b> \u00b7 " + scope;
     var html = '<div class="small">' + lines.join(" ") + "</div>"
-      + '<div class="small" style="margin-top:4px;color:var(--mute)">' + eff + " \u00b7 scanned " + d.scanned + " record(s) across " + d.regions.join(", ") + "</div>"
+      + '<div class="small" style="margin-top:4px;color:var(--mute)">' + eff + " \u00b7 " + scope + "</div>"
       + '<div class="small" style="margin-top:6px">Chosen: <b>' + d.selectedByTier.picked + "</b> picked this area \u00b7 <b>"
       + d.selectedByTier.happy + "</b> happy anywhere"
       + (d.selectedByTier.other ? " \u00b7 <b>" + d.selectedByTier.other + "</b> widened (didn\u2019t pick it)" : "")
@@ -403,6 +405,7 @@
     if (!area) { banner("Pick a process area to top up.", "err"); return; }
     var body = {
       mode: mode, area: area, event: currentEvent(),
+      session: EL("ttSession") ? EL("ttSession").value : "",
       count: Number(EL("ttCount").value),
       minAge: EL("ttMinAge").value, maxAge: EL("ttMaxAge").value,
       respectPicks: !!EL("ttRespect").checked,
@@ -433,15 +436,35 @@
     AREAS.forEach(function (a) {
       var o = document.createElement("option"); o.value = a; o.textContent = a; sel.appendChild(o);
     });
+    // Sessions for the top-up's own picker. Loaded independently of the percentage engine's event
+    // picker: choosing a session here fixes both the region scope and the pool.
+    (async function loadTtSessions() {
+      var ss = EL("ttSession"); if (!ss) return;
+      try {
+        var r = await fetch("/api/events"); if (!r.ok) return;
+        var d = await r.json();
+        var events = (d && d.events) || [];
+        var didarName = {};
+        events.forEach(function (e) { if (!e.parent) didarName[e.id] = e.name; });
+        events.filter(function (e) { return e.parent && e.active !== false; })
+          .forEach(function (e) {
+            var o = document.createElement("option"); o.value = e.id;
+            var dn = didarName[e.parent];
+            o.textContent = e.name + (dn ? " (" + dn + ")" : "");
+            ss.appendChild(o);
+          });
+      } catch (e) {}
+    })();
     var showWindow = function () { EL("ttWindow").textContent = ttWindowLabel(sel.value); };
     sel.addEventListener("change", function () { showWindow(); ttReset(); });
-    ["ttCount", "ttMinAge", "ttMaxAge", "ttRespect"].forEach(function (id) {
+    ["ttSession", "ttCount", "ttMinAge", "ttMaxAge", "ttRespect"].forEach(function (id) {
       var el = EL(id); if (el) { el.addEventListener("input", ttReset); el.addEventListener("change", ttReset); }
     });
     EL("ttPreviewBtn").addEventListener("click", function () { ttCall("preview"); });
     EL("ttCommitBtn").addEventListener("click", function () {
       if (!ttPlan) return;
-      if (!confirm("Allocate " + ttPlan.selectedCount + " volunteer(s) into " + ttPlan.area
+      var where = ttPlan.area + (ttPlan.session ? " (session " + ttPlan.session.name + ")" : "");
+      if (!confirm("Allocate " + ttPlan.selectedCount + " volunteer(s) into " + where
         + "? They become Stable and callable. Anyone who has changed since this preview is skipped.")) return;
       ttCall("commit");
     });

@@ -120,11 +120,13 @@
   <div class="card">
     <div class="step">Targeted top-up</div>
     <h2>Allocate a set number into one area</h2>
-    <div class="hint">The deliberate alternative to the percentage run above: choose an area, say how many people you want in it, set an age guard, and place exactly that many. <b>Nothing above is disturbed</b> — this only draws from people who are still unplaced, and never moves anyone who already has an area. Also never touched: anyone called, accepted, or on a caller's list; blocked/inactive people; Leadership; anyone contested in review; and anyone who has <b>declined</b> this area. The area's own age range always applies on top of your guard, because the duty allocation enforces the same range later. People with no age on file can't clear an age guard, so they're never picked. By default only volunteers who chose this area (or said happy anywhere) are eligible — untick that to widen the draw, which is what the newer areas need, since nobody could pick them at registration.</div>
+    <div class="hint">The deliberate alternative to the percentage run above: choose an area, say how many people you want in it, set an age guard, and place exactly that many. Pick a <b>session</b> to draw only from people who attend it (decided by their Jamatkhana, the same way session allocation decides), or leave it on <b>All sessions</b> to draw from the whole region. <b>Nothing above is disturbed</b> — this only draws from people who are still unplaced, and never moves anyone who already has an area. Also never touched: anyone called, accepted, or on a caller's list; blocked/inactive people; Leadership; anyone contested in review; and anyone who has <b>declined</b> this area. The area's own age range always applies on top of your guard, because the duty allocation enforces the same range later. People with no age on file can't clear an age guard, so they're never picked. By default only volunteers who chose this area (or said happy anywhere) are eligible — untick that to widen the draw, which is what the newer areas need, since nobody could pick them at registration.</div>
     <div class="row" style="margin-top:10px">
       <span class="small">Area</span>
       <select id="ttArea" class="token" style="width:auto"><option value="">Choose an area…</option></select>
       <span class="small" id="ttWindow" style="color:var(--mute)"></span>
+      <span class="small">· Session</span>
+      <select id="ttSession" class="token" style="width:auto"><option value="">All sessions (whole region)</option></select>
       <span class="small">· How many</span>
       <input id="ttCount" class="token" type="number" min="1" step="1" value="25" style="width:90px">
       <span class="small">· Age guard</span>

@@ -76,6 +76,10 @@ function renderGroups(groups) {
     const i = r.dataset.g;
     host.querySelector(`.rprev[data-g="${i}"]`).disabled = false;
     host.querySelector(`.rgo[data-g="${i}"]`).disabled = true;      // preview before merging
+    // A different kept profile is a different pairing, so a winner chosen for the old one is
+    // meaningless — and must not ride along and silently decide whose work survives.
+    const w = host.querySelector(`.rwin[data-g="${i}"]`);
+    if (w) { w.value = ""; w.hidden = true; }
     document.getElementById("rout-" + i).innerHTML = "";
   }));
   host.querySelectorAll(".rprev").forEach(b => b.addEventListener("click", () => resolve(+b.dataset.g, false)));
@@ -159,7 +163,9 @@ async function resolve(i, commit) {
   const keep = picked.value;
   const losers = g.members.map(m => String(m.user_id)).filter(id => id !== keep);
   const winSel = host.querySelector(`.rwin[data-g="${i}"]`);
-  const winner = winSel && !winSel.hidden ? winSel.value : "";
+  // Read the choice whatever the dropdown's visibility: a successful preview used to re-hide it, and
+  // reading it as "" then meant the commit dropped the very winner that made the preview succeed.
+  const winner = winSel ? winSel.value : "";
   const out = document.getElementById("rout-" + i);
   if (commit && !confirm(`Merge ${losers.length} profile(s) into ${keep}? This can't be undone from this screen.`)) return;
   out.innerHTML = '<div class="muted">Working…</div>';
@@ -169,7 +175,10 @@ async function resolve(i, commit) {
     const d = await r.json();
     if (d.error) { out.innerHTML = `<div class="rwarn">${esc(d.error)}</div>`; return; }
     const needsWinner = (d.results || []).some(x => x.needsWinner);
-    if (winSel) winSel.hidden = !needsWinner;
+    // Reveal only. Re-hiding on a successful preview would discard the operator's answer at commit
+    // time — the conflict hasn't gone away, it's the answer that resolved it. Changing which profile
+    // is kept resets this (see the keepRadio handler), because that's a different pairing.
+    if (winSel && needsWinner) winSel.hidden = false;
     const bad = (d.results || []).filter(x => !x.ok);
     let html = "";
     if (d.stillLiveInBi && d.stillLiveInBi.length) html += `<div class="rwarn">${esc(d.note)}</div>`;

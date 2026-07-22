@@ -418,4 +418,4 @@ function allocate(records, cfg) {
   };
 }
 
-module.exports = { allocate, ageAsOf, REGIONS, ALL_AREAS, SPECIAL, ASSIGN_TARGETS };
+module.exports = { allocate, ageAsOf, REGIONS, ALL_AREAS, SPECIAL, ASSIGN_TARGETS, eligible };

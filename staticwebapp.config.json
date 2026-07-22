@@ -185,6 +185,12 @@
       ]
     },
     {
+      "route": "/api/alloctarget",
+      "allowedRoles": [
+        "superadmin"
+      ]
+    },
+    {
       "route": "/api/allocate",
       "allowedRoles": [
         "superadmin"

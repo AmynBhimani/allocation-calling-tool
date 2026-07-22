@@ -332,6 +332,116 @@
   ["allocMode", "rounds", "phaseOrder", "flexOrder", "overflow", "youngFamily", "medicalFirst"].forEach(function (id) {
     var el = EL(id); if (el) el.addEventListener("change", onSettingChanged);
   });
+  // ---------------- Targeted top-up: N people into one area, under an age guard ----------------
+  // Deliberately separate from the percentage run: its own endpoint, its own preview, and a commit
+  // that sends the exact ID list the preview produced, so what's written is what was reviewed.
+  var ttPlan = null;
+
+  function ttWindowLabel(area) {
+    var t = null;
+    TARGET_DEFS.forEach(function (d) { if (d.area === area) t = d; });
+    if (!area) return "";
+    var min = (t && t.min != null) ? t.min : 16;      // the app-wide floor when an area sets none
+    var max = (t && t.max != null) ? t.max : null;
+    return "\u00b7 area admits " + (max != null ? (min + "\u2013" + max) : (min + "+"));
+  }
+
+  function ttReset() { EL("ttCommitBtn").disabled = true; ttPlan = null; }
+
+  function ttRender(d) {
+    var out = EL("ttOut");
+    if (d.mode === "commit") {
+      var h = '<div class="ok">' + esc(d.note) + "</div>";
+      if (d.skipped && d.skipped.length) {
+        h += '<div class="small" style="margin-top:8px"><b>Skipped</b> \u2014 these changed between the preview and the commit:<ul>'
+          + d.skipped.slice(0, 40).map(function (s) { return "<li>" + esc(s.name) + " (" + esc(s.region) + ") \u2014 " + esc(s.reason) + "</li>"; }).join("")
+          + "</ul></div>";
+      }
+      out.innerHTML = h;
+      return;
+    }
+    var lines = [];
+    lines.push("<b>" + d.selectedCount + "</b> of " + d.requested + " requested \u2014 <b>" + d.eligibleTotal + "</b> eligible in total.");
+    if (d.shortfall) lines.push('<span style="color:#a83729">Short by ' + d.shortfall + ".</span>");
+    var eff = "Age: area admits " + (d.areaWindow.max != null ? (d.areaWindow.min + "\u2013" + d.areaWindow.max) : (d.areaWindow.min + "+"));
+    if (d.guard.min != null || d.guard.max != null) {
+      eff += "; your guard " + (d.guard.min != null ? d.guard.min : "any") + "\u2013" + (d.guard.max != null ? d.guard.max : "any");
+      if (d.guard.min != null && d.guard.min < d.areaWindow.min) eff += ' <span style="color:#a83729">(the area\u2019s floor of ' + d.areaWindow.min + " wins)</span>";
+    }
+    var html = '<div class="small">' + lines.join(" ") + "</div>"
+      + '<div class="small" style="margin-top:4px;color:var(--mute)">' + eff + " \u00b7 scanned " + d.scanned + " record(s) across " + d.regions.join(", ") + "</div>"
+      + '<div class="small" style="margin-top:6px">Chosen: <b>' + d.selectedByTier.picked + "</b> picked this area \u00b7 <b>"
+      + d.selectedByTier.happy + "</b> happy anywhere"
+      + (d.selectedByTier.other ? " \u00b7 <b>" + d.selectedByTier.other + "</b> widened (didn\u2019t pick it)" : "")
+      + (d.heldAsideSelected ? " \u00b7 <b>" + d.heldAsideSelected + "</b> currently held aside" : "")
+      + (d.iffSelected ? " \u00b7 <b>" + d.iffSelected + "</b> IFF" : "")
+      + "</div>";
+    if (d.excluded && d.excluded.length) {
+      html += '<div class="small" style="margin-top:8px;color:var(--mute)">Ruled out: '
+        + d.excluded.map(function (e) { return esc(e.reason) + " (" + e.n + ")"; }).join(" \u00b7 ") + "</div>";
+    }
+    if (d.selected && d.selected.length) {
+      html += '<table class="mtx" style="margin-top:10px"><thead><tr><th>Name</th><th>Region</th><th>Jamatkhana</th><th class="n">Age</th><th>Why</th></tr></thead><tbody>'
+        + d.selected.map(function (s) {
+          return "<tr><td>" + esc(s.name) + "</td><td>" + esc(s.region) + "</td><td>" + esc(s.jk)
+            + '</td><td class="n">' + (s.age == null ? "" : s.age) + "</td><td>" + esc(s.why)
+            + (s.heldAside ? ' <span class="small" style="color:var(--mute)">\u00b7 ' + esc(s.heldAside) + "</span>" : "")
+            + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    }
+    out.innerHTML = html;
+  }
+
+  async function ttCall(mode) {
+    var area = EL("ttArea").value;
+    if (!area) { banner("Pick a process area to top up.", "err"); return; }
+    var body = {
+      mode: mode, area: area, event: currentEvent(),
+      count: Number(EL("ttCount").value),
+      minAge: EL("ttMinAge").value, maxAge: EL("ttMaxAge").value,
+      respectPicks: !!EL("ttRespect").checked,
+      seed: Number(EL("seed").value) || undefined,
+    };
+    if (mode === "commit") {
+      if (!ttPlan || !ttPlan.selected || !ttPlan.selected.length) return;
+      body.items = ttPlan.selected.map(function (s) { return { user_id: s.user_id, region: s.region }; });
+    }
+    var bp = EL("ttPreviewBtn"), bc = EL("ttCommitBtn");
+    bp.disabled = true; bc.disabled = true;
+    banner(mode === "commit" ? "Allocating…" : "Checking who's eligible…", "");
+    try {
+      var r = await fetch("/api/alloctarget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      var d = await r.json();
+      if (!r.ok) { banner(d.error || "Request failed.", "err"); bp.disabled = false; return; }
+      banner("", "");
+      ttRender(d);
+      if (mode === "commit") { ttPlan = null; bc.disabled = true; bp.disabled = false; }
+      else { ttPlan = d; bp.disabled = false; bc.disabled = !d.selectedCount; }
+    } catch (e) {
+      banner(String(e && e.message || e), "err"); bp.disabled = false;
+    }
+  }
+
+  (function ttInit() {
+    var sel = EL("ttArea"); if (!sel) return;
+    AREAS.forEach(function (a) {
+      var o = document.createElement("option"); o.value = a; o.textContent = a; sel.appendChild(o);
+    });
+    var showWindow = function () { EL("ttWindow").textContent = ttWindowLabel(sel.value); };
+    sel.addEventListener("change", function () { showWindow(); ttReset(); });
+    ["ttCount", "ttMinAge", "ttMaxAge", "ttRespect"].forEach(function (id) {
+      var el = EL(id); if (el) { el.addEventListener("input", ttReset); el.addEventListener("change", ttReset); }
+    });
+    EL("ttPreviewBtn").addEventListener("click", function () { ttCall("preview"); });
+    EL("ttCommitBtn").addEventListener("click", function () {
+      if (!ttPlan) return;
+      if (!confirm("Allocate " + ttPlan.selectedCount + " volunteer(s) into " + ttPlan.area
+        + "? They become Stable and callable. Anyone who has changed since this preview is skipped.")) return;
+      ttCall("commit");
+    });
+    showWindow();
+  })();
+
   buildTargetInputs();
   (async function () { await loadEvents(); await restoreSettings(); })();   // populate events, then that event’s settings
 })();

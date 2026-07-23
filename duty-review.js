@@ -33,7 +33,7 @@
     }).join("");
     if (!areas.length) opts = '<option value="">(no areas you can review)</option>' + opts;
     if (needs.length) {
-      opts += '<optgroup label="Waiting on a duty roster">'
+      opts += '<optgroup label="No duty roster for THIS session">'
         + needs.map(function (a) { return '<option value="" disabled>' + esc(a) + " \u2014 no roster yet</option>"; }).join("")
         + "</optgroup>";
     }
@@ -41,7 +41,7 @@
     EL("area").disabled = !areas.length;
     EL("loadBtn").disabled = !areas.length;
     EL("scope").textContent = areas.length
-      ? (needs.length ? needs.length + " area(s) still need a duty roster imported before they can be reviewed." : "")
+      ? (needs.length ? needs.length + " area(s) have no duty roster for THIS session \u2014 a roster is per session, so each session\u2019s sheet must be filled in." : "")
       : "No area in this session has a duty roster you can review yet \u2014 import one on the Duty rosters screen.";
   }
 

@@ -139,7 +139,7 @@ module.exports = async function (context, req) {
         blocked: plan.blocked, blockedCount: plan.blocked.length, untouched: plan.untouched.length,
         problems: plan.problems.slice(0, 500), problemCount: plan.problems.length,
         warnings: plan.warnings.slice(0, 500), warningCount: plan.warnings.length,
-        newDuties: plan.newDuties, areasTouched: plan.areasTouched,
+        newDuties: plan.newDuties, areasTouched: plan.areasTouched, gaps: plan.gaps,
         note: commit
           ? "Applied. The per-session duty rosters are saved and any new duties were added to the catalog."
           : "Preview only — nothing saved. Check the parsed check-in times and the new duties below before committing.",

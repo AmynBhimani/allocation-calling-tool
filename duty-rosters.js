@@ -305,6 +305,16 @@
     if (d.problemCount) html += '<div class="warn"><b>' + num(d.problemCount) + " row(s) couldn\u2019t be used</b> and are not in the roster. Fix them in the template and load it again \u2014 everything else below is fine to commit.</div>";
     else if (c.kept) html += '<div class="good">Every row read cleanly.</div>';
 
+    // A roster is per session AND area. A sheet left blank leaves that session with no roster, which
+    // is easy to miss because only the sessions you filled in appear below.
+    (d.gaps || []).forEach(function (g) {
+      html += '<div class="warn"><b>' + esc(g.area) + "</b> has no duties for "
+        + g.sessions.map(function (s) { return esc(s.name); }).join(", ")
+        + ". " + (g.sessions.length === 1 ? "That session" : "Those sessions")
+        + " will show as <b>waiting on a duty roster</b> and can\u2019t be reviewed or assigned. "
+        + "The template has one sheet per session \u2014 fill in that sheet too and upload again.</div>";
+    });
+
     (d.summary || []).forEach(function (s) {
       html += '<div class="sub2">' + esc(s.name) + "</div>";
       html += '<table class="matrix"><tr><th>Area</th><th class="n">Duties</th><th class="n">Minimum total</th>'

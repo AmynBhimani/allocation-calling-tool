@@ -315,8 +315,25 @@ function planRoster(files, catalog, sessions, opts) {
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
 
+  // A roster is per SESSION x area. The template carries one sheet per session, so a sheet left blank
+  // leaves that session with no roster for the area — and because `summary` only covers sessions that
+  // were touched, an untouched session simply vanished from the report. Uploading a template with only
+  // the first sheet filled in therefore looked like the whole area was done, while the other session
+  // stayed unreviewable. Report the gaps explicitly: for every area in this upload, the sessions that
+  // end up with nothing — counting what is already committed, so a session rostered earlier and not
+  // mentioned in this file is not flagged.
+  const gaps = [...areasTouched].sort().map(area => {
+    const missing = (sessions || []).filter(s => {
+      const sid = String(s.id);
+      const fresh = ((roster[sid] || {})[area] || []).length;
+      const kept = (((opts.current || {})[sid] || {})[area] || []).length;
+      return !fresh && !kept;
+    }).map(s => ({ id: s.id, name: s.name }));
+    return { area, sessions: missing };
+  }).filter(g => g.sessions.length);
+
   counts.blocked = blocked.length;
-  return { roster, newDuties, problems, warnings, removed, blocked, untouched, counts, summary,
+  return { roster, newDuties, problems, warnings, removed, blocked, untouched, counts, summary, gaps,
     areasTouched: [...areasTouched].sort(), sessionsTouched: [...sessionsTouched] };
 }
 

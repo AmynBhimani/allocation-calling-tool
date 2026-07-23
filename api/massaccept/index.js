@@ -8,6 +8,7 @@
 // Super Admin / Admin only; Admin is region-walled. Accept state matches api/bulkaccept exactly.
 const { getContainer, readRegion, mergeRegion, REGIONS, readRolesStore, allowedRegionsFor } = require("../shared/store");
 const { classify, applyAccept } = require("../shared/wrapup");
+const { AREAS } = require("../shared/duties");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const SAMPLE_PER_BUCKET = 40;
@@ -34,14 +35,26 @@ module.exports = async function (context, req) {
     const scopeRegions = REGIONS.filter(inScope);
     const container = await getContainer(DATA_CONTAINER);
 
+    // Optional filters (same source for GET preview and POST commit, so the commit accepts exactly what
+    // the filtered preview showed). Area is matched on final_area; region narrows within the caller's
+    // own scope. The area dropdown is the full configured list, so a newly-added area (e.g. Volunteer
+    // Engagement) is always selectable even before anyone is accepted into it.
+    const src = req.body || {};
+    const q = req.query || {};
+    const areaFilter = String(q.area || src.area || "").trim();
+    const regionFilter = String(q.region || src.region || "").trim();
+    const regionsToScan = (regionFilter && scopeRegions.includes(regionFilter)) ? [regionFilter] : scopeRegions;
+    const matchesArea = (v) => !areaFilter || (v.final_area || "(no area)") === areaFilter;
+
     // ---- GET: dry run ----
     if (String(req.method || "").toUpperCase() !== "POST") {
       const mk = () => ({ total: 0, byArea: {}, sample: [] });
       const buckets = { accept: mk(), unreached: mk(), leaveAlone: mk() };
       const skipped = { leadership: 0, alreadyAccepted: 0, noArea: 0, inReconciliation: 0, notAssignable: 0 };
-      for (const region of scopeRegions) {
+      for (const region of regionsToScan) {
         const { records } = await readRegion(container, region);
         for (const v of records) {
+          if (!matchesArea(v)) continue;
           const b = classify(v);
           if (buckets[b]) {
             const bk = buckets[b], a = areaOf(v);
@@ -50,7 +63,8 @@ module.exports = async function (context, req) {
           } else if (b in skipped) { skipped[b]++; }
         }
       }
-      context.res = { body: { mode: "dry-run", scope: scopeRegions, buckets, skipped } };
+      context.res = { body: { mode: "dry-run", scope: regionsToScan, regions: scopeRegions, areas: [...AREAS].sort(),
+        filter: { area: areaFilter || null, region: regionFilter || null }, buckets, skipped } };
       return;
     }
 
@@ -58,10 +72,11 @@ module.exports = async function (context, req) {
     const nowIso = new Date().toISOString();
     let acceptedCount = 0;
     const byRegion = {}, byArea = {};
-    for (const region of scopeRegions) {
+    for (const region of regionsToScan) {
       let n = 0;
       await mergeRegion(container, region, (records) => {
         for (const v of records) {
+          if (!matchesArea(v)) continue;
           if (classify(v) === "accept") {
             applyAccept(v, email, nowIso);
             n++; const a = areaOf(v); byArea[a] = (byArea[a] || 0) + 1;
@@ -71,7 +86,8 @@ module.exports = async function (context, req) {
       });
       byRegion[region] = n; acceptedCount += n;
     }
-    context.res = { body: { ok: true, mode: "commit", acceptedCount, byRegion, byArea } };
+    context.res = { body: { ok: true, mode: "commit", acceptedCount, byRegion, byArea,
+      filter: { area: areaFilter || null, region: regionFilter || null } } };
   } catch (err) {
     context.res = { status: 500, body: { error: String((err && err.message) || err) } };
   }

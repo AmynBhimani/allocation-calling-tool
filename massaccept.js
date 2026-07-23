@@ -22,17 +22,44 @@
       '</tbody></table></div></details>';
   }
 
+  function currentFilter() {
+    return { area: EL("areaFilter") ? EL("areaFilter").value : "", region: EL("regionFilter") ? EL("regionFilter").value : "" };
+  }
+  function fillFilterOptions(d) {
+    var af = EL("areaFilter");
+    if (af && !af.dataset.filled && Array.isArray(d.areas)) {
+      d.areas.forEach(function (a) { var o = document.createElement("option"); o.value = a; o.textContent = a; af.appendChild(o); });
+      af.dataset.filled = "1";
+    }
+    var rf = EL("regionFilter");
+    if (rf && !rf.dataset.filled && Array.isArray(d.regions)) {
+      d.regions.forEach(function (r) { var o = document.createElement("option"); o.value = r; o.textContent = r; rf.appendChild(o); });
+      rf.dataset.filled = "1";
+    }
+  }
+  function filterLabel() {
+    var f = currentFilter(), bits = [];
+    if (f.area) bits.push(f.area);
+    if (f.region) bits.push(f.region);
+    return bits.length ? " (" + bits.join(", ") + ")" : "";
+  }
+
   function load() {
     clearBanner();
-    fetch("/api/massaccept").then(function (r) { return r.json(); }).then(function (d) {
+    var f = currentFilter();
+    var qs = [];
+    if (f.area) qs.push("area=" + encodeURIComponent(f.area));
+    if (f.region) qs.push("region=" + encodeURIComponent(f.region));
+    fetch("/api/massaccept" + (qs.length ? "?" + qs.join("&") : "")).then(function (r) { return r.json(); }).then(function (d) {
       if (d.error) { EL("results").innerHTML = ""; banner(esc(d.error), true); return; }
-      VIEW = d; render(d);
+      VIEW = d; fillFilterOptions(d); render(d);
     }).catch(function () { EL("results").innerHTML = ""; banner("Couldn\u2019t load the preview.", true); });
   }
 
   function render(d) {
     var b = d.buckets || {}, acc = b.accept || {}, un = b.unreached || {}, la = b.leaveAlone || {}, sk = d.skipped || {};
-    EL("scope").textContent = "Regions in scope: " + ((d.scope || []).join(", ") || "none");
+    var flt = (d.filter && (d.filter.area || d.filter.region)) ? filterLabel() : "";
+    EL("scope").textContent = "Regions in scope: " + ((d.scope || []).join(", ") || "none") + (flt ? " · filtered" + flt : "");
 
     var html =
       '<div class="card">' +
@@ -45,7 +72,7 @@
           num(sk.inReconciliation) + ' in reconciliation &middot; ' + num(sk.noArea) + ' no area yet &middot; ' + num(sk.leadership) + ' leadership.</div>' +
 
         '<div class="bhead" style="margin-top:16px"><h2>Accept bucket</h2>' +
-          '<button class="btn commit" id="commitBtn"' + (acc.total ? '' : ' disabled') + '>Accept ' + num(acc.total) + ' into their areas</button></div>' +
+          '<button class="btn commit" id="commitBtn"' + (acc.total ? '' : ' disabled') + '>Accept ' + num(acc.total) + ' into their areas' + esc(flt) + '</button></div>' +
         '<div class="small">These had an area but were never accepted, and no caller logged a "no" for them. Accepting matches a caller marking them Accepted.</div>' +
         areaTable(acc.byArea) + sampleList(acc.sample) +
         '<div id="commitResult"></div>' +
@@ -66,10 +93,12 @@
   function commit() {
     var acc = (VIEW && VIEW.buckets && VIEW.buckets.accept) || {};
     if (!acc.total) return;
-    if (!window.confirm("Accept " + num(acc.total) + " volunteers into their assigned areas?\n\nThis marks them Accepted with no call. You can reopen individuals afterward from the Accepted screen. Unreached and withdrawn people are not touched.")) return;
+    var f = currentFilter();
+    var scopeMsg = filterLabel() ? (" in" + filterLabel()) : " into their assigned areas";
+    if (!window.confirm("Accept " + num(acc.total) + " volunteers" + scopeMsg + "?\n\nThis marks them Accepted with no call. You can reopen individuals afterward from the Accepted screen. Unreached and withdrawn people are not touched.")) return;
     if (busy) return; busy = true; EL("commitBtn").disabled = true; clearBanner();
     EL("commitResult").innerHTML = '<div class="small" style="margin-top:10px">Accepting\u2026 this can take a moment.</div>';
-    fetch("/api/massaccept", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
+    fetch("/api/massaccept", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ area: f.area || undefined, region: f.region || undefined }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.error) { EL("commitResult").innerHTML = ""; banner(esc(d.error), true); EL("commitBtn").disabled = false; return; }
@@ -88,5 +117,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     load();
     EL("refreshBtn").addEventListener("click", load);
+    if (EL("areaFilter")) EL("areaFilter").addEventListener("change", load);
+    if (EL("regionFilter")) EL("regionFilter").addEventListener("change", load);
   });
 })();

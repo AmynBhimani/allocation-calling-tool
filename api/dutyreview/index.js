@@ -20,6 +20,7 @@ const { expandRoster, sessionRow, requestsOf, isLeadName,
         STATE_ALLOCATED, STATE_SUBMITTED, STATE_ENTERED, LOCKED_STATES } = require("../dutyalloc/dutyalloc");
 const { AS_OF, ageOfOn } = require("../shared/eventage");
 const { notAssignable } = require("../shared/rollup");
+const { AREAS } = require("../shared/duties");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
 const clean = (s) => String(s == null ? "" : s).trim();
@@ -86,10 +87,17 @@ module.exports = async function (context, req) {
 
       if (!sid || !area) {
         // The picker: every session, and the areas in it this person may review.
+        // `areas` keeps its exact meaning — areas with a roster, which are the only ones that can be
+        // opened. `needsRoster` is everything else they're allowed to see: an area only becomes
+        // reviewable once its duty roster is imported, and silently omitting it made a newly-added
+        // area look broken rather than un-set-up. Reported separately so the client can show it,
+        // greyed, with the reason — without a costly scan of every volunteer on this screen.
         const out = sessions.map(s => {
           const rostered = Object.keys(rosterFor(s.id)).sort();
+          const visible = AREAS.filter(canSeeArea);
           return { id: s.id, name: s.name, regions: regionsOfSession(s),
-            areas: rostered.filter(canSeeArea) };
+            areas: rostered.filter(canSeeArea),
+            needsRoster: visible.filter(a => !rostered.includes(a)) };
         });
         context.res = { headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessions: out, asOf: AS_OF,

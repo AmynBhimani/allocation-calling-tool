@@ -31,11 +31,21 @@
   function syncAreas() {
     var s = SESSIONS.filter(function (x) { return x.id === session(); })[0];
     var areas = (s && s.areas) || [];
-    EL("area").innerHTML = areas.length
-      ? areas.map(function (a) { return '<option value="' + esc(a) + '">' + esc(a) + '</option>'; }).join("")
-      : '<option value="">(no areas you can assign)</option>';
+    var needs = (s && s.needsRoster) || [];
+    // Same rule as the review screen: an area with no imported roster has no duties to assign, so it
+    // is shown but not selectable rather than omitted.
+    var opts = areas.map(function (a) { return '<option value="' + esc(a) + '">' + esc(a) + '</option>'; }).join("");
+    if (!areas.length) opts = '<option value="">(no areas you can assign)</option>' + opts;
+    if (needs.length) {
+      opts += '<optgroup label="Waiting on a duty roster">'
+        + needs.map(function (a) { return '<option value="" disabled>' + esc(a) + " \u2014 no roster yet</option>"; }).join("")
+        + "</optgroup>";
+    }
+    EL("area").innerHTML = opts;
     EL("area").disabled = !areas.length; EL("loadBtn").disabled = !areas.length;
-    EL("scope").textContent = areas.length ? "" : "No area in this session has a duty roster you can assign.";
+    EL("scope").textContent = areas.length
+      ? (needs.length ? needs.length + " area(s) still need a duty roster imported before duties can be assigned." : "")
+      : "No area in this session has a duty roster you can assign yet \u2014 import one on the Duty rosters screen.";
   }
 
   function eligible(p) { return p.canEdit && (p.state === "pending" || p.state === "allocated"); }

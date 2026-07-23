@@ -23,15 +23,26 @@
   function fillAreas() {
     var s = SESSIONS.filter(function (x) { return x.id === session(); })[0];
     var areas = (s && s.areas) || [];
+    var needs = (s && s.needsRoster) || [];
     var keep = area();
-    EL("area").innerHTML = areas.length
-      ? areas.map(function (a) {
-          return '<option value="' + esc(a) + '"' + (a === keep ? " selected" : "") + ">" + esc(a) + "</option>";
-        }).join("")
-      : '<option value="">(no areas you can review)</option>';
+    // Areas whose duty roster hasn't been imported yet are listed but not selectable: there are no
+    // duties to review until a roster exists, and leaving them out entirely made a newly-added area
+    // look like it had gone missing.
+    var opts = areas.map(function (a) {
+      return '<option value="' + esc(a) + '"' + (a === keep ? " selected" : "") + ">" + esc(a) + "</option>";
+    }).join("");
+    if (!areas.length) opts = '<option value="">(no areas you can review)</option>' + opts;
+    if (needs.length) {
+      opts += '<optgroup label="Waiting on a duty roster">'
+        + needs.map(function (a) { return '<option value="" disabled>' + esc(a) + " \u2014 no roster yet</option>"; }).join("")
+        + "</optgroup>";
+    }
+    EL("area").innerHTML = opts;
     EL("area").disabled = !areas.length;
     EL("loadBtn").disabled = !areas.length;
-    EL("scope").textContent = areas.length ? "" : "No area in this session has a duty roster you can review.";
+    EL("scope").textContent = areas.length
+      ? (needs.length ? needs.length + " area(s) still need a duty roster imported before they can be reviewed." : "")
+      : "No area in this session has a duty roster you can review yet \u2014 import one on the Duty rosters screen.";
   }
 
   function load() {

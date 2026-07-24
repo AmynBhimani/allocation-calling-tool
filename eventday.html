@@ -44,6 +44,10 @@
     Everyone placed into a session, by session, area and duty. Someone working both sessions appears once
     for each. Volunteers placed in an area but not yet given a specific duty are the floating reserve and
     are listed under <b>Ever Ready Team</b>, carrying the area they came from.
+    <b>Check in after</b> keeps only people checking in strictly later than the time you set (set 06:59 to
+    include 07:00 itself). Check-in comes from the duty roster, so a lead checks in an hour before their
+    duty, and anyone without a duty has no check-in time and drops out whenever that filter is set.
+    <b>Export for Better Impact</b> writes just first name, last name and Visit ID.
   </div>
 
   <div class="filters">
@@ -51,10 +55,14 @@
     <select id="sessionSel"><option value="">All sessions</option></select>
     <select id="areaSel"><option value="">All areas</option></select>
     <select id="dutySel"><option value="">All duties</option></select>
+    <span class="small">Check in after</span>
+    <input type="time" id="afterTime" step="60" style="font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px">
     <button class="btn ghost2" id="clearBtn">Clear</button>
-    <button class="btn" id="exportBtn" disabled>Export CSV</button>
+    <button class="btn ghost2" id="exportBtn" disabled>Export CSV</button>
+    <button class="btn" id="exportBiBtn" disabled>Export for Better Impact</button>
     <span class="small" id="count" style="margin-left:auto"></span>
   </div>
+  <div class="small" id="binote" style="margin:-4px 0 10px;color:var(--mute)"></div>
 
   <div id="results"></div>
 </div>

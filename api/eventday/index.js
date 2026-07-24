@@ -15,12 +15,17 @@
 // session row (the roster sync preserves rows that already carry a duty), and putting them on an
 // event-day list would send an area looking for a person who isn't coming.
 const { getContainer, readRegion, REGIONS, readDidars, readSessions,
-        readRolesStore, scopesFor, areasFor } = require("../shared/store");
+        readRolesStore, scopesFor, areasFor, readConfigJson } = require("../shared/store");
 const { isAcceptedVolunteer } = require("../shared/rollup");
+const { expandRoster } = require("../dutyalloc/dutyalloc");
 
 const DATA_CONTAINER = process.env.DATA_CONTAINER || "tool-data";
+const ROSTER_BLOB = "session-duties.json";
 const clean = (s) => String(s == null ? "" : s).trim();
+const normDuty = (s) => clean(s).toLowerCase().replace(/\s+/g, " ");
 const EVER_READY = "Ever Ready Team";
+// A write-in has no Better Impact account, so no id that means anything to BI.
+const isWritein = (v) => !!(v && (v.no_bi_account || String(v.user_id).startsWith("wi-")));
 
 module.exports = async function (context, req) {
   try {
@@ -50,6 +55,23 @@ module.exports = async function (context, req) {
     }
 
     const container = await getContainer(DATA_CONTAINER);
+
+    // Check-in times live on the duty roster, not on the volunteer. Index (session, area, duty) -> time
+    // using the engine's own expander, so generated LEAD duties carry their real (earlier) check-in
+    // rather than the one their parent duty has.
+    const rosterStore = (await readConfigJson(ROSTER_BLOB)) || {};
+    const checkInIdx = new Map();
+    for (const sid of Object.keys(rosterStore.sessions || {})) {
+      const byArea = rosterStore.sessions[sid] || {};
+      for (const a of Object.keys(byArea)) {
+        for (const spec of expandRoster(byArea[a] || [])) {
+          checkInIdx.set(String(sid) + "|" + a + "|" + normDuty(spec.duty), clean(spec.checkIn));
+        }
+      }
+    }
+    const checkInFor = (sid, area, duty) =>
+      duty ? (checkInIdx.get(String(sid) + "|" + area + "|" + normDuty(duty)) || "") : "";
+
     const rows = [];
     for (const region of REGIONS) {
       const { records } = await readRegion(container, region);
@@ -65,9 +87,12 @@ module.exports = async function (context, req) {
           const duty = clean(r.duty);
           rows.push({
             first: clean(v.first), last: clean(v.last),
+            visitId: String(v.user_id == null ? "" : v.user_id),   // the Better Impact account id
+            noBi: isWritein(v),                                    // write-in: that id means nothing to BI
             session: session.name, sessionId: String(r.event), didar: session.didar,
             area: duty ? homeArea : EVER_READY,                   // no duty -> the floating reserve
             homeArea, duty, everReady: !duty,
+            checkIn: checkInFor(r.event, homeArea, duty),          // "" when they hold no duty
             region, state: clean(r.state) || "pending",
           });
         }
